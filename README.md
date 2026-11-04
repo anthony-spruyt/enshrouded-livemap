@@ -1,18 +1,9 @@
-![Enshrouded Live Map](nexus/banner-1600x400.jpg)
-
 # Enshrouded Live Map
 
-A server-side mod for Enshrouded dedicated servers. The server serves a web map in the game's
-own look: players live with names and walking direction, the in-game clock and real time, rain
-and snow where they fall, the region names and all map markers from the game's data, the
-deadly shroud above your Flame level, fog of war and discovered places per player, and the ore
-deposits players mined and the chests they opened. Players install nothing; they open a link
-in the browser, on PC, tablet or phone. Also on [Nexus Mods](https://www.nexusmods.com/enshrouded/mods/209).
-
-Sister mod: **[Shared XP](https://github.com/oggii/enshrouded-shared-xp)** shares non-combat XP
-with everyone online, also server-side only ([Nexus](https://www.nexusmods.com/enshrouded/mods/178)).
-
-![The whole world in the game's own look, with its region names](nexus/screens/01-overview.jpg)
+A server-side mod for Enshrouded dedicated servers. The server serves a web map: players with
+names and walking direction, in-game clock and real time, weather, all map markers from the
+game's data, ore deposits players mined and chests they opened. Players install nothing; they
+open a link in the browser.
 
 ## Install
 
@@ -107,8 +98,6 @@ stops the IP lookup entirely.
 | `Finds` | `1` | Ore deposits and opened chests on the map. |
 | `Bases` | `1` | The players' Flame Altars on the map. |
 | `Discovered` | `1` | Which places each player discovered and where they have been (filter and fog of war). |
-| `Deaths` | `1` | Count each player's deaths (shown next to the name, saved in `livemap/deaths.json`). |
-| `Objects` | `1` | Chests looted or not, locks, barriers and switches, and creatures near the players, read from the server's loaded world. |
 | `Log`, `LogDiagnostics` | `1` | Log file and periodic diagnostics. |
 
 ## The map
@@ -138,24 +127,7 @@ above the world's Flame level, drawn pink as on the game's map (zone levels from
 data, `tools/extract_shroud.py`; the Flame level is the first keyword of the server's A2S_INFO).
 
 Click a player in the list to follow them (click again or drag the map to stop). Add
-`&follow=<name>` to the link to follow that player whenever they are online. To point someone
-at a spot, add `&mark=<x>,<z>,<name>` (several joined by `;`): the map opens there with a ring
-and the name on it.
-
-Type an item into the search ("animal fur", "iron ore", a weapon's name) to see where to get it:
-the enemies that drop it, the chests and containers that can hold it, each with its chance and
-how far the nearest one is. Pick a source and the map rings all its places and flies to the
-nearest. It comes from the game's own loot tables (`tools/build_drops.py`, `tools/loot_for_page.py`).
-
-The server also tells which chests are looted (its own state, not a guess: a looted chest stays
-looted), which locked doors and chests were picked and which magic barriers and switches were
-used, and what lives around the players: enemies, animals and bosses with their health, live. It
-only holds the world within about 500 m of each player, so chests and switches show the last
-state it saw there; `livemap/objects.json` keeps it.
-
-Each player's deaths since the map was installed show next to their name (☠ 3); hover it for
-how (killed, fell, shroud, drowned) and when the last one was. The server reports every death
-with its cause; the map counts them and keeps the count across restarts.
+`&follow=<name>` to the link to follow that player whenever they are online.
 
 ### Optional: HD map style
 
@@ -166,22 +138,8 @@ relief by `tools/enhance_map.py`. Unzip it over the install; it adds `livemap/ti
 
 ## Works with Shared XP
 
-[Shared XP](https://github.com/oggii/enshrouded-shared-xp) ([Nexus](https://www.nexusmods.com/enshrouded/mods/178))
-1.1.3 or newer. Both mods add a line to the chat after "Player X joined." and can run together; whichever starts
+Shared XP 1.1.3 or newer. Both mods add a line to the chat after "Player X joined." and can run together; whichever starts
 second adds its hook on top of the first one.
-
-## Screenshots
-
-Made from the real page and map with sample players (`tools/perf/promo_shots.mjs`).
-
-| | |
-|---|---|
-| ![Players live](nexus/screens/02-players.jpg) | ![Fog of war and discovered places](nexus/screens/03-fog-discovered.jpg) |
-| Players live with their walking direction; click a name to follow | Fog of war and discovered places, per player |
-| ![Deadly shroud](nexus/screens/04-deadly-shroud.jpg) | ![Finds](nexus/screens/05-finds.jpg) |
-| The deadly shroud above your world's Flame level | Ore veins, looted chests and Flame Altars, saved for everyone |
-| ![Layout](nexus/screens/06-layout.jpg) | ![HD map style](nexus/screens/07-hd-overview.jpg) |
-| Move the panels where you like; a layout for phones | The optional HD map style |
 
 ## Build
 

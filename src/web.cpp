@@ -170,18 +170,6 @@ void handle(SOCKET s) {
         send_response(s, "200 OK", "application/json", world::discovered_store().to_json());
         return;
     }
-    if (path == "/objects") {
-        send_response(s, "200 OK", "application/json", world::objects_store().objects_json());
-        return;
-    }
-    if (path == "/creatures") {
-        send_response(s, "200 OK", "application/json", world::objects_store().creatures_json());
-        return;
-    }
-    if (path == "/deaths") {
-        send_response(s, "200 OK", "application/json", world::deaths_store().to_json());
-        return;
-    }
     if (path == "/bases") {
         send_response(s, "200 OK", "application/json", world::bases_store().to_json(GetTickCount64()));
         return;

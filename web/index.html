@@ -53,9 +53,6 @@
   #players li { display: flex; align-items: baseline; gap: 9px; padding: 3px 0; cursor: pointer; font-size: 16px; }
   #players li .dot { width: 9px; height: 9px; flex: none; transform: rotate(45deg) translateY(-1px); box-shadow: 0 0 7px rgba(0, 0, 0, 0.6); }
   #players li .coords { color: var(--muted); font-size: 13px; font-variant-numeric: lining-nums tabular-nums; }
-  #players li .deaths { color: #e3a08c; font-size: 14px; font-weight: 600; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
-  #players li .deaths:empty { display: none; }
-  #players li .deaths b { font: 400 15px "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", sans-serif; margin-right: 3px; }
   #players li .follow { display: none; margin-left: auto; font: 700 11px var(--caps); letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
   #players li.following .name { color: var(--gold-bright); }
   #players li.following .follow { display: inline; }
@@ -85,31 +82,6 @@
   #pois .group { margin-top: 6px; padding-top: 12px; font: 700 12px var(--caps); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold);
     background: var(--ui-hairline) left top / 100% 2px no-repeat; }
   #poiList > .group:first-child { margin-top: 0; padding-top: 2px; background: none; }
-  #search { width: 296px; padding-top: 0; padding-bottom: 0; }
-  #searchBox { width: 100%; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--line); color: var(--text);
-    font: 500 15px var(--serif); padding: 5px 8px; outline: none; }
-  #searchBox:focus { border-color: var(--gold-dim); }
-  #searchBox::placeholder { color: var(--muted); }
-  #searchResults { list-style: none; margin: 0; padding: 0; }
-  #searchResults:not(:empty) { margin-top: 6px; }
-  #searchResults li { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 10px; padding: 4px 6px; cursor: pointer; font-size: 15px; }
-  #searchResults li .k { color: var(--muted); font-size: 13px; white-space: nowrap; }
-  #searchResults li .m { flex-basis: 100%; color: var(--muted); font-size: 13px; line-height: 1.25; font-variant-numeric: lining-nums tabular-nums; }
-  #searchResults li .m .nd { color: #e3a08c; }
-  #searchResults li.from { cursor: default; color: var(--muted); font-size: 12px; font-style: italic; padding-top: 6px; }
-  #searchResults li.from:hover { background: none; color: var(--muted); }
-  #searchResults li.head { cursor: default; color: var(--gold); font: 700 12px var(--caps); letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 6px 6px; }
-  #searchResults li.head:hover { background: none; color: var(--gold); }
-  #searchResults li[aria-selected="true"], #searchResults li:hover { background: rgba(220, 183, 107, 0.14); color: var(--gold-bright); }
-  .search-ping { border: 2px solid var(--gold-bright); border-radius: 50%; box-shadow: 0 0 14px rgba(246, 220, 160, 0.8);
-    animation: ping 1.4s ease-out 3; }
-  @keyframes ping { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
-  .mark-pin { background: none; border: 0; }
-  .mark-pin .ring { position: absolute; inset: 0; border: 2px solid var(--gold-bright); border-radius: 50%;
-    box-shadow: 0 0 14px rgba(246, 220, 160, 0.8); animation: ping 2s ease-out infinite; }
-  .mark-pin .dot { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
-    background: var(--gold-bright); border: 2px solid #1a1208; box-shadow: 0 0 8px rgba(0, 0, 0, 0.8); }
-  @media (prefers-reduced-motion: reduce) { .search-ping, .mark-pin .ring { animation: none; } }
   #poiList::after { content: ""; display: block; position: sticky; bottom: -2px; height: 26px; margin-top: -8px; pointer-events: none;
     background: linear-gradient(rgba(18, 14, 25, 0), rgba(18, 14, 25, 0.96)); }
   #poiToggle { background: var(--panel); color: var(--gold); text-shadow: 0 0 10px rgba(220, 183, 107, 0.35);
@@ -187,7 +159,6 @@
     #clock .big { font-size: 26px; margin: 0; }
     #left { top: 8px; left: 50px; right: 106px; max-height: none; }
     #players { min-width: 0; max-width: none; width: 100%; }
-    #search { width: 100%; }
     #players li { font-size: 15px; flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
     #players li .coords { font-size: 13px; flex-basis: 100%; padding-left: 18px; }
     #left #pois { position: fixed; left: 0; right: 0; bottom: 38px; width: auto; max-height: 46vh; z-index: 1001; }
@@ -200,8 +171,6 @@
 <div id="map"></div>
 <div id="left">
   <div id="players" class="card"><h2>Players online</h2><ul id="playerList"><li class="placeholder">Connecting…</li></ul></div>
-  <div id="search" class="card"><input id="searchBox" type="search" placeholder="Find a place, player or item…" autocomplete="off"
-    aria-label="Find a place, region or player" aria-controls="searchResults"><ul id="searchResults" role="listbox"></ul></div>
   <button id="poiToggle" type="button" aria-expanded="false" aria-controls="pois">Markers</button>
   <div id="pois" class="card hidden"><h2>Markers <span class="actions"><button id="poiAll" type="button">all / none</button><button id="poiClose" type="button" aria-label="Close the marker panel">✕</button></span></h2><div id="poiList"></div></div>
 </div>
@@ -243,19 +212,7 @@
     document.fonts.add(f);
     return f.load();
   })() : Promise.reject();
-  // One colour per player online, up to the game's 16 (the first free one when someone joins).
-  const colors = ["#f2b766", "#6fd3c7", "#ff8fb1", "#9fd36f", "#b49bff", "#ffd36f", "#6fb4ff", "#ff9f6f",
-    "#e8e4d8", "#d97a9e", "#4fb38a", "#c9a0ff", "#a8d8ff", "#d8c06a", "#ff7a6a", "#8fa8ff"];
-  const colorOf = new Map();   // entity -> colour index
-  function playerColor(entity) {
-    if (!colorOf.has(entity)) {
-      const used = new Set(colorOf.values());
-      let i = 0;
-      while (used.has(i) && i < colors.length - 1) i++;
-      colorOf.set(entity, i);
-    }
-    return colors[colorOf.get(entity)];
-  }
+  const colors = ["#f2b766", "#6fd3c7", "#ff8fb1", "#9fd36f", "#b49bff", "#ffd36f", "#6fb4ff", "#ff9f6f"];
   // The map works in world metres: latlng = [z, x]. The world is worldSize x worldSize metres
   // (10240 in Enshrouded); north (+z) is up. Each map image covers `bounds` of the world.
   const map = L.map("map", { crs: L.CRS.Simple, minZoom: -5, maxZoom: 3, zoomSnap: 0.25, attributionControl: true });
@@ -267,7 +224,6 @@
   let showShroud = (() => { try { return localStorage.getItem("livemap.shroud") !== "0"; } catch { return true; } })();
   let showFog = (() => { try { return localStorage.getItem("livemap.fog") === "1"; } catch { return false; } })();
   let showRegions = (() => { try { return localStorage.getItem("livemap.regions") !== "0"; } catch { return true; } })();
-  let showPlaces = (() => { try { return localStorage.getItem("livemap.places") !== "0"; } catch { return true; } })();
   const layers = {};
 
   function toLatLng(pos) { return L.latLng(pos[2], pos[0]); }
@@ -369,7 +325,6 @@
     const world = [[0, 0], [size, size]];
     map.fitBounds(world);
     map.setMaxBounds(L.latLngBounds(world).pad(0.2));
-    showMarks();
   });
 
   // Points of interest (web/pois.json, built by tools/extract_pois.py). All points are drawn on
@@ -390,14 +345,6 @@
     ore: '<path d="M4 20 L15 9" stroke="#120e18" stroke-width="5" stroke-linecap="round"/>'
       + '<path d="M4 20 L15 9" stroke="COLOR" stroke-width="2.5" stroke-linecap="round"/>'
       + '<path d="M9 5c4-2 8-2 12 2-3 0-6 1-8 3-1-2-2-3-4-5z" fill="COLOR" stroke="#120e18" stroke-width="1.5" stroke-linejoin="round"/>',
-    lock_closed: '<path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="#120e18" stroke-width="4.5"/>'
-      + '<path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="COLOR" stroke-width="2.2"/>'
-      + '<rect x="5" y="11" width="14" height="10" rx="1.5" fill="COLOR" stroke="#120e18" stroke-width="1.5"/>'
-      + '<circle cx="12" cy="15.5" r="1.6" fill="#120e18"/>',
-    lock_open: '<path d="M8 11V7a4 4 0 0 1 7.6-1.8" fill="none" stroke="#120e18" stroke-width="4.5"/>'
-      + '<path d="M8 11V7a4 4 0 0 1 7.6-1.8" fill="none" stroke="COLOR" stroke-width="2.2"/>'
-      + '<rect x="5" y="11" width="14" height="10" rx="1.5" fill="COLOR" stroke="#120e18" stroke-width="1.5"/>'
-      + '<path d="M8.5 16l2.3 2.3 4.7-4.6" fill="none" stroke="#120e18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     looted: '<path d="M3 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v2H3z" fill="#6b6b75" stroke="#120e18" stroke-width="1.5"/>'
       + '<path d="M3 11h18v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#6b6b75" stroke="#120e18" stroke-width="1.5"/>'
       + '<path d="M7 13.5l3.5 3.5L17 10" fill="none" stroke="#9fd36f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -683,10 +630,9 @@
               ctx.strokeText(t, x, y); ctx.fillText(t, x, y);
               this._push(x, y, 14, p);
             } else {
-              const idx = (lootedByPoi.size || chestByPoi.size) && !p.isFind ? poiData.pois.indexOf(p) : -1;
-              const real = idx >= 0 ? chestByPoi.get(idx) : null, record = idx >= 0 ? lootedByPoi.get(idx) : null;
-              const looted = real ? (real.empty ? real : null) : record && lootState(record) ? record : null;
-              if (p[5] && p[5].chest && !p[5].real && !lootState(p[5].chest)) continue;   // a looted chest not in the data, refilled
+              const record = lootedByPoi.size && !p.isFind ? lootedByPoi.get(poiData.pois.indexOf(p)) : null;
+              const looted = record && lootState(record) ? record : null;
+              if (p[5] && p[5].chest && !lootState(p[5].chest)) continue;   // a looted chest not in the data, refilled
               if (looted && hideLooted) continue;
               if (looted && lootedSprite) ctx.drawImage(lootedSprite.canvas, x - lootedSprite.w / 2, y - lootedSprite.w / 2, lootedSprite.w, lootedSprite.w);
               else ctx.drawImage(sp.canvas, x - half, y - half, dw, dw);
@@ -696,38 +642,7 @@
         }
       }
       this._regionsDrawn = 0;
-      this._placeBoxes = [];
-      const taken = showRegions && rawPoiData && rawPoiData.regions ? this._drawRegions(ctx, ox, oy, sx, sy, X0, Y0, W, H) : [];
-      if (showPlaces && PLACES.length) this._drawPlaces(ctx, ox, oy, sx, sy, X0, Y0, W, H, taken);
-    },
-    // The game's place names (pois.json "places": its Location labels, the names the game writes on
-    // its own map) in small capitals under their spot, fading in from zoom -2.6. A name that would
-    // touch a region name or one already drawn is left out; names used once come first. The
-    // Discovered filter hides them like the markers (by the explored area).
-    _drawPlaces(ctx, ox, oy, sx, sy, X0, Y0, W, H, taken) {
-      const z = this._map.getZoom(), alpha = Math.max(0, Math.min(1, (z + 2.6) / 0.7));
-      if (alpha <= 0) return;
-      const size = Math.round(Math.max(10, Math.min(15, 13 + z * 1.5)));
-      const filter = discMode !== "all" && EXP && discNames().length;
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.95;
-      ctx.font = "600 " + size + "px Alegreya, Georgia, serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "top";
-      if ("letterSpacing" in ctx) ctx.letterSpacing = (size * 0.12).toFixed(1) + "px";
-      ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(10, 8, 14, 0.85)";
-      ctx.fillStyle = "#f1e4c4";
-      const boxes = this._placeBoxes, hit = b => taken.some(q => b[0] < q[2] && b[2] > q[0] && b[1] < q[3] && b[3] > q[1])
-        || boxes.some(q => b[0] < q[2] && b[2] > q[0] && b[1] < q[3] && b[3] > q[1]);
-      for (const [name, wx, wz, upper] of PLACES) {
-        const x = ox + wx * sx, y = oy + wz * sy + 11;
-        if (x < X0 || x > W || y < Y0 || y > H) continue;
-        if (filter) { const known = exploredAt(wx, wz); if (discMode === "known" ? !known : known) continue; }
-        const half = ctx.measureText(upper).width / 2 + 3, box = [x - half, y - 1, x + half, y + size + 1];
-        if (hit(box)) continue;
-        ctx.strokeText(upper, x, y); ctx.fillText(upper, x, y);
-        boxes.push(box);
-      }
-      ctx.restore();
+      if (showRegions && rawPoiData && rawPoiData.regions) this._drawRegions(ctx, ox, oy, sx, sy, X0, Y0, W, H);
     },
     // The game's region names (pois.json "regions": its MapLabel_general_Tower_* labels at each
     // region's Ancient Spire) in spaced capitals, as on the game's map: large when zoomed out,
@@ -735,7 +650,7 @@
     _drawRegions(ctx, ox, oy, sx, sy, X0, Y0, W, H) {
       const z = this._map.getZoom(), alpha = Math.max(0, Math.min(1, (-0.5 - z) / 1.25));
       this._regionsDrawn = 0;
-      if (alpha <= 0) return [];
+      if (alpha <= 0) return;
       const size = Math.round(Math.max(15, Math.min(30, 30 + (z + 2) * 8)));
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -757,7 +672,6 @@
         this._regionsDrawn++;
       }
       ctx.restore();
-      return placed;
     },
     _hover(e) {
       const h = this._hits;
@@ -785,13 +699,9 @@
         return;
       }
       const p = h.p[best];
-      const idx = !p.isFind && (lootedByPoi.size || chestByPoi.size) ? poiData.pois.indexOf(p) : -1;
-      const record = idx >= 0 ? lootedByPoi.get(idx) : null, real = idx >= 0 ? chestByPoi.get(idx) : null;
+      const record = !p.isFind && lootedByPoi.size ? lootedByPoi.get(poiData.pois.indexOf(p)) : null;
       let lootText = "";
-      if (real) {
-        lootText = real.empty ? " · looted" + (record ? " by " + record.by : "") + ", seen " + fmtDay(real.at) + " (the server's own state)"
-          : " · still full (the server's own state)";
-      } else if (record) {
+      if (record) {
         const st = lootState(record);
         lootText = st ? " · looted by " + record.by + ", " + fmtDay(record.at)
             + (st.never ? " · in a base: does not refill" : " · refills in about " + st.left + " min")
@@ -879,70 +789,13 @@
     for (const p of data.pois) if (p[5]) p.isFind = true;
   }
 
-  // The server's view of the loaded world (/objects, livemap/objects.json): every chest it has
-  // had loaded, looted or not, keyed to the nearest chest in the data within 3 m (looted ones
-  // without a match get their own marker), and locks, magic barriers and switches with the last
-  // state seen. The game does not seem to refill world chests, so this state replaces the
-  // refill guess wherever it is known.
-  let objectsData = null, objectsVersion = -1, objectsFetching = false, chestByPoi = new Map();
-  const chestGrade = t => /gold/i.test(t) ? "gold" : /silver/i.test(t) ? "silver" : /sarcophag/i.test(t) ? "sarcophagus" : "wooden";
-  function switchName(s) {
-    if (s.k === "b" || /barrier/i.test(s.t)) return "Magic barrier";
-    if (/chest|loot/i.test(s.t)) return "Locked chest";
-    if (/secret/i.test(s.t)) return "Secret door";
-    if (/lever/i.test(s.t)) return "Lever";
-    if (/button/i.test(s.t)) return "Button";
-    if (/door|gate/i.test(s.t)) return s.k === "l" ? "Locked door" : "Door";
-    return "Switch";
-  }
-  function switchState(s) {
-    if (s.k === "l") return s.on ? "unlocked" : "locked";
-    return s.k === "b" || /door|gate/i.test(s.t) ? (s.on ? "open" : "closed") : (s.on ? "used" : "not used yet");
-  }
-  function applyObjects(data, objects) {
-    chestByPoi = new Map();
-    if (!objects) return;
-    const lootCats = new Set();
-    data.categories.forEach((c, i) => { if (c.id.startsWith("chest") || c.id === "sarcophagus") lootCats.add(i); });
-    const cat = (id, label, color, def) => {
-      let i = data.categories.findIndex(c => c.id === id);
-      if (i < 0) { data.categories.push({ id, label, color, on: true, label_default: def }); i = data.categories.length - 1; }
-      return i;
-    };
-    const add = p => { p.isFind = true; data.pois.push(p); };
-    for (const c of objects.chests || []) {
-      let best = -1, bestD = 9;
-      for (let i = 0; i < data.pois.length; i++) {
-        const p = data.pois[i];
-        if (p[5] || !lootCats.has(p[0])) continue;
-        const dx = p[1] - c.x, dz = p[3] - c.z, d = dx * dx + dz * dz;
-        if (d < bestD) { bestD = d; best = i; }
-      }
-      if (best >= 0) chestByPoi.set(best, c);
-      else if (c.empty) add([cat("looted", "Looted chests (not in the data)", "#6b6b75", "Looted chest"), c.x, c.y, c.z,
-        "Looted chest (" + chestGrade(c.t) + ") · seen " + fmtDay(c.at), { find: true, chest: c, real: true }]);
-    }
-    for (const s of objects.switches || []) {
-      if (/crafted|craftable|buildingset|spawnpoint|respawner/i.test(s.t)) continue;   // built by players, enemy spawners
-      const i = s.on ? cat("lock_open", "Unlocked & opened", "#8fd16a", "Opened") : cat("lock_closed", "Locked & closed", "#e0a35a", "Closed");
-      add([i, s.x, s.y, s.z, switchName(s) + " · " + switchState(s) + (s.on ? " since " : " · seen ") + fmtDay(s.at), { find: true, sw: s }]);
-    }
-  }
-  function maybeRefreshObjects(version) {
-    if (version === undefined || version === objectsVersion || objectsFetching || !rawPoiData) return;
-    objectsFetching = true;
-    fetch("objects" + q).then(r => r.ok ? r.json() : null).then(d => {
-      if (d) { objectsData = d; objectsVersion = d.version; rebuildPois(); }
-    }).catch(() => {}).finally(() => { objectsFetching = false; });
-  }
-
   function preparePois(data) {
     const byCat = data.categories.map(c => ({ c, pts: [] }));
     for (const p of data.pois) {
       if (p.length < 5 || p[4] === undefined) p[4] = data.categories[p[0]].label_default || data.categories[p[0]].label;
       byCat[p[0]].pts.push(p);
     }
-    const isLoot = c => c.id.startsWith("chest") || c.id === "sarcophagus" || c.id === "fishing" || c.id === "looted" || c.id.startsWith("lock_");
+    const isLoot = c => c.id.startsWith("chest") || c.id === "sarcophagus" || c.id === "fishing" || c.id === "looted";
     const isFind = c => c.id.startsWith("ore:");
     data.groups = {
       loot: byCat.filter(g => isLoot(g.c)),
@@ -968,8 +821,7 @@
     list.innerHTML = "";
     let lastGroup = "";
     for (const c of data.categories) {
-      const group = c.id === "altar" ? "Bases" : c.id.startsWith("ore:") ? "Finds"
-        : c.id.startsWith("chest") || c.id === "sarcophagus" || c.id === "fishing" || c.id === "looted" || c.id.startsWith("lock_") ? "Loot" : "Places";
+      const group = c.id === "altar" ? "Bases" : c.id.startsWith("ore:") ? "Finds" : c.id.startsWith("chest") || c.id === "sarcophagus" || c.id === "fishing" || c.id === "looted" ? "Loot" : "Places";
       if (group !== lastGroup) {
         const h = document.createElement("div"); h.className = "group"; h.textContent = group; list.appendChild(h);
         lastGroup = group;
@@ -1020,28 +872,13 @@
     const rb = rg.querySelector("input");
     rb.checked = showRegions;
     rb.onchange = () => { showRegions = rb.checked; try { localStorage.setItem("livemap.regions", showRegions ? "1" : "0"); } catch {} poiLayer.schedule(); };
-    const pl = document.createElement("label");
-    pl.innerHTML = '<input type="checkbox" data-extra="1"><span class="sw" style="background:#cdbb92"></span><span class="t">Place names</span>';
-    const pb = pl.querySelector("input");
-    pb.checked = showPlaces;
-    pb.onchange = () => { showPlaces = pb.checked; try { localStorage.setItem("livemap.places", showPlaces ? "1" : "0"); } catch {} poiLayer.schedule(); };
-    const cr = document.createElement("label");
-    cr.innerHTML = '<input type="checkbox" data-extra="1"><span class="sw" style="background:#c8463a"></span><span class="t">Creatures near players</span>';
-    const cb2 = cr.querySelector("input");
-    cb2.checked = showCreatures;
-    cb2.onchange = () => {
-      showCreatures = cb2.checked;
-      try { localStorage.setItem("livemap.creatures", showCreatures ? "1" : "0"); } catch {}
-      if (showCreatures) { creatureLayer.addTo(map); creaturesVersion = -1; } else { creatureLayer.remove(); }
-      drawCreatures();
-    };
-    list.prepend(wxHead, wx, sh, fg, rg, pl, cr);
+    list.prepend(wxHead, wx, sh, fg, rg);
     shroudLabel();
     const dHead = document.createElement("div"); dHead.className = "group"; dHead.textContent = "Discovered";
     const dRow = document.createElement("div"); dRow.className = "disc";
     dRow.innerHTML = '<select id="discMode"><option value="all">All places</option><option value="known">Discovered</option>'
       + '<option value="unknown">Not discovered</option></select><select id="discBy"></select><span class="disc-note" id="discNote"></span>';
-    cr.after(dHead, dRow);
+    rg.after(dHead, dRow);
     const modeSel = dRow.querySelector("#discMode"), bySel = dRow.querySelector("#discBy");
     modeSel.value = discMode;
     modeSel.onchange = () => { discMode = modeSel.value; try { localStorage.setItem("livemap.discMode", discMode); } catch {} poiLayer.invalidate(); };
@@ -1055,14 +892,12 @@
   }
 
   let rawPoiData = null;
-  let PLACES = [];   // [name, x, z, NAME, how often the name is used], names used once first
   function rebuildPois() {
     const data = JSON.parse(JSON.stringify(rawPoiData));
     // Discovery keys belong to the pois.json order, so attach them before altars and finds append.
     for (const [i, k] of Object.entries(data.discoveryKeys || {})) if (data.pois[+i]) data.pois[+i].k = k;
     applyBases(data, basesData);
     applyFinds(data, findsData);
-    applyObjects(data, objectsData);
     poiData = data;
     discInvalidate();
     preparePois(data);
@@ -1078,10 +913,6 @@
     if (!data) return;
     iconFiles = icons || {};
     rawPoiData = data;
-    const uses = new Map();
-    for (const [name] of data.places || []) uses.set(name, (uses.get(name) || 0) + 1);
-    PLACES = (data.places || []).map(([name, x, z]) => [name, x, z, name.toUpperCase(), uses.get(name)])
-      .sort((a, b) => a[4] - b[4]);
     findsData = finds;
     findsVersion = finds ? finds.version : -1;
     basesData = bases;
@@ -1241,81 +1072,6 @@
       drawFog();
       poiLayer.invalidate();
     }).catch(() => {}).finally(() => { discFetching = false; });
-  }
-
-  // Creatures (/creatures, every 2 s): what the server has loaded around the players right now.
-  // Enemies red (brighter in a fight), animals pale, bosses large with their name. The server
-  // knows names for bosses only (pois.json creatureNames); other kinds come from the template.
-  let showCreatures = (() => { try { return localStorage.getItem("livemap.creatures") !== "0"; } catch { return true; } })();
-  const creatureRenderer = L.canvas({ padding: 0.3 });
-  const creatureLayer = L.layerGroup();
-  const creatureMarks = new Map();
-  let creaturesData = null, creaturesVersion = -1, creaturesFetching = false;
-  const CREATURE_KINDS = [[/willowisp/i, "Will-o'-wisp"], [/icewisp/i, "Ice wisp"], [/hound/i, "Hound"], [/wolf/i, "Wolf"],
-    [/sabertooth/i, "Sabertooth"], [/boar/i, "Boar"], [/(^|_)rat(_|$)/i, "Rat"], [/(^|_)bat(_|$)/i, "Bat"], [/wasp/i, "Wasp"],
-    [/bunny/i, "Bunny"], [/catdeer/i, "Catdeer"], [/yak/i, "Yak"], [/goat/i, "Goat"], [/sanddigger/i, "Sanddigger"],
-    [/vulture/i, "Vulture"], [/spider/i, "Spider"], [/critter/i, "Critter"], [/slime/i, "Slime"], [/tentacle/i, "Tentacle"],
-    [/spitter/i, "Spitter"], [/cyclops/i, "Cyclops"], [/vukah/i, "Vukah"], [/skeleton/i, "Skeleton"], [/lizardpeople|drak/i, "Drak"],
-    [/scavenger/i, "Scavenger"], [/fogger/i, "Fell"], [/ancientconstruct/i, "Ancient construct"], [/fish/i, "Fish"]];
-  function creatureName(c) {
-    const known = rawPoiData && rawPoiData.creatureNames && rawPoiData.creatureNames[c.t];
-    if (known) return known;
-    for (const [re, name] of CREATURE_KINDS) if (re.test(c.t)) return name + (/elite/i.test(c.t) ? " (elite)" : "");
-    // Else the first word that is not a family, tier or variant word (as tools/loot_for_page.py).
-    const noise = /^(enemy|animal|wildlife|wildbeast|spawnpoints?|poi|signalreceiver|spawninbox|boss|fog|hook|neutral|hover|combat|summonstone|t\d+|\d+|[a-z]|sm|xl|ag\d)$/i;
-    const word = c.t.split("_").find(w => !noise.test(w)) || c.t;
-    return word.replace(/([a-z])([A-Z])/g, "$1 $2");
-  }
-  function drawCreatures() {
-    if (!showCreatures || !creaturesData) { creatureLayer.clearLayers(); creatureMarks.clear(); return; }
-    const seen = new Set();
-    for (const c of creaturesData.creatures) {
-      const key = c.e + "|" + c.t, fight = c.s === 6;
-      seen.add(key);
-      const style = c.boss ? { radius: 8, color: "#ffd27a", weight: 2, fillColor: "#e0412f", fillOpacity: 1 }
-        : c.animal ? { radius: 3, color: "#1a1208", weight: 1, fillColor: "#d8c79a", fillOpacity: 0.9 }
-        : { radius: fight ? 5 : 4, color: "#1a1208", weight: 1, fillColor: fight ? "#ff5a3c" : "#c8463a", fillOpacity: 0.95 };
-      const text = creatureName(c) + (c.lv ? " · Lv " + c.lv : "") + " · " + c.hp + "/" + c.max + " HP" + (fight ? " · fighting" : "");
-      let m = creatureMarks.get(key);
-      if (!m) {
-        m = L.circleMarker([c.z, c.x], { renderer: creatureRenderer, ...style })
-          .bindTooltip(text, { direction: "top", offset: [0, -8], permanent: !!c.boss, className: c.boss ? "player-label" : "" });
-        m.addTo(creatureLayer);
-        creatureMarks.set(key, m);
-      } else {
-        m.setLatLng([c.z, c.x]);
-        m.setStyle(style);
-        m.setTooltipContent(text);
-      }
-    }
-    for (const [k, m] of creatureMarks) if (!seen.has(k)) { creatureLayer.removeLayer(m); creatureMarks.delete(k); }
-  }
-  function maybeRefreshCreatures(version) {
-    if (version === undefined || version === creaturesVersion || creaturesFetching || !showCreatures) return;
-    creaturesFetching = true;
-    fetch("creatures" + q).then(r => r.ok ? r.json() : null).then(d => {
-      if (d) { creaturesData = d; creaturesVersion = d.version; drawCreatures(); }
-    }).catch(() => {}).finally(() => { creaturesFetching = false; });
-  }
-  if (showCreatures) creatureLayer.addTo(map);
-
-  // Deaths per player (counted by the server since the map was installed): "☠ 3" after the name.
-  let deathsData = null, deathsVersion = -1, deathsFetching = false;
-  function maybeRefreshDeaths(version) {
-    if (version === undefined || version === deathsVersion || deathsFetching) return;
-    deathsFetching = true;
-    fetch("deaths" + q).then(r => r.ok ? r.json() : null).then(d => {
-      if (d) { deathsData = d; deathsVersion = d.version; if (lastState) render(lastState); }
-    }).catch(() => {}).finally(() => { deathsFetching = false; });
-  }
-  const DEATH_CAUSES = ["killed", "fell", "shroud", "drowned"];
-  function deathsOf(name) {
-    const d = deathsData && deathsData.players && deathsData.players[name];
-    if (!d || !d.count) return null;
-    const parts = (d.causes || []).map((n, i) => n ? n + " " + DEATH_CAUSES[i] : null).filter(Boolean);
-    const ago = d.at ? Math.max(0, Math.round((Date.now() / 1000 - d.at) / 60)) : null;
-    const when = ago === null ? "" : " · last " + (ago < 1 ? "just now" : ago < 90 ? ago + " min ago" : ago < 2160 ? Math.round(ago / 60) + " h ago" : Math.round(ago / 1440) + " days ago");
-    return { count: d.count, title: d.count + (d.count === 1 ? " death" : " deaths") + (parts.length ? ": " + parts.join(", ") : "") + when };
   }
 
   let basesFetching = false;
@@ -1719,225 +1475,6 @@
   setInterval(() => { if (!document.hidden) poiLayer.invalidate(); }, 60000);
   // Console and test access: livemap.weather.weights([x, y, z]) etc.
   // For tools/perf/chest_check.mjs: the looted chests and what the page makes of them.
-  // Search: places and regions from the game's labels, named markers and the players online.
-  // Names that start with the text come first, then the ones with a word starting with it, then
-  // the rest; Enter or a click flies there and rings the spot.
-  const searchBox = document.getElementById("searchBox"), searchList = document.getElementById("searchResults");
-  let searchHits = [], searchPick = 0, searchPing = null;
-  function searchEntries() {
-    const out = [], seen = new Set();
-    const add = (name, kind, x, z, zoom, p) => {
-      const key = name + "|" + Math.round(x / 80) + "|" + Math.round(z / 80);
-      if (!seen.has(key)) { seen.add(key); out.push({ name, kind, x, z, zoom, p }); }
-    };
-    for (const p of (lastState && lastState.players) || []) if (p.pos) add(p.name || "Player " + p.entity, "Player", p.pos[0], p.pos[2], 0);
-    for (const [name, x, z] of (rawPoiData && rawPoiData.regions) || []) add(name, "Region", x, z, -2);
-    for (const [name, x, z] of PLACES) add(name, "Place", x, z, 0);
-    if (LOOT) for (const it of LOOT.items) out.push({ name: it[1], kind: "Item", x: null, z: null, zoom: 0, item: it });
-    if (poiData) for (const p of poiData.pois) {
-      if (!p[4] || p.isFind) continue;
-      const c = poiData.categories[p[0]];
-      add(String(p[4]).split(" · ").pop(), c ? kindOf(c) : "Marker", p[1], p[3], 0.5, p);
-    }
-    return out;
-  }
-  // A category's label for one point: "Flame Shrines & Temples" -> "Flame Shrine & Temple".
-  const kindOf = cat => cat.label.replace(/([^s\W])s\b/g, "$1");
-  // The kind is left out when the name already says it ("Gold chest", "Flame Shrine").
-  const kindShown = h => {
-    const words = h.kind.toLowerCase().split(/[\s&]+/).filter(Boolean);
-    return h.name.toLowerCase().split(/\s+/).every(w => words.includes(w)) ? "" : h.kind;
-  };
-  // "Where do I get it?" (web/loot.json, built by tools/build_drops.py and tools/loot_for_page.py
-  // from the game's loot tables; fetched the first time the search is used): every item with its
-  // best sources and their chance, and per source its places (chests, enemies' spawn points,
-  // containers) or, for plants and scatter loot found everywhere, its regions. Picking an item
-  // lists its sources; picking a source rings all its places and flies to the nearest.
-  let LOOT = null, lootLoading = false;
-  function loadLoot() {
-    if (LOOT || lootLoading) return;
-    lootLoading = true;
-    fetch("loot.json" + q).then(r => r.ok ? r.json() : null).then(d => {
-      if (d) { LOOT = d; if (searchBox.value.trim().length >= 2 && !searchList.querySelector("li.head")) runSearch(); }
-    }).catch(() => {}).finally(() => { lootLoading = false; });
-  }
-  const SOURCE_KINDS = { enemy: "Enemy", chest: "Chest", container: "Container", node: "Pickup" };
-  function chanceText(c, kind) {
-    if (c >= 0.995) return "always";
-    const p = c * 100, per = kind === "enemy" ? " per kill" : kind === "chest" ? " per chest" : "";
-    return (p >= 10 ? Math.round(p) : p >= 1 ? p.toFixed(1) : p.toFixed(2)) + " %" + per;
-  }
-  const lootRenderer = L.canvas({ padding: 0.3 });
-  const lootLayer = L.layerGroup().addTo(map);
-
-  // Who "you" are for distances: the followed player, else the one picked under Discovered while
-  // online, else the only player online.
-  function searchMe() {
-    const ps = ((lastState && lastState.players) || []).filter(p => p.pos);
-    const nameOf = p => p.name || "Player " + p.entity;
-    return (follow !== null && ps.find(p => p.entity === follow)) || (discBy && ps.find(p => nameOf(p) === discBy))
-      || (ps.length === 1 ? ps[0] : null);
-  }
-  // The game draws no region borders; a point belongs to the region whose name (at its Ancient
-  // Spire) is nearest, which is right except close to a border.
-  function regionAt(x, z) {
-    let best = null, bd = Infinity;
-    for (const [name, rx, rz] of (rawPoiData && rawPoiData.regions) || []) {
-      const d = (rx - x) ** 2 + (rz - z) ** 2;
-      if (d < bd) { bd = d; best = name; }
-    }
-    return best;
-  }
-  const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  function awayText(from, x, z) {
-    const dx = x - from[0], dz = z - from[1], d = Math.hypot(dx, dz);
-    if (d < 25) return "here";
-    const dir = COMPASS[Math.round(((Math.atan2(dx, dz) * 180 / Math.PI) + 360) % 360 / 45) % 8];
-    return (d < 1000 ? Math.round(d / 10) * 10 + " m " : (d / 1000).toFixed(1) + " km ") + dir;
-  }
-  // Discovered by the player(s) chosen under Discovered: the game's own state for places with a
-  // key, else the explored area. null = not known (no data, or a kind that is never filtered).
-  function searchKnown(h) {
-    if (h.kind === "Player" || h.kind === "Region" || !discNames().length) return null;
-    if (h.p) return discKnown(h.p);
-    return EXP ? exploredAt(h.x, h.z) : null;
-  }
-  // Names that start with the text first, then a word starting with it, then the rest; a kind of
-  // point ("gold", "spire", "shrine") adds its five nearest points. Within a rank: players,
-  // regions, places, markers, then the nearest first. Each result says its region, how far and
-  // which way from you, and when the chosen player has not discovered it yet.
-  function runSearch() {
-    const q = searchBox.value.trim().toLowerCase();
-    const me = searchMe(), c = map.getCenter();
-    const from = me ? [me.pos[0], me.pos[2]] : [c.lng, c.lat];
-    searchHits = [];
-    if (q.length >= 2) {
-      const rank = n => { const s = n.toLowerCase(); return s.startsWith(q) ? 0 : s.split(/[\s'"(-]+/).some(w => w.startsWith(q)) ? 1 : s.includes(q) ? 2 : 9; };
-      const order = { Player: 0, Region: 1, Place: 2, Item: 4 };
-      const far = e => e.x === null ? 0 : (e.x - from[0]) ** 2 + (e.z - from[1]) ** 2;
-      const hits = searchEntries().map(e => ({ ...e, r: rank(e.name) })).filter(e => e.r < 9);
-      if (poiData && q.length >= 3) poiData.categories.forEach((cat, ci) => {
-        if (!cat.label.toLowerCase().split(/[\s&]+/).some(w => w.startsWith(q))) return;
-        const kind = kindOf(cat);
-        poiData.pois.filter(p => p[0] === ci).map(p => ({ name: p[4] ? String(p[4]).split(" · ").pop() : kind, kind, x: p[1], z: p[3], zoom: 0.5, p: p.isFind ? null : p, r: 1.5 }))
-          .sort((a, b) => far(a) - far(b)).slice(0, 5)
-          .forEach(e => { if (!hits.some(h => h.name === e.name && Math.abs(h.x - e.x) < 80 && Math.abs(h.z - e.z) < 80)) hits.push(e); });
-      });
-      searchHits = hits.sort((a, b) => a.r - b.r || (order[a.kind] ?? 3) - (order[b.kind] ?? 3) || far(a) - far(b) || a.name.localeCompare(b.name)).slice(0, 8);
-    }
-    searchPick = 0;
-    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    for (const h of searchHits) {
-      if (h.kind === "Item") {
-        const best = h.item[2][0], g = LOOT.groups[best[0]];
-        h.meta = esc("best: " + g[0] + ", " + chanceText(best[1], g[1]) + (h.item[2].length > 1 ? " · " + h.item[2].length + " sources" : ""));
-        continue;
-      }
-      const known = searchKnown(h), parts = [];
-      if (h.kind !== "Region" && h.kind !== "Player") { const r = regionAt(h.x, h.z); if (r) parts.push(esc(r)); }
-      if (me && !(h.kind === "Player" && h.x === me.pos[0] && h.z === me.pos[2])) parts.push(esc(awayText(from, h.x, h.z)));
-      if (known === false) parts.push('<span class="nd">not discovered</span>');
-      h.meta = parts.join(" · ");
-    }
-    const meName = me ? me.name || "Player " + me.entity : "";
-    searchList.innerHTML = searchHits.map((h, i) => '<li role="option" data-i="' + i + '" aria-selected="' + (i === searchPick) + '"><span>'
-      + esc(h.name) + '</span><span class="k">' + esc(kindShown(h)) + "</span>" + (h.meta ? '<span class="m">' + h.meta + "</span>" : "") + "</li>").join("")
-      + (me && searchHits.length ? '<li class="from" aria-hidden="true">Distances from ' + esc(meName) + "</li>" : "");
-  }
-  function showSources(item) {
-    const me = searchMe(), c = map.getCenter(), from = me ? [me.pos[0], me.pos[2]] : [c.lng, c.lat];
-    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    searchHits = item[2].map(([gi, chance]) => {
-      const g = LOOT.groups[gi], pts = g[4];
-      let near = null;
-      if (pts) for (let i = 0; i < pts.length; i += 2) {
-        const d = (pts[i] - from[0]) ** 2 + (pts[i + 1] - from[1]) ** 2;
-        if (!near || d < near.d) near = { d, x: pts[i], z: pts[i + 1] };
-      }
-      const regions = LOOT.regions.filter((_, i) => (g[3] >> i) & 1);
-      const where = near ? g[2] + (g[2] === 1 ? " place" : " places") + " · nearest " + awayText(from, near.x, near.z)
-        : "found in " + (regions.length > 3 ? regions.length + " regions" : regions.join(", ") || "the world");
-      return { name: g[0], kind: SOURCE_KINDS[g[1]] || g[1], source: true, g, item, x: near ? near.x : null, z: near ? near.z : null, zoom: -0.5,
-        chance, d: near ? near.d : Infinity, meta: esc(chanceText(chance, g[1]) + " · " + where) };
-    }).sort((a, b) => Math.abs(a.chance - b.chance) > 0.02 ? b.chance - a.chance : a.d - b.d);   // about as likely: the nearest first
-    searchPick = 0;
-    searchBox.value = item[1];
-    const meName = me ? me.name || "Player " + me.entity : "";
-    searchList.innerHTML = '<li class="head" aria-hidden="true">Where to get ' + esc(item[1]) + "</li>"
-      + searchHits.map((h, i) => '<li role="option" data-i="' + i + '" aria-selected="' + (i === searchPick) + '"><span>' + esc(h.name)
-        + '</span><span class="k">' + esc(h.kind) + '</span><span class="m">' + h.meta + "</span></li>").join("")
-      + (me ? '<li class="from" aria-hidden="true">Distances from ' + esc(meName) + "</li>" : "");
-  }
-  function stopFollowing() {
-    if (follow !== null) { followName = null; setFollow(null); }
-  }
-  function showSource(h) {
-    lootLayer.clearLayers();
-    stopFollowing();
-    const pts = h.g[4];
-    if (pts) for (let i = 0; i < pts.length; i += 2) {
-      L.circleMarker([pts[i + 1], pts[i]], { renderer: lootRenderer, radius: 6, color: "#f6dca0", weight: 2, fillColor: "#e8b04a", fillOpacity: 0.35,
-        interactive: false }).addTo(lootLayer);
-    }
-    searchList.querySelectorAll("li[data-i]").forEach(li => li.setAttribute("aria-selected", String(+li.dataset.i === searchHits.indexOf(h))));
-    if (h.x === null) return;
-    map.setView([h.z, h.x], Math.max(map.getZoom(), h.zoom), { animate: true });
-    if (searchPing) searchPing.remove();
-    searchPing = L.marker([h.z, h.x], { interactive: false, icon: L.divIcon({ className: "search-ping", iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(map);
-    setTimeout(() => { if (searchPing) { searchPing.remove(); searchPing = null; } }, 4500);
-  }
-  function goTo(hit) {
-    if (hit.kind === "Item") return showSources(hit.item);
-    if (hit.source) return showSource(hit);
-    lootLayer.clearLayers();
-    stopFollowing();
-    map.setView([hit.z, hit.x], Math.max(map.getZoom(), hit.zoom), { animate: true });
-    if (searchPing) searchPing.remove();
-    searchPing = L.marker([hit.z, hit.x], { interactive: false, icon: L.divIcon({ className: "search-ping", iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(map);
-    setTimeout(() => { if (searchPing) { searchPing.remove(); searchPing = null; } }, 4500);
-    searchBox.value = hit.name;
-    searchList.innerHTML = "";
-    searchHits = [];
-  }
-  searchBox.addEventListener("input", runSearch);
-  searchBox.addEventListener("focus", loadLoot);
-  searchBox.addEventListener("keydown", e => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      if (!searchHits.length) return;
-      e.preventDefault();
-      searchPick = (searchPick + (e.key === "ArrowDown" ? 1 : searchHits.length - 1)) % searchHits.length;
-      searchList.querySelectorAll("li[data-i]").forEach((li, i) => li.setAttribute("aria-selected", String(i === searchPick)));
-    } else if (e.key === "Enter" && searchHits.length) {
-      e.preventDefault();
-      goTo(searchHits[searchPick]);
-    } else if (e.key === "Escape") {
-      searchBox.value = ""; searchList.innerHTML = ""; searchHits = []; lootLayer.clearLayers();
-    }
-  });
-  searchList.addEventListener("mousedown", e => { const li = e.target.closest("li[data-i]"); if (li) { e.preventDefault(); goTo(searchHits[+li.dataset.i]); } });
-  window.livemap.deaths = { of: deathsOf, data: () => deathsData };
-  window.livemap.objects = { chests: () => [...chestByPoi].map(([i, c]) => ({ poi: i, empty: c.empty, t: c.t })), data: () => objectsData,
-    creatures: () => [...creatureMarks.values()].map(m => ({ ll: m.getLatLng(), text: m.getTooltip().getContent(), r: m.options.radius })) };
-
-  // A link with &mark=x,z,Name (several joined by ";") puts a pulsing ring with that name on each
-  // spot and opens the map at the first one: to point someone at a place.
-  const MARKS = (new URLSearchParams(location.search).get("mark") || "").split(";")
-    .map(s => s.split(",")).map(([x, z, ...name]) => ({ x: +x, z: +z, name: name.join(",").trim() }))
-    .filter(m => Number.isFinite(m.x) && Number.isFinite(m.z) && (m.x || m.z));
-  function showMarks() {
-    for (const m of MARKS) {
-      const pin = L.marker([m.z, m.x], { interactive: false, zIndexOffset: 900,
-        icon: L.divIcon({ className: "mark-pin", html: '<span class="ring"></span><span class="dot"></span>', iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(map);
-      if (m.name) pin.bindTooltip(m.name, { permanent: true, direction: "top", offset: [0, -24], className: "player-label" }).openTooltip();
-    }
-    if (MARKS.length && !followName) map.setView([MARKS[0].z, MARKS[0].x], -1, { animate: false });
-  }
-  window.livemap.marks = () => MARKS;
-  window.livemap.search = { find: text => { searchBox.value = text; runSearch(); return searchHits.map(h => h.name + " · " + h.kind); },
-    meta: () => searchHits.map(h => h.meta.replace(/<[^>]+>/g, "")), me: () => { const m = searchMe(); return m ? m.name : null; },
-    loot: () => LOOT, loadLoot, ringed: () => lootLayer.getLayers().length,
-    go: () => searchHits.length && goTo(searchHits[searchPick]), placesDrawn: () => (poiLayer._placeBoxes || []).length, placeBoxes: () => poiLayer._placeBoxes || [] };
-
   // Movable panels (wide screens): drag the players, clock or marker panel by its title. It stays
   // inside the window, snaps to an edge closer than 24 px and is kept relative to the nearest
   // corner, so it stays put when the window changes size. The browser remembers each panel's place
@@ -2066,9 +1603,6 @@
     lastState = state;
     maybeRefreshFinds(state.findsVersion);
     maybeRefreshBases(state.basesVersion);
-    maybeRefreshDeaths(state.deathsVersion);
-    maybeRefreshObjects(state.objectsVersion);
-    maybeRefreshCreatures(state.creaturesVersion);
     maybeRefreshDiscovered(state.discoveredVersion);
     maybeRefreshExplored(state.exploredVersion);
     let revealed = false;
@@ -2101,30 +1635,22 @@
     const seen = new Set();
     for (const p of state.players) {
       seen.add(p.entity);
-      const color = playerColor(p.entity);
+      const color = colors[p.entity % colors.length];
       const name = p.name || ("Player " + p.entity);
       const w = p.pos ? weatherLabel(state.weather, p.pos) : null;
       const coords = p.pos ? p.pos[0].toFixed(0) + ", " + p.pos[2].toFixed(0) + (w ? " · " + WEATHER_LABEL[w] : "") : "–";
       let row = playerRows.get(p.entity);
       if (!row) {
         const li = document.createElement("li");
-        li.innerHTML = '<span class="dot"></span><span class="name"></span><span class="deaths"></span><span class="coords"></span><span class="follow">following</span>';
+        li.innerHTML = '<span class="dot"></span><span class="name"></span><span class="coords"></span><span class="follow">following</span>';
         li.title = "Click to follow, click again to stop";
         li.querySelector(".dot").style.background = color;
         list.appendChild(li);
-        row = { li, name: "", coords: "", deaths: "" };
+        row = { li, name: "", coords: "" };
         playerRows.set(p.entity, row);
       }
       if (row.name !== name) { row.li.querySelector(".name").textContent = name; row.name = name; }
       if (row.coords !== coords) { row.li.querySelector(".coords").textContent = coords; row.coords = coords; }
-      const dead = deathsOf(name), deathsKey = dead ? dead.count + "|" + dead.title : "";
-      if (row.deaths !== deathsKey) {
-        const el = row.li.querySelector(".deaths");
-        el.innerHTML = dead ? '<b aria-hidden="true">\u2620\ufe0e</b>' + dead.count : "";
-        el.title = dead ? dead.title : "";
-        if (dead) el.setAttribute("aria-label", dead.title); else el.removeAttribute("aria-label");
-        row.deaths = deathsKey;
-      }
       if (!p.pos) continue;
       const ll = toLatLng(p.pos);
       row.li.onclick = () => {
@@ -2176,7 +1702,6 @@
     for (const [entity, row] of playerRows) if (!seen.has(entity)) { row.li.remove(); playerRows.delete(entity); }
     if (follow !== null && !seen.has(follow)) setFollow(null);
     for (const [entity, m] of markers) if (!seen.has(entity)) { m.remove(); markers.delete(entity); }
-    for (const entity of colorOf.keys()) if (!seen.has(entity)) colorOf.delete(entity);
     updateCalibPlayers();
   }
 

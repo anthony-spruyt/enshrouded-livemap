@@ -6,11 +6,9 @@
 #include <string>
 
 #include "bases.h"
-#include "deaths.h"
 #include "discovered.h"
 #include "explored.h"
 #include "finds.h"
-#include "objects.h"
 #include "scan.h"
 
 namespace livemap::world {
@@ -49,14 +47,6 @@ void install_chest(const Targets& targets);
 bases::Store& bases_store();
 // Installs the optional bases hooks (no-op when the sites were not found).
 void install_bases(const Targets& targets);
-// Player deaths per name (the death hook counts them); main.cpp saves them, web.cpp serves them.
-deaths::Store& deaths_store();
-// Installs the optional death hook (no-op when the site was not found).
-void install_deaths(const Targets& targets);
-// Chests (looted or not), locks and switches and the creatures around the players, read from the
-// server's loaded world every 2 s once enabled; main.cpp saves the store, web.cpp serves it.
-objects::Store& objects_store();
-void enable_objects();
 // Research switch: after a player joins, post one chat line per message type 0..7.
 void enable_chat_probe(const Targets& targets);
 

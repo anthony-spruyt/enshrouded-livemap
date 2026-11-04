@@ -1,10 +1,15 @@
 // Runs only on private executable fixtures supplied to CMake; nothing is executed/hooked.
 #include <windows.h>
 #include <cassert>
+#include <cstddef>
 #include <cstring>
 #include <cstdio>
 #include <vector>
 #include "../src/scan.h"
+
+void flip_low_bit(uint8_t& value) {
+    value=std::to_integer<uint8_t>(std::byte{value}^std::byte{1});
+}
 
 void check(const wchar_t* path, const char* build) {
     const bool patch1=std::strcmp(build,"26083076")!=0;
@@ -44,10 +49,10 @@ void check(const wchar_t* path, const char* build) {
     if(std::strcmp(build,"26404334")==0)assert(targets.entity_table==0x830);
     if(patch1) {
         size_t accessor=targets.param_entity-origin;
-        copy[accessor]^=1;
+        flip_low_bit(copy[accessor]);
         assert(!livemap::find_targets(copy.data(),rejected,error));
         assert(error.find("param_entity")!=std::string::npos);
-        copy[accessor]^=1;
+        flip_low_bit(copy[accessor]);
     }
     const auto sections=IMAGE_FIRST_SECTION(mutable_nt);
     size_t text=0;

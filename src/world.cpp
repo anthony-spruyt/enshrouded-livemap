@@ -51,7 +51,12 @@ std::atomic<int64_t> g_time{0};
 std::atomic<uint64_t> g_time_ms{0};
 std::atomic<int64_t> g_world_time{0};  // the game's Time (ns) the daytime system was given
 std::atomic<uintptr_t> g_weather_system{0};
-std::atomic<uint32_t> g_entity_table{0x828};  // set in install() before the movement hook exists
+
+// World offset of the entity id table; install() sets it before the movement hook exists.
+std::atomic<uint32_t>& entity_table() {
+    static std::atomic<uint32_t> offset{0x828};
+    return offset;
+}
 
 SafetyHookMid g_player_table_hook;
 SafetyHookMid g_movement_hook;
@@ -151,7 +156,7 @@ void on_player_table(SafetyHookContext& ctx) {
 
 // Every entity the movement system moves passes here; only players are kept.
 void on_movement(SafetyHookContext& ctx) {
-    uint32_t entity = param_entity(ctx.rbx, g_entity_table.load());
+    uint32_t entity = param_entity(ctx.rbx, entity_table().load());
     if (entity == 0) return;
     for (Slot& s : g_slots) {
         if (s.entity.load(std::memory_order_relaxed) != entity) continue;
@@ -630,7 +635,7 @@ void enable_chat_probe(const Targets& t) {
 }
 
 bool install(const Targets& t, std::string& error) {
-    g_entity_table.store(t.entity_table);
+    entity_table().store(t.entity_table);
     log("entity ids  at world+0x%x (param_entity at %llx)", t.entity_table,
         static_cast<unsigned long long>(t.param_entity));
     if (create(g_player_table_hook, t.player_table, on_player_table, "player_table", error) &&

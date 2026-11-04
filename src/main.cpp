@@ -65,12 +65,13 @@ void set_link(const std::string& value) {
 }
 
 void start_link(const livemap::Config& config) {
-    if (!config.public_url.empty()) {
+    if (livemap::link::has_scheme(config.public_url)) {
         set_link(livemap::link::make(config.public_url, "", config.port, config.key));
         return;
     }
+    if (!config.public_url.empty()) livemap::log("PublicUrl ignored: it has no scheme (it must start with http:// or https://)");
     if (!config.detect_public_address) {
-        livemap::log("map link: unknown (DetectPublicAddress=0 and no PublicUrl); open port %d over TCP and share "
+        livemap::log("map link: unknown (DetectPublicAddress=0 and no usable PublicUrl); open port %d over TCP and share "
                      "http://<server address>:%d/?key=<Key>", config.port, config.port);
         return;
     }

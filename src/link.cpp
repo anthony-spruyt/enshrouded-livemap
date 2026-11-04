@@ -43,12 +43,15 @@ bool valid_ip(const std::string& t) {
     return parts == 4;
 }
 
+bool has_scheme(const std::string& url) {
+    return url.starts_with("http://") || url.starts_with("https://");
+}
+
 std::string make(const std::string& public_url, const std::string& ip, int port, const std::string& key) {
     std::string base;
-    if (!public_url.empty()) {
+    if (has_scheme(public_url)) {
         base = public_url;
         while (!base.empty() && base.back() == '/') base.pop_back();
-        if (!base.contains("://")) base = "http://" + base;
     } else if (valid_ip(ip) && port > 0) {
         base = "http://" + (ip.find(':') != std::string::npos ? "[" + ip + "]" : ip) + ":" + std::to_string(port);
     } else {

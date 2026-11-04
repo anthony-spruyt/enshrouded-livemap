@@ -1,6 +1,12 @@
+<!-- markdownlint-disable MD041 -->
 ## About this fork
 
-This is a fork of [oggii/enshrouded-livemap](https://github.com/oggii/enshrouded-livemap). It exists because upstream only accepts the game builds listed in its source and has no CI, so every Enshrouded server update stops the map until someone patches and rebuilds it. `main` is upstream's v1.7.0 plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `patches/` and `docs/COMPAT-*.md`). Upstream's later, unreleased work is reverted on `main` until it is reviewed. Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable. Compatibility patches are still written by hand.
+This is a fork of [oggii/enshrouded-livemap](https://github.com/oggii/enshrouded-livemap).
+It exists because upstream only accepts the game builds listed in its source and has no CI, so every Enshrouded server update stops the map until someone patches and rebuilds it.
+`main` is upstream's v1.7.0 plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `patches/` and `docs/COMPAT-*.md`).
+Upstream's later, unreleased work is reverted on `main` until it is reviewed.
+Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
+Compatibility patches are still written by hand.
 
 Release 1.7.1 supports Enshrouded dedicated server build 26404334 (SVN 1285601). The earlier builds listed in `src/scan.cpp` stay supported.
 
@@ -30,7 +36,7 @@ On the first start the mod writes `livemap.ini` with a random key and logs the l
 
 You share one link. The mod writes it to `livemap.log`:
 
-```
+```text
 map link: http://203.0.113.5:15637/?key=k3t9x...
 ```
 
@@ -41,7 +47,7 @@ from the log once (Discord, messenger) and let people bookmark it.
 The link has three parts, and the mod fills in all three itself:
 
 | Part | Where it comes from | What you do |
-|---|---|---|
+| --- | --- | --- |
 | Address | the server's public IP, asked from api.ipify.org once an hour | nothing; or set `PublicUrl` |
 | Port | `Port=auto`: the same number as the game's `queryPort`, but TCP | open that port for **TCP** too |
 | Key | `Key=` in `livemap.ini`, random on the first start | nothing; or set a word you like (see below) |
@@ -96,7 +102,7 @@ stops the IP lookup entirely.
 ## Settings (`livemap.ini`)
 
 | Key | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `Enabled` | `1` | `0` turns the mod off. |
 | `Port` | `auto` | `auto` = the game's `queryPort` number over TCP; or a fixed number. |
 | `PublicUrl` | empty | Address for the link, e.g. `https://map.example.com`. Empty = public IP. |

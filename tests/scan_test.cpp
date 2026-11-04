@@ -60,6 +60,7 @@ public:
     }
     void write32(size_t rva, uint32_t value) { std::memcpy(&bytes_[rva], &value, sizeof value); }
     void clear(size_t rva) { bytes_[rva] = 0; }
+    void drop_sections() { nt_->FileHeader.NumberOfSections = 0; }
 
 private:
     std::vector<uint8_t> bytes_;
@@ -175,6 +176,14 @@ void check_rejections(const snapshot::Row& row) {
         }
         livemap::ChatSites chat;
         EXPECT(!livemap::find_chat_sites(image.base(), chat), "%s: two join lines accepted", row.label);
+    }
+    {
+        Image image(row);
+        image.drop_sections();
+        livemap::ChatSites chat;
+        EXPECT(!livemap::find_targets(image.base(), t, error), "%s: image without .text accepted", row.label);
+        EXPECT(error.find("no .text section") != std::string::npos, "%s: %s", row.label, error.c_str());
+        EXPECT(!livemap::find_chat_sites(image.base(), chat), "%s: join line found without .text", row.label);
     }
 }
 

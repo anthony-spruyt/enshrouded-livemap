@@ -185,7 +185,6 @@ bool find_chat_sites(const uint8_t* base, ChatSites& out) {
             size = sec[i].Misc.VirtualSize;
         }
     }
-    if (code == nullptr) return false;
     for (const Sigset& set : kSigsets) {
         const Pattern* join = nullptr;
         const Pattern* post = nullptr;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.3...v1.7.4) (2026-11-04)
+
+
+### Bug Fixes
+
+* **builds:** support server build 26430253 ([#9](https://github.com/anthony-spruyt/enshrouded-livemap/issues/9)) ([0f5635e](https://github.com/anthony-spruyt/enshrouded-livemap/commit/0f5635eefb2c4fe86c737c34af13173c542d1dd3))
+
 ## [1.7.3](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.2...v1.7.3) (2026-11-04)
 
 

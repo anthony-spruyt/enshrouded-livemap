@@ -49,6 +49,11 @@ int wmain(int argc, wchar_t** argv) {
         std::printf("%-13s rva 0x%llx%s\n", s.name, static_cast<unsigned long long>(rva),
                     rva == s.expected ? "" : "  (UNEXPECTED)");
     }
+    const uintptr_t accessor = t.param_entity == 0 ? 0 : t.param_entity - reinterpret_cast<uintptr_t>(base);
+    const bool accessor_ok = !hotfix4 || (accessor == 0x65fc00 && t.entity_table == 0x830);
+    ok = ok && accessor_ok;
+    std::printf("%-13s rva 0x%llx entity table +0x%x%s\n", "param_entity", static_cast<unsigned long long>(accessor),
+                t.entity_table, accessor_ok ? "" : "  (UNEXPECTED)");
     std::printf(ok ? "OK: all hook sites found\n" : "FAIL: a hook site moved\n");
     return ok ? 0 : 1;
 }

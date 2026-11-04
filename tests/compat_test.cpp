@@ -41,6 +41,14 @@ void check(const wchar_t* path, const char* build) {
         assert(error.find(site.name)!=std::string::npos);
         copy[start]^=1;
     }
+    if(std::strcmp(build,"26404334")==0)assert(targets.entity_table==0x830);
+    if(patch1) {
+        size_t accessor=targets.param_entity-origin;
+        copy[accessor]^=1;
+        assert(!livemap::find_targets(copy.data(),rejected,error));
+        assert(error.find("param_entity")!=std::string::npos);
+        copy[accessor]^=1;
+    }
     const auto sections=IMAGE_FIRST_SECTION(mutable_nt);
     size_t text=0;
     for(WORD i=0;i<mutable_nt->FileHeader.NumberOfSections;i++)

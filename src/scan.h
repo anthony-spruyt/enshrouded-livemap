@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string>
+#include <string_view>
+#include "builds.h"
 #include "mining.h"
 
 namespace livemap {
@@ -40,11 +43,18 @@ struct Targets {
     uintptr_t param_entity = 0;
     uint32_t entity_table = 0x828;
     const char* build = nullptr;  // label of the recognised server build
+    const Build* matched = nullptr;  // its row in the data file
 };
+
+// The Targets slot that the site of that name in data/builds.json fills; null for a site that is no hook target.
+uintptr_t Targets::* target_member(std::string_view site);
 
 // Checks that the image at `base` is the analysed build and finds each hook site by a pattern
 // that must match exactly once. On failure `error` says why and nothing should be hooked.
 bool find_targets(const uint8_t* base, Targets& out, std::string& error);
+
+// The same with the build rows given, so the tests can scan with rows the data file would not allow.
+bool find_targets(const uint8_t* base, std::span<const Build> builds, Targets& out, std::string& error);
 
 // The server's own "Player X joined." chat line in the player table update (FUN_1407b34c0).
 // The map sends its line right after it, to the same chat queue and with the same sender.
@@ -58,6 +68,6 @@ struct ChatSites {
     uint32_t join_tag = 0;     // loca tag of "Player X joined." (the same call sends "left")
     bool shared = false;       // the call was hooked by another mod already
 };
-bool find_chat_sites(const uint8_t* base, ChatSites& out);
+bool find_chat_sites(const uint8_t* base, const Build& build, ChatSites& out);
 
 }  // namespace livemap

@@ -58,9 +58,9 @@ void on_join_after(SafetyHookContext&) {
 
 }  // namespace
 
-bool install_announce(const uint8_t* base, std::function<std::string()> line) {
+bool install_announce(const uint8_t* base, const Build& build, std::function<std::string()> line) {
     ChatSites sites;
-    if (!find_chat_sites(base, sites)) {
+    if (!find_chat_sites(base, build, sites)) {
         log("announce: the server's join line was not found, no chat line");
         return false;
     }

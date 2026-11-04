@@ -8,7 +8,7 @@ Upstream's later, unreleased work is reverted on `main` until it is reviewed.
 Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
 Compatibility patches are still written by hand.
 
-Release 1.7.1 supports Enshrouded dedicated server build 26404334 (SVN 1285601). The earlier builds listed in `src/scan.cpp` stay supported.
+Release 1.7.1 supports Enshrouded dedicated server build 26404334 (SVN 1285601). The earlier builds listed in `data/builds.json` stay supported.
 
 HD map users: take the HD asset from upstream's 1.7.0 release. This fork does not build one.
 
@@ -162,3 +162,7 @@ second adds its hook on top of the first one.
 `build.cmd` (Visual Studio 2022 Build Tools, CMake, Ninja) builds `build\iphlpapi.dll`, runs the
 unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
 `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
+
+The supported server builds, their hook signatures and the RVAs the selftest expects live in
+`data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so
+supporting another build whose code the existing signatures still match is a data change.

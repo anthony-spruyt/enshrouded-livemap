@@ -8,8 +8,11 @@
 #include <cstdio>
 #include <cstring>
 #include <print>
+#include <span>
 #include <string>
+#include <string_view>
 
+#include "builds_generated.h"
 #include "scan.h"
 
 int wmain(int argc, wchar_t** argv) {
@@ -29,29 +32,36 @@ int wmain(int argc, wchar_t** argv) {
         std::printf("INACTIVE: %s\n", error.c_str());
         return 1;
     }
-    const bool is_new = std::strcmp(t.build, "26083076") == 0;
-    const bool hotfix4 = std::strcmp(t.build, "26404334") == 0;
-    const bool patch1 = std::strcmp(t.build, "26319703") == 0 || hotfix4;
+    const livemap::Build* row = nullptr;
+    for (const livemap::Build& b : livemap::kBuilds) {
+        if (std::strcmp(b.label, t.build) == 0) row = &b;
+    }
+    if (row == nullptr) {
+        std::printf("INACTIVE: no expected RVAs for server build %s\n", t.build);
+        return 1;
+    }
     std::printf("server build %s\n", t.build);
-    struct { const char* name; uintptr_t at; uintptr_t expected; } sites[] = {
-        {"player_table", t.player_table, patch1 ? 0x7bed90ull : is_new ? 0x7b5800ull : 0x7b34c0ull},
-        {"movement", t.movement, patch1 ? 0x9581aull : is_new ? 0x91d2aull : 0x90e7aull},
-        {"daytime", t.daytime, hotfix4 ? 0x969c72ull : patch1 ? 0x969be2ull : is_new ? 0x95f842ull : 0x95d1f2ull},
-        {"registry", t.registry, patch1 ? 0x67e720ull : is_new ? 0x677240ull : 0x675e10ull},
-        {"mining", t.mining, patch1 ? 0x22a01aull : is_new ? 0x2245a8ull : 0x2236f8ull},
-        {"chest", t.chest, patch1 ? 0xa578aull : is_new ? 0xa1afaull : 0xa0c4aull},
-        {"bases", t.bases, patch1 ? 0xee3f0ull : is_new ? 0xea090ull : 0xe91e0ull},
-        {"chat_post", t.chat_post, hotfix4 ? 0x915200ull : patch1 ? 0x915170ull : is_new ? 0x90b330ull : 0x908ce0ull},
-    };
     bool ok = true;
-    for (const auto& s : sites) {
-        uintptr_t rva = s.at - reinterpret_cast<uintptr_t>(base);
-        ok = ok && rva == s.expected;
-        std::printf("%-13s rva 0x%llx%s\n", s.name, static_cast<unsigned long long>(rva),
-                    rva == s.expected ? "" : "  (UNEXPECTED)");
+    const auto expected_of = [&](std::span<const livemap::Named> list, std::string_view name) -> const livemap::Named* {
+        for (const livemap::Named& n : list) {
+            if (name == n.name) return &n;
+        }
+        return nullptr;
+    };
+    for (const livemap::Named& e : row->expected) {
+        if (std::strcmp(e.name, "param_entity") == 0) continue;
+        uintptr_t livemap::Targets::* const member = livemap::target_member(e.name);
+        const uintptr_t at = member == nullptr ? 0 : t.*member;
+        const uintptr_t rva = at - reinterpret_cast<uintptr_t>(base);
+        const bool same = member != nullptr && rva == e.value;
+        ok = ok && same;
+        std::printf("%-13s rva 0x%llx%s\n", e.name, static_cast<unsigned long long>(rva), same ? "" : "  (UNEXPECTED)");
     }
     const uintptr_t accessor = t.param_entity == 0 ? 0 : t.param_entity - reinterpret_cast<uintptr_t>(base);
-    const bool accessor_ok = !hotfix4 || (accessor == 0x65fc00 && t.entity_table == 0x830);
+    const livemap::Named* expected_accessor = expected_of(row->expected, "param_entity");
+    const livemap::Named* expected_table = expected_of(row->expected_operands, "entity_table");
+    const bool accessor_ok = (expected_accessor == nullptr || accessor == expected_accessor->value) &&
+                             (expected_table == nullptr || t.entity_table == expected_table->value);
     ok = ok && accessor_ok;
     std::println("{:<13} rva 0x{:x} entity table +0x{:x}{}", "param_entity", accessor, t.entity_table,
                  accessor_ok ? "" : "  (UNEXPECTED)");

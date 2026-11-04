@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iterator>
 #include <cstdlib>
+#include <format>
 #include <span>
 #include <vector>
 
@@ -184,15 +185,12 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
             return false;
         }
     }
-    const std::vector<uintptr_t> accessor = find_all(code, size, parse(kParamEntity));
-    if (accessor.size() == 1) {
+    if (const std::vector<uintptr_t> accessor = find_all(code, size, parse(kParamEntity)); accessor.size() == 1) {
         out.param_entity = accessor[0];
-        std::memcpy(&out.entity_table, reinterpret_cast<const void*>(accessor[0] + kParamEntityTableOffset),
-                    sizeof out.entity_table);
+        const uint8_t* disp = code + (accessor[0] - reinterpret_cast<uintptr_t>(code)) + kParamEntityTableOffset;
+        std::memcpy(&out.entity_table, disp, sizeof out.entity_table);
     } else if (patch1) {
-        std::snprintf(buf, sizeof buf, "pattern 'param_entity' matched %zu times (need exactly 1), not hooking",
-                      accessor.size());
-        error = buf;
+        error = std::format("pattern 'param_entity' matched {} times (need exactly 1), not hooking", accessor.size());
         return false;
     }
     // Optional sites: missing ones leave their feature off, the rest keeps working.

@@ -118,7 +118,8 @@ NICE_LABELS = [
 INTERIOR_CORNERS = [(1600.0, 8000.0), (2600.0, 8200.0)]  # (x below, z above) rectangles
 
 LABEL_STRIP = re.compile(
-    r"^(8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_)|_(noui|gameplay|gameplayonly|generic|placeholder)\b", re.IGNORECASE
+    r"(?:^(?:8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_))|_(?:noui|gameplay|gameplayonly|generic|placeholder)\b",
+    re.IGNORECASE,
 )
 BIOMES = re.compile(
     r"\b(deepforest|steppes|grassland|coldheights|coldHeights|desert|wetlands|ancientlands|"

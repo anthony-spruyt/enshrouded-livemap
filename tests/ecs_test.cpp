@@ -24,7 +24,8 @@ struct Param {
 };
 static_assert(offsetof(Param, index) == 8);
 
-uintptr_t address_of(const void* p) {
+template <typename T>
+uintptr_t address_of(const T* p) {
     return reinterpret_cast<uintptr_t>(p);
 }
 

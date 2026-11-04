@@ -113,6 +113,22 @@ const Build* recognise(const IMAGE_NT_HEADERS64* nt, std::span<const Build> buil
     return matches == 1 ? found : nullptr;
 }
 
+// A hook overwrites kCallLength bytes: they and the entity table read have to lie inside .text.
+bool read_match(const Code& code, const Pattern& p, uintptr_t start, Targets& out, std::string& error) {
+    if (!code.holds(start + p.offset, kCallLength)) {
+        error = std::format("pattern '{}' puts its hook site outside .text, not hooking", p.site);
+        return false;
+    }
+    const Named* table = find_operand(p, "entity_table");
+    if (table == nullptr) return true;
+    if (!code.holds(start + table->value, sizeof out.entity_table)) {
+        error = std::format("pattern '{}' reads its entity table outside .text, not hooking", p.site);
+        return false;
+    }
+    std::memcpy(&out.entity_table, reinterpret_cast<const void*>(start + table->value), sizeof out.entity_table);
+    return true;
+}
+
 bool join_sites(const Code& code, const Pattern& join, const Pattern& post, ChatSites& out) {
     const std::vector<uintptr_t> hits = find_all(code.begin, code.size, parse(join.bytes));
     if (hits.size() != 1) return false;
@@ -122,8 +138,8 @@ bool join_sites(const Code& code, const Pattern& join, const Pattern& post, Chat
     if (chat == 0 || tag == nullptr) return false;
     chat += post.offset;
     const uintptr_t call = hits[0] + join.offset;
-    // The call's five bytes and the opcode after them are read, the tag is copied out of the match.
-    if (!code.holds(chat, 1) || !code.holds(call, kCallLength + 1) || !code.holds(hits[0] + tag->value, sizeof out.join_tag)) {
+    // The call, the instruction after it and chat_post are hooked with kCallLength bytes each; the tag is copied out of the match.
+    if (!code.holds(chat, kCallLength) || !code.holds(call, 2 * kCallLength) || !code.holds(hits[0] + tag->value, sizeof out.join_tag)) {
         return false;
     }
     const uint8_t call_op = *reinterpret_cast<const uint8_t*>(call);
@@ -204,17 +220,7 @@ bool find_targets(const uint8_t* base, std::span<const Build> builds, Targets& o
         const uintptr_t start = find_unique(code.begin, code.size, p, count);
         out.*member = start == 0 ? 0 : start + p.offset;
         if (start != 0) {
-            if (!code.holds(start + p.offset, 1)) {
-                error = std::format("pattern '{}' puts its hook site outside .text, not hooking", p.site);
-                return false;
-            }
-            if (const Named* table = find_operand(p, "entity_table")) {
-                if (!code.holds(start + table->value, sizeof out.entity_table)) {
-                    error = std::format("pattern '{}' reads its entity table outside .text, not hooking", p.site);
-                    return false;
-                }
-                std::memcpy(&out.entity_table, reinterpret_cast<const void*>(start + table->value), sizeof out.entity_table);
-            }
+            if (!read_match(code, p, start, out, error)) return false;
         } else if (p.mandatory) {
             error = std::format("pattern '{}' matched {} times (need exactly 1), not hooking", p.site, count);
             return false;

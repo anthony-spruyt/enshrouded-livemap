@@ -5,8 +5,7 @@
 file(READ "${SOURCE_DIR}/data/builds.json" good)
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
-function(generate name json out_rc out_error)
-    file(WRITE "${WORK_DIR}/${name}.json" "${json}")
+function(generate_file name out_rc out_error)
     file(REMOVE "${WORK_DIR}/${name}.h")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" "-DBUILDS_JSON=${WORK_DIR}/${name}.json" "-DBUILDS_OUT=${WORK_DIR}/${name}.h"
@@ -17,8 +16,14 @@ function(generate name json out_rc out_error)
     set(${out_error} "${error}" PARENT_SCOPE)
 endfunction()
 
-function(expect_rejected name json phrase)
-    generate("${name}" "${json}" rc error)
+function(generate name json out_rc out_error)
+    file(WRITE "${WORK_DIR}/${name}.json" "${json}")
+    generate_file("${name}" rc error)
+    set(${out_rc} "${rc}" PARENT_SCOPE)
+    set(${out_error} "${error}" PARENT_SCOPE)
+endfunction()
+
+function(check_rejected name rc error phrase)
     if(rc EQUAL 0)
         message(SEND_ERROR "${name}: the generator accepted it")
     elseif(NOT error MATCHES "${phrase}")
@@ -26,6 +31,27 @@ function(expect_rejected name json phrase)
     elseif(EXISTS "${WORK_DIR}/${name}.h")
         message(SEND_ERROR "${name}: rejected, yet a header was written")
     endif()
+endfunction()
+
+function(expect_rejected name json phrase)
+    generate("${name}" "${json}" rc error)
+    check_rejected("${name}" "${rc}" "${error}" "${phrase}")
+endfunction()
+
+# The shipped file with the NUL byte of tests/nul_byte.bin put in after the first ${at} characters.
+function(reject_nul_after name at)
+    string(SUBSTRING "${good}" 0 ${at} head)
+    string(SUBSTRING "${good}" ${at} -1 tail)
+    file(WRITE "${WORK_DIR}/${name}.head" "${head}")
+    file(WRITE "${WORK_DIR}/${name}.tail" "${tail}")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E cat "${WORK_DIR}/${name}.head" "${SOURCE_DIR}/tests/nul_byte.bin" "${WORK_DIR}/${name}.tail"
+        OUTPUT_FILE "${WORK_DIR}/${name}.json" RESULT_VARIABLE rc)
+    if(NOT rc EQUAL 0)
+        message(FATAL_ERROR "${name}: could not build the file with a NUL byte")
+    endif()
+    generate_file("${name}" rc error)
+    check_rejected("${name}" "${rc}" "${error}" "contains a NUL byte")
 endfunction()
 
 function(expect_accepted name json)
@@ -43,6 +69,11 @@ endfunction()
 
 function(accept_set name value)
     string(JSON json SET "${good}" ${ARGN} "${value}")
+    expect_accepted("${name}" "${json}")
+endfunction()
+
+function(accept_removed name)
+    string(JSON json REMOVE "${good}" ${ARGN})
     expect_accepted("${name}" "${json}")
 endfunction()
 
@@ -74,7 +105,12 @@ reject_set(rejects_builds_object "builds must be an array" "{}" builds)
 good_get(label builds 0 label)
 string(REPLACE "\"${label}\"" "\"a\\u0000b\"" json "${good}")
 expect_rejected(rejects_nul_escape "${json}" "contains a .u0000 escape")
-
+string(LENGTH "${good}" good_length)
+reject_nul_after(rejects_nul_byte_after_document ${good_length})
+reject_nul_after(rejects_nul_byte_inside_document 100)
+# A space before a newline is the bytes 20 0a, whose hex text holds 00 across the byte boundary.
+string(REPLACE ",\n" ", \n" json "${good}")
+expect_accepted(accepts_00_across_a_byte_boundary "${json}")
 
 string(REPLACE "\"launch\"" "\"Bad Name\"" json "${good}")
 expect_rejected(rejects_malformed_sigset_name "${json}" "sigset name 'Bad Name' is malformed")
@@ -105,6 +141,12 @@ reject_set(rejects_malformed_operand_value "entity_table '0x1C' is malformed" "\
 reject_set(rejects_operand_number "entity_table must be a string" "5" sigsets launch 4 operands entity_table)
 reject_set(rejects_operands_array "operands must be an object" "[]" sigsets launch 4 operands)
 reject_set(rejects_malformed_pattern_operand_name "name 'Bad Name' is malformed" "\"0x4\"" sigsets launch 4 operands "Bad Name")
+# The code looks entity_table up on param_entity and join_tag on join_line; a misspelling would fall back to 0x828 or drop the join line.
+reject_set(rejects_misspelled_entity_table "launch/param_entity has the operand 'entity_tabel'" "{\"entity_tabel\": \"0x1c\"}" sigsets launch 4 operands)
+reject_set(rejects_misspelled_join_tag "launch/join_line has the operand 'join_tgat'" "{\"join_tgat\": \"0x29\"}" sigsets launch 9 operands)
+reject_set(rejects_entity_table_on_mining "launch/mining has the operand 'entity_table'" "{\"entity_table\": \"0x4\"}" sigsets launch 5 operands)
+reject_set(rejects_join_tag_on_param_entity "launch/param_entity has the operand 'join_tag'" "{\"join_tag\": \"0x4\"}" sigsets launch 4 operands)
+reject_set(rejects_entity_table_on_join_line "launch/join_line has the operand 'entity_table'" "{\"entity_table\": \"0x4\"}" sigsets launch 9 operands)
 reject_removed(rejects_missing_installed_site "sigset launch does not list 'daytime' as mandatory" sigsets launch 2)
 reject_set(rejects_optional_installed_site "sigset patch1 does not list 'registry' as mandatory" "false" sigsets patch1 3 mandatory)
 string(JSON launch_patterns GET "${good}" sigsets launch)
@@ -161,6 +203,11 @@ reject_set(rejects_expected_join_line "expects join_line, which is not a hook si
 reject_set(rejects_malformed_expected_rva "expected player_table '0x7B34C0' is malformed" "\"0x7B34C0\"" builds 0 expected player_table)
 reject_set(rejects_expected_rva_number "player_table must be a string" "1" builds 0 expected player_table)
 reject_removed(rejects_expected_without_installed_site "expects no RVA for 'registry'" builds 0 expected registry)
+foreach(site IN ITEMS mining chest bases chat_post)
+    reject_removed(rejects_expected_without_${site} "expects no RVA for '${site}'" builds 0 expected ${site})
+endforeach()
+# The selftest checks param_entity apart from the RVA lines, so a row may leave it out.
+accept_removed(accepts_expected_without_param_entity builds 3 expected param_entity)
 reject_set(expected_operand_outside_sigset "not_an_operand, which sigset patch1 does not have" "\"0x1000\"" builds 3 expected_operands not_an_operand)
 reject_set(rejects_malformed_expected_operand_name "name 'Bad Name' is malformed" "\"0x1000\"" builds 3 expected_operands "Bad Name")
 reject_set(rejects_expected_operands_array "expected_operands must be an object" "[]" builds 3 expected_operands)

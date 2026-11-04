@@ -70,7 +70,7 @@
           "type": "boolean"
         },
         "operands": {
-          "description": "Offsets from the start of the match of values the code reads out of it, 4 bytes each, so inside the pattern.",
+          "description": "Offsets from the start of the match of values the code reads out of it, 4 bytes each, so inside the pattern. Only entity_table on param_entity and join_tag on join_line are read.",
           "$ref": "#/$defs/hexMap"
         }
       }
@@ -123,7 +123,7 @@
           }
         },
         "expected": {
-          "description": "The RVA of each site in this executable, as the selftest checks it. Site names are those of the sigset, join_line excluded; player_table, movement, daytime and registry are always there.",
+          "description": "The RVA of each hook site in this executable, as the selftest checks it: every site of the sigset except join_line, which is not a hook and not allowed here, and param_entity, which may be left out. player_table, movement, daytime and registry are always there.",
           "$ref": "#/$defs/hexMap",
           "required": ["player_table", "movement", "daytime", "registry"],
           "properties": { "join_line": false }

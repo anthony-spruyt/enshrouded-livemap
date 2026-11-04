@@ -37,6 +37,8 @@ constexpr size_t kJoinLineRva = 0x400000;
 constexpr size_t kDuplicateRva = 0x500000;
 constexpr uint32_t kPlantedTable = 0x830;
 constexpr uint32_t kPlantedTag = 0x2fec0cdf;
+constexpr size_t kHookBytes = 5;     // a hook overwrites a jmp rel32
+constexpr size_t kTextEnd = 0x3000;  // a .text this short lets a pattern end on its last byte
 
 class Image {
 public:
@@ -309,7 +311,8 @@ void check_chat_sites_use_the_given_build(const snapshot::Row& row) {
     EXPECT(!livemap::find_chat_sites(image.base(), other.build(), chat), "%s: join line found for another build", row.label);
 }
 
-// Every address the scan derives has to lie inside .text: the hook sites and the bytes it reads there.
+// Every address the scan derives has to lie inside .text, to its last byte: the 5 bytes a hook overwrites
+// at each hook site and the 4 bytes it reads for the entity table.
 void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
     livemap::Targets t;
     std::string error;
@@ -318,7 +321,7 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
             Table table(row);
             snapshot::Site& site = table.site(name);
             const size_t was = site.offset;
-            site.offset = byte_count(site.hex) - (inside ? 1 : 0);
+            site.offset = byte_count(site.hex) - (inside ? kHookBytes : kHookBytes - 1);
             Image image(row);
             plant_build(image, row, true, false);
             image.clear(expected_rva(row, name) - was);
@@ -328,41 +331,77 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
             if (!inside) EXPECT(error.find(name) != std::string::npos, "%s: %s", row.label, error.c_str());
         }
     }
-    {
+    for (const bool inside : {true, false}) {
+        constexpr size_t kTableBytes = sizeof t.entity_table;
         Table table(row);
-        table.site("param_entity").operands[0].offset = byte_count(table.site("param_entity").hex) - 2;
+        table.site("param_entity").operands[0].offset = byte_count(table.site("param_entity").hex) - (inside ? kTableBytes : kTableBytes - 1);
         Image image(row);
         plant_build(image, row, true, false);
         image.clear(kAccessorRva);
         image.plant(kImageSize - byte_count(table.site("param_entity").hex), table.site("param_entity").hex);
-        EXPECT(!livemap::find_targets(image.base(), only(table.build()), t, error), "%s: operand read past .text accepted", row.label);
-        EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
+        const bool ok = livemap::find_targets(image.base(), only(table.build()), t, error);
+        EXPECT(ok == inside, "%s: operand %s .text: %s", row.label, inside ? "ending on the last byte of" : "read past", error.c_str());
+        if (!inside) EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
     }
 }
 
-// The call is read with the five bytes of its operand and the opcode after it: all of them inside .text.
-void check_join_call_stays_in_text(const snapshot::Row& row) {
-    constexpr size_t kTextEnd = 0x3000;
-    constexpr size_t kChatRva = 0x1100;
+// A .text that holds only chat_post and join_line. The join call, the instruction after it and chat_post are
+// hooked with kHookBytes each, and the join tag is copied out as 4 bytes.
+struct JoinLayout {
+    const char* call_op = "e8";
+    size_t join_start = 0x1800;
+    size_t chat_start = 0x1100;
+    size_t chat_offset = 0;
+    size_t tag_offset = snapshot::kJoinTagOffset;
+};
+
+bool find_join_sites(const snapshot::Row& row, const JoinLayout& at, livemap::ChatSites& chat) {
+    Table table(row);
+    for (const char* name : {"player_table", "movement", "daytime", "registry", "param_entity", "mining", "chest", "bases"}) {
+        table.remove(name);
+    }
+    table.site("chat_post").offset = at.chat_offset;
+    table.site("join_line").operands[0].offset = at.tag_offset;
+    Image image(row, kTextEnd);
+    image.plant(at.chat_start, table.site("chat_post").hex);
+    image.plant(at.join_start, table.site("join_line").hex);
+    image.write32(at.join_start + at.tag_offset, kPlantedTag);
+    const size_t call = at.join_start + snapshot::kJoinCallOffset;
+    image.plant(call, at.call_op);
+    image.write32(call + 1, static_cast<uint32_t>(at.chat_start + at.chat_offset - (call + 5)));
+    image.plant(call + 5, "44");
+    return livemap::find_chat_sites(image.base(), table.build(), chat);
+}
+
+// Each address of the join scan is checked to its last byte: the call and the instruction after it (twice
+// kHookBytes), the chat_post hook (kHookBytes) and the tag (4 bytes), one byte inside and one past .text.
+void check_join_sites_stay_in_text(const snapshot::Row& row) {
     for (const char* call_op : {"e8", "e9"}) {
         for (const bool inside : {true, false}) {
-            Table table(row);
-            for (const char* name : {"player_table", "movement", "daytime", "registry", "param_entity", "mining", "chest", "bases"}) {
-                table.remove(name);
-            }
-            const size_t join_start = kTextEnd - snapshot::kJoinCallOffset - (inside ? 6 : 3);
-            Image image(row, kTextEnd);
-            image.plant(kChatRva, table.site("chat_post").hex);
-            image.plant(join_start, table.site("join_line").hex);
-            image.write32(join_start + snapshot::kJoinTagOffset, kPlantedTag);
-            const size_t call = join_start + snapshot::kJoinCallOffset;
-            image.plant(call, call_op);
-            image.write32(call + 1, static_cast<uint32_t>(kChatRva - (call + 5)));
-            image.plant(call + 5, "44");
+            const size_t room = 2 * kHookBytes - (inside ? 0 : 1);
+            JoinLayout at;
+            at.call_op = call_op;
+            at.join_start = kTextEnd - snapshot::kJoinCallOffset - room;
             livemap::ChatSites chat;
-            EXPECT(livemap::find_chat_sites(image.base(), table.build(), chat) == inside, "%s: %s join call %s .text", row.label,
-                   call_op, inside ? "inside" : "reaching past the end of");
+            EXPECT(find_join_sites(row, at, chat) == inside, "%s: %s join call with %zu bytes of .text left", row.label, call_op, room);
         }
+    }
+    Table probe(row);
+    const size_t chat_bytes = byte_count(probe.site("chat_post").hex);
+    for (const bool inside : {true, false}) {
+        JoinLayout at;
+        at.chat_start = kTextEnd - chat_bytes;
+        at.chat_offset = chat_bytes - (inside ? kHookBytes : kHookBytes - 1);
+        livemap::ChatSites chat;
+        EXPECT(find_join_sites(row, at, chat) == inside, "%s: chat_post hook site %s .text", row.label, inside ? "inside" : "past the end of");
+    }
+    for (const bool inside : {true, false}) {
+        JoinLayout at;
+        at.join_start = kTextEnd - snapshot::kJoinCallOffset - 2 * kHookBytes;
+        at.tag_offset = kTextEnd - at.join_start - sizeof(uint32_t) + (inside ? 0 : 1);
+        livemap::ChatSites chat;
+        EXPECT(find_join_sites(row, at, chat) == inside, "%s: join tag %s .text", row.label, inside ? "ending on the last byte of" : "read past");
+        if (inside) EXPECT(chat.join_tag == kPlantedTag, "%s: join_tag 0x%x", row.label, chat.join_tag);
     }
 }
 
@@ -406,7 +445,7 @@ int main() {
         check_ambiguous_fingerprint(row);
         check_chat_sites_use_the_given_build(row);
         check_derived_addresses_stay_in_text(row);
-        check_join_call_stays_in_text(row);
+        check_join_sites_stay_in_text(row);
         if (row.patch1) {
             Image image(row);
             plant_build(image, row, false, false);

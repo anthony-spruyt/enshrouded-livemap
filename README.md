@@ -8,7 +8,7 @@ Upstream's later, unreleased work is reverted on `main` until it is reviewed.
 Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
 Compatibility patches are still written by hand.
 
-Release 1.7.1 supports Enshrouded dedicated server build 26404334 (SVN 1285601). The earlier builds listed in `data/builds.json` stay supported.
+The latest release supports Enshrouded dedicated server build 26430253 (SVN 1287369). The earlier builds listed in `data/builds.json` stay supported.
 
 HD map users: take the HD asset from upstream's 1.7.0 release. This fork does not build one.
 

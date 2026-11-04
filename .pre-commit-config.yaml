@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/pre-commit-config.json
+
+fail_fast: false
+default_language_version:
+  node: "system"
+repos:
+  - repo: "https://github.com/adrienverge/yamllint"
+    rev: "v1.38.0"
+    hooks:
+      - id: "yamllint"
+        args:
+          - "--config-file"
+          - ".yamllint.yml"
+  - repo: "https://github.com/pre-commit/pre-commit-hooks"
+    rev: "v6.0.0"
+    hooks:
+      - id: "check-merge-conflict"
+      - id: "trailing-whitespace"
+        args:
+          - "--markdown-linebreak-ext=md"
+      - id: "end-of-file-fixer"
+      - id: "mixed-line-ending"
+  - repo: "https://github.com/sirosen/texthooks"
+    rev: "1.0.0"
+    hooks:
+      - id: "fix-smartquotes"
+      - id: "fix-ligatures"
+  - repo: "https://github.com/zricethezav/gitleaks"
+    rev: "v8.30.1"
+    hooks:
+      - id: "gitleaks"
+        args:
+          - "--config"
+          - ".gitleaks.toml"
+  - repo: "https://github.com/shellcheck-py/shellcheck-py"
+    rev: "v0.11.0.1"
+    hooks:
+      - id: "shellcheck"
+  - repo: "https://github.com/scop/pre-commit-shfmt"
+    rev: "v3.12.0-2"
+    hooks:
+      - id: "shfmt"
+  - repo: "https://github.com/igorshubovych/markdownlint-cli"
+    rev: "v0.50.0"
+    hooks:
+      - id: "markdownlint"
+        args:
+          - "--fix"
+        exclude: "(^|/)(\\.angular|\\.git|\\.jekyll-cache|\\.mypy_cache|\\.nx|\\.output|\\.parcel-cache|\\.pnpm-store|\\.pytest_cache|\\.rbenv|\\.sf|\\.sfdx|\\.terraform|\\.terragrunt-cache|\\.turbo|\\.venv|\\.wireit|\\.worktrees|__pycache__|coverage|dist|node_modules|plans|site|tmp|worktrees)/|^\\.yarn/cache/|CLAUDE\\.md$|CHANGELOG\\.md$|^\\.claude/"
+  - repo: "local"
+    hooks:
+      - id: "xfg-managed"
+        name: "Block changes to files synced by repo-operator"
+        entry: "bash .claude/xfg-managed.sh staged"
+        language: "system"
+        pass_filenames: false
+        always_run: true
+  - repo: "https://github.com/Lucas-C/pre-commit-hooks"
+    rev: "v1.5.6"
+    hooks:
+      - id: "remove-crlf"
+      - id: "remove-tabs"
+        args:
+          - "--whitespaces-count"
+          - "2"

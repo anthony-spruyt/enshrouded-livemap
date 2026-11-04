@@ -1,15 +1,33 @@
-"""Resolve a path argument and refuse one that leaves the working directory (or an explicit root)."""
+"""Resolve path arguments and refuse one outside the working directory and the --root folders."""
 
 import os
 
 
-def safe_path(path, root=None):
+def safe_path(path, roots=()):
     if path is None:
         return None
-    base = os.path.realpath(root if root is not None else os.getcwd())
     resolved = os.path.realpath(path)
-    # A filesystem root (/ or C:\) already ends in the separator.
-    prefix = base if base.endswith(os.sep) else base + os.sep
-    if resolved == base or resolved.startswith(prefix):
-        return resolved
-    raise ValueError(f"{path} is outside {base}")
+    for base in (os.path.realpath(b) for b in (os.getcwd(), *roots)):
+        # A filesystem root (/ or C:\) already ends in the separator.
+        prefix = base if base.endswith(os.sep) else base + os.sep
+        if resolved == base or resolved.startswith(prefix):
+            return resolved
+    raise ValueError(f"{path} is outside the working directory and every --root")
+
+
+def add_root_option(ap):
+    ap.add_argument(
+        "--root",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="a folder path arguments may be inside, besides the working directory (repeatable)",
+    )
+
+
+def check_paths(ap, args, *names):
+    for name in names:
+        try:
+            setattr(args, name, safe_path(getattr(args, name), args.root))
+        except ValueError as e:
+            ap.error(str(e))

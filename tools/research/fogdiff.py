@@ -1,7 +1,10 @@
 """Compares two regdump frame files byte by byte and ranks 4 KB pages by changes that only ADD
 bits (after & before == before, after != before): what an explored-area bitmap does when fog is
 revealed. Pages with many such changes and few other changes come first.
-Usage: python3 fogdiff.py before.bin after.bin [top]"""
+Usage: python3 fogdiff.py before.bin after.bin [top] [--root <dir>]
+Every path must be inside the working directory (or a --root).
+"""
+import argparse
 import os
 import struct
 import sys
@@ -9,9 +12,16 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import safe_path
+from paths import add_root_option, check_paths
 
-top = int(sys.argv[3]) if len(sys.argv) > 3 else 25
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("before")
+ap.add_argument("after")
+ap.add_argument("top", nargs="?", type=int, default=25)
+add_root_option(ap)
+args = ap.parse_args()
+check_paths(ap, args, "before", "after")
+top = args.top
 
 
 def frames(path):
@@ -27,7 +37,7 @@ def frames(path):
     return out
 
 
-path_a, path_b = safe_path(sys.argv[1]), safe_path(sys.argv[2])
+path_a, path_b = args.before, args.after
 fa, fb = frames(path_a), frames(path_b)
 ha, hb = open(path_a, "rb"), open(path_b, "rb")
 pages = []

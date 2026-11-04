@@ -20,7 +20,7 @@ game's palette; every pixel comes from the game's data.
 Usage (descriptors from `kfc-parser unpack -f tkeen::UiTextureResource`):
   python tools/render_map.py --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
       --textures <unpack folder>/UiTextureResource --out web/tiles [--size 2048 --png preview.png] --root C:/
-Every path must be inside the working directory or --root.
+Every path must be inside the working directory (or a --root).
 """
 import argparse
 import io
@@ -34,7 +34,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kfc_content import Kfc, texture  # noqa: E402
-from paths import safe_path
+from paths import add_root_option, check_paths
 
 MAP_GUID = "01bcbd07-bdbf-41c0-9999-5d58fb1a3aa1"
 WORLD = 10240            # metres; one detail pixel = 1 m
@@ -43,7 +43,7 @@ HEIGHT_TOP = 31500       # baseHeight that gets the brightest colour (99.5 % of 
 HEIGHT_GAMMA = 0.5       # < 1 spreads the low land over more of the gradient
 METRES_PER_UNIT = 0.0517  # baseHeight -> metres (fitted against 3697 POI heights, r = 0.91)
 SHADE_STRENGTH = 1.5     # relief shading: colour *= 1 + strength * (detail - 127) / 127
-BRIGHTNESS = 1.2         # land colour gain (1.0 was too dark next to the markers)
+BRIGHTNESS = 1.2         # land colour gain
 CONTOURS = ((25, 0.20), (125, 0.55))   # (spacing in metres, opacity)
 CONTOUR_WIDTH = 0.9      # in output pixels
 SHROUD_ALPHA = 0.38
@@ -223,13 +223,9 @@ def main():
     ap.add_argument("--preview", help="save a small JPG preview (1024 px) here")
     ap.add_argument("--out", help="tile folder (only with --size 10240)")
     ap.add_argument("--format", choices=("jpg", "webp"), default="jpg", help="tile format")
-    ap.add_argument("--root", help="folder every path argument must be inside (default: the working directory)")
+    add_root_option(ap)
     args = ap.parse_args()
-    args.game = safe_path(args.game, args.root)
-    args.textures = safe_path(args.textures, args.root)
-    args.png = safe_path(args.png, args.root)
-    args.preview = safe_path(args.preview, args.root)
-    args.out = safe_path(args.out, args.root)
+    check_paths(ap, args, "game", "textures", "png", "preview", "out")
 
     data = load(args.game, args.textures)
     img = render(data, args.size)

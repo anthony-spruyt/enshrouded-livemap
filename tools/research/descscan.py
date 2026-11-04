@@ -1,7 +1,10 @@
 """Looks in a saved regdump frames file for knowledge descriptors (0x30 bytes: +0 name {int32
 offset from the field, uint32 length}, +8 id, +0xc index, +0x10 type 3/4/5, +0x11 player flag)
 whose id is one of the markers' "visible" knowledge ids. Prints each match with its name.
-Usage: python3 descscan.py frames.bin marker-ids.json"""
+Usage: python3 descscan.py frames.bin marker-ids.json [--root <dir>]
+Every path must be inside the working directory (or a --root).
+"""
+import argparse
 import json
 import os
 import struct
@@ -10,12 +13,19 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import safe_path
+from paths import add_root_option, check_paths
 
-ids_by = {int(k): v for k, v in json.load(open(safe_path(sys.argv[2])))["ids"].items()}
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("frames")
+ap.add_argument("idfile")
+add_root_option(ap)
+args = ap.parse_args()
+check_paths(ap, args, "frames", "idfile")
+
+ids_by = {int(k): v for k, v in json.load(open(args.idfile))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 found = 0
-with open(safe_path(sys.argv[1]), "rb") as f:
+with open(args.frames, "rb") as f:
     while True:
         head = f.read(16)
         if len(head) < 16:

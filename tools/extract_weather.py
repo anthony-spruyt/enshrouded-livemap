@@ -18,7 +18,7 @@ height map), so the page can colour snow without a player standing there.
 
 Usage: python tools/extract_weather.py --server <u-clean dir> --out web/weather.json
            [--game <client dir> --textures <unpack>/UiTextureResource] [--root <dir>]
-Every path must be inside the working directory or --root.
+Every path must be inside the working directory (or a --root).
 """
 import argparse
 import base64
@@ -31,7 +31,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import safe_path
+from paths import add_root_option, check_paths
 
 
 def mask_json(m):
@@ -85,12 +85,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--game")
     ap.add_argument("--textures")
-    ap.add_argument("--root", help="folder every path argument must be inside (default: the working directory)")
+    add_root_option(ap)
     args = ap.parse_args()
-    args.server = safe_path(args.server, args.root)
-    args.out = safe_path(args.out, args.root)
-    args.game = safe_path(args.game, args.root)
-    args.textures = safe_path(args.textures, args.root)
+    check_paths(ap, args, "server", "out", "game", "textures")
     path = glob.glob(os.path.join(args.server, "WeatherSystemResource", "*.json"))[0]
     r = json.load(open(path, encoding="utf-8"))
     out = {

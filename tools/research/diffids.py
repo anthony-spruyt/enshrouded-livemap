@@ -1,6 +1,9 @@
 """Compares two regdump frame files: where marker "visible" ids appear in the second but not the
 first (and the other way round). Read-only analysis on the host.
-Usage: python3 diffids.py before.bin after.bin marker-ids.json"""
+Usage: python3 diffids.py before.bin after.bin marker-ids.json [--root <dir>]
+Every path must be inside the working directory (or a --root).
+"""
+import argparse
 import json
 import os
 import struct
@@ -10,9 +13,17 @@ from collections import defaultdict
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import safe_path
+from paths import add_root_option, check_paths
 
-ids_by = {int(k): v for k, v in json.load(open(safe_path(sys.argv[3])))["ids"].items()}
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("before")
+ap.add_argument("after")
+ap.add_argument("idfile")
+add_root_option(ap)
+args = ap.parse_args()
+check_paths(ap, args, "before", "after", "idfile")
+
+ids_by = {int(k): v for k, v in json.load(open(args.idfile))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 
 
@@ -31,7 +42,7 @@ def hits(path):
     return out
 
 
-before, after = hits(safe_path(sys.argv[1])), hits(safe_path(sys.argv[2]))
+before, after = hits(args.before), hits(args.after)
 new, gone = sorted(after - before), sorted(before - after)
 print("before %d hits, after %d, new %d, gone %d" % (len(before), len(after), len(new), len(gone)))
 for title, rows in (("NEW", new), ("GONE", gone)):

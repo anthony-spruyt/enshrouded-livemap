@@ -1,12 +1,25 @@
 """The sorted id array around an address in two regdump frame files: its bounds (longest run of
 uint32 sorted by their low 15 bits... checked by trying both orders), its length, and which values
-are only in one of them. Usage: python3 setdiff.py before.bin after.bin <addr hex> [names.tsv]"""
+are only in one of them.
+Usage: python3 setdiff.py before.bin after.bin <addr hex> [names.tsv] [--root <dir>]
+Every path must be inside the working directory (or a --root).
+"""
+import argparse
 import os
 import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import safe_path
+from paths import add_root_option, check_paths
+
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("before")
+ap.add_argument("after")
+ap.add_argument("addr")
+ap.add_argument("names", nargs="?")
+add_root_option(ap)
+args = ap.parse_args()
+check_paths(ap, args, "before", "after", "names")
 
 
 def window(path, addr, span=1 << 20):
@@ -36,7 +49,7 @@ def run(lo, data, addr, key):
     return lo + 4 * a, words[a:b + 1]
 
 
-before_path, after_path, addr = safe_path(sys.argv[1]), safe_path(sys.argv[2]), int(sys.argv[3], 16)
+before_path, after_path, addr = args.before, args.after, int(args.addr, 16)
 for name, key in (("low15", lambda v: v & 0x7FFF), ("low16", lambda v: v & 0xFFFF), ("full", lambda v: v)):
     lo, d = window(before_path, addr)
     s0, w0 = run(lo, d, addr, key)
@@ -50,8 +63,8 @@ lo, d = window(after_path, addr)
 s1, w1 = run(lo, d, addr, key)
 print("first words:", " ".join("%08x" % v for v in w1[:8]), "... last:", " ".join("%08x" % v for v in w1[-4:]))
 names = {}
-if len(sys.argv) > 4:
-    for line in open(safe_path(sys.argv[4]), encoding="utf-8"):
+if args.names:
+    for line in open(args.names, encoding="utf-8"):
         p = line.rstrip("\n").split("\t")
         if len(p) >= 2:
             names[int(p[0], 16)] = p[1]

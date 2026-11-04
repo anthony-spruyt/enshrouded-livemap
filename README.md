@@ -1,3 +1,13 @@
+## About this fork
+
+This is a fork of [oggii/enshrouded-livemap](https://github.com/oggii/enshrouded-livemap). It exists because upstream only accepts the game builds listed in its source and has no CI, so every Enshrouded server update stops the map until someone patches and rebuilds it. `main` is upstream's v1.7.0 plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `patches/` and `docs/COMPAT-*.md`). Upstream's later, unreleased work is reverted on `main` until it is reviewed. Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable. Compatibility patches are still written by hand.
+
+Release 1.7.1 supports Enshrouded dedicated server build 26404334 (SVN 1285601). The earlier builds listed in `src/scan.cpp` stay supported.
+
+HD map users: take the HD asset from upstream's 1.7.0 release. This fork does not build one.
+
+The text below is upstream's.
+
 # Enshrouded Live Map
 
 A server-side mod for Enshrouded dedicated servers. The server serves a web map: players with

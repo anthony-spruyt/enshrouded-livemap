@@ -18,13 +18,13 @@ import sys
 
 sys.path.insert(0, site.getusersitepackages())
 import pefile  # noqa: E402
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("dll", nargs="?")
 add_root_option(ap)
 args = ap.parse_args()
-check_paths(ap, args, "dll")
+args.dll = checked(ap, args.dll, args.root)
 
 src = pathlib.Path(args.dll or r"C:\Windows\System32\iphlpapi.dll")
 out = pathlib.Path(__file__).resolve().parent.parent / "src"

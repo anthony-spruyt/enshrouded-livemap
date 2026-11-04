@@ -25,9 +25,9 @@ def add_root_option(ap):
     )
 
 
-def check_paths(ap, args, *names):
-    for name in names:
-        try:
-            setattr(args, name, safe_path(getattr(args, name), args.root))
-        except ValueError as e:
-            ap.error(str(e))
+def checked(ap, path, roots):
+    try:
+        resolved = safe_path(path, roots)
+    except ValueError as e:
+        ap.error(str(e))
+    return resolved

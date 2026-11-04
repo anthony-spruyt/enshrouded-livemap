@@ -164,7 +164,7 @@ void on_movement(SafetyHookContext& ctx) {
     uint32_t entity = param_entity(ctx.rbx, entity_table().load());
     if (entity == 0) return;
     for (Slot& s : g_slots) {
-        if (s.entity.load(std::memory_order_relaxed) != entity) continue;
+        if (s.entity.load() != entity) continue;
         uintptr_t pos = 0;
         uint64_t x = 0, y = 0, z = 0;
         if (read_ptr(ctx.rsp + 0x58, pos) && read_u64(pos, x) && read_u64(pos + 8, y) && read_u64(pos + 16, z)) {
@@ -231,7 +231,7 @@ void on_mining(SafetyHookContext& ctx) {
     if (name == nullptr || !finds::is_ore_like(name)) return;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load(std::memory_order_relaxed) != entity || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
+        if (s.entity.load() != entity || s.seen_ms.load() == 0) continue;
         std::string player;
         {
             std::lock_guard lock(g_names_mutex);
@@ -293,7 +293,7 @@ bool guess_position(uintptr_t record, double& x, double& y, double& z) {
 }
 
 void resolve_types(uintptr_t system, uint16_t offer_index, uintptr_t record) {
-    if (g_types_state.load(std::memory_order_relaxed) != 0) return;
+    if (g_types_state.load() != 0) return;
     uintptr_t owner = 0, world = 0, registry = 0;
     if (!read_ptr(system, owner) || !read_ptr(owner + 0x30, world) || !read_ptr(world, registry)) {
         log("CHEST registry not readable (system %llx)", static_cast<unsigned long long>(system));
@@ -321,7 +321,7 @@ std::string nearest_player(double x, double z, double within) {
     double best_d = within * within;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load(std::memory_order_relaxed) == 0 || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
+        if (s.entity.load() == 0 || s.seen_ms.load() == 0) continue;
         double dx = meters(s.x.load(std::memory_order_relaxed)) - x, dz = meters(s.z.load(std::memory_order_relaxed)) - z;
         double d = dx * dx + dz * dz;
         if (d < best_d) { best_d = d; best = i; }
@@ -349,7 +349,7 @@ void on_chest(SafetyHookContext& ctx) {
     int rl = -1;
     double x = 0, y = 0, z = 0;
     bool pos = false;
-    if (g_types_state.load(std::memory_order_relaxed) == 1) {
+    if (g_types_state.load() == 1) {
         rl = entity_has(record, g_idx_random_loot) ? 1 : 0;
         pos = read_position(entity_component(record, g_idx_transform, kTransformSize), x, y, z);
     }
@@ -531,10 +531,7 @@ void refresh_explored() {
     const uint64_t now = GetTickCount64();
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (const uint64_t seen = s.seen_ms.load(std::memory_order_relaxed);
-            s.entity.load(std::memory_order_relaxed) == 0 || seen == 0 || now - seen > 5000) {
-            continue;
-        }
+        if (const uint64_t seen = s.seen_ms.load(); s.entity.load() == 0 || seen == 0 || now - seen > 5000) continue;
         std::string name;
         {
             std::lock_guard lock(g_names_mutex);
@@ -725,14 +722,14 @@ std::string snapshot_json() {
     bool first = true;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        uint32_t entity = s.entity.load(std::memory_order_relaxed);
+        uint32_t entity = s.entity.load();
         if (entity == 0) continue;
         std::string name;
         {
             std::lock_guard lock(g_names_mutex);
             name = g_names[i];
         }
-        uint64_t seen = s.seen_ms.load(std::memory_order_relaxed);
+        uint64_t seen = s.seen_ms.load();
         char buf[256];
         if (seen == 0) {
             std::snprintf(buf, sizeof buf, "{\"entity\":%u,\"name\":\"", entity);
@@ -786,12 +783,12 @@ void log_diagnostics() {
     }
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        uint32_t entity = s.entity.load(std::memory_order_relaxed);
+        uint32_t entity = s.entity.load();
         if (entity == 0) continue;
         log("POS    entity %u x %.2f y %.2f z %.2f (seen %llu ms ago)", entity,
             meters(s.x.load(std::memory_order_relaxed)), meters(s.y.load(std::memory_order_relaxed)),
             meters(s.z.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(GetTickCount64() - s.seen_ms.load(std::memory_order_relaxed)));
+            GetTickCount64() - s.seen_ms.load());
     }
 }
 

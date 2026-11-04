@@ -19,7 +19,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kfc_content import Kfc, texture  # noqa: E402
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 SIZE = 72
 # web map category -> game marker texture. As in MapMarkerRegistryResource (marker type id =
@@ -84,7 +84,9 @@ def main():
     ap.add_argument("--out", required=True)
     add_root_option(ap)
     args = ap.parse_args()
-    check_paths(ap, args, "game", "textures", "out")
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
+    args.out = checked(ap, args.out, args.root)
     kfc = Kfc(args.game)
     desc = find_descriptors(args.textures, set(ICONS.values()))
     os.makedirs(args.out, exist_ok=True)

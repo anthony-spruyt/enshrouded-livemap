@@ -10,7 +10,7 @@ import glob
 import json
 import os
 
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 
 def main():
@@ -19,7 +19,8 @@ def main():
     ap.add_argument("--out", default="src/items_generated.h")
     add_root_option(ap)
     a = ap.parse_args()
-    check_paths(ap, a, "server", "out")
+    a.server = checked(ap, a.server, a.root)
+    a.out = checked(ap, a.out, a.root)
     reg = json.load(open(glob.glob(os.path.join(a.server, "ItemRegistryResource", "*.json"))[0], encoding="utf-8"))
     rows = []
     for i, (guid, name) in enumerate(zip(reg["itemRefs"], reg["dbgNames"])):

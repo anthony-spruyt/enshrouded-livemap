@@ -25,7 +25,7 @@ from PIL import Image, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render_map  # noqa: E402
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 RELIEF = 1.8      # strength of the added relief: colour *= 1 + RELIEF * highpass / 127
 BLUR = 3.0        # px at 1 m per pixel: the relief the picture already has (5 m per pixel)
@@ -76,7 +76,11 @@ def main():
     ap.add_argument("--format", choices=("jpg", "webp"), default="jpg", help="tile format")
     add_root_option(ap)
     args = ap.parse_args()
-    check_paths(ap, args, "picture", "game", "textures", "out", "preview")
+    args.picture = checked(ap, args.picture, args.root)
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
+    args.out = checked(ap, args.out, args.root)
+    args.preview = checked(ap, args.preview, args.root)
 
     picture = load_picture(args.picture, args.rgba_size)
     detail = render_map.load(args.game, args.textures)["detail"]

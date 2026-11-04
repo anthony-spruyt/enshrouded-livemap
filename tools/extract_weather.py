@@ -31,7 +31,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 
 def mask_json(m):
@@ -87,7 +87,10 @@ def main():
     ap.add_argument("--textures")
     add_root_option(ap)
     args = ap.parse_args()
-    check_paths(ap, args, "server", "out", "game", "textures")
+    args.server = checked(ap, args.server, args.root)
+    args.out = checked(ap, args.out, args.root)
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
     path = glob.glob(os.path.join(args.server, "WeatherSystemResource", "*.json"))[0]
     r = json.load(open(path, encoding="utf-8"))
     out = {

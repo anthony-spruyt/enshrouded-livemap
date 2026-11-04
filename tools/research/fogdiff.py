@@ -12,7 +12,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("before")
@@ -20,7 +20,8 @@ ap.add_argument("after")
 ap.add_argument("top", nargs="?", type=int, default=25)
 add_root_option(ap)
 args = ap.parse_args()
-check_paths(ap, args, "before", "after")
+args.before = checked(ap, args.before, args.root)
+args.after = checked(ap, args.after, args.root)
 top = args.top
 
 

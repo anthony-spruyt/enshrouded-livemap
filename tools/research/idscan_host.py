@@ -15,14 +15,15 @@ from collections import Counter, defaultdict
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("idfile")
 ap.add_argument("--save", metavar="FRAMES")
 add_root_option(ap)
 args = ap.parse_args()
-check_paths(ap, args, "idfile", "save")
+args.idfile = checked(ap, args.idfile, args.root)
+args.save = checked(ap, args.save, args.root)
 
 ids_by = {int(k): v for k, v in json.load(open(args.idfile))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)

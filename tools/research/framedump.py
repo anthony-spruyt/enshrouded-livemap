@@ -10,7 +10,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("frames")
@@ -20,7 +20,8 @@ ap.add_argument("before", nargs="?", default="0x100")
 ap.add_argument("after", nargs="?", default="0x400")
 add_root_option(ap)
 args = ap.parse_args()
-check_paths(ap, args, "frames", "idfile")
+args.frames = checked(ap, args.frames, args.root)
+args.idfile = checked(ap, args.idfile, args.root)
 path, idfile, addr = args.frames, args.idfile, int(args.addr, 16)
 before, after = int(args.before, 0), int(args.after, 0)
 ids = {int(k): v for k, v in json.load(open(idfile))["ids"].items()}

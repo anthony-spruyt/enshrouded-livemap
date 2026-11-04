@@ -12,7 +12,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("frames")
@@ -22,7 +22,7 @@ ap.add_argument("depth", nargs="?", type=int, default=3)
 ap.add_argument("span", nargs="?", default="0x400")
 add_root_option(ap)
 args = ap.parse_args()
-check_paths(ap, args, "frames")
+args.frames = checked(ap, args.frames, args.root)
 
 path = args.frames
 starts = [int(s, 16) for s in args.starts.split(",")]

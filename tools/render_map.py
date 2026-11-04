@@ -34,7 +34,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kfc_content import Kfc, texture  # noqa: E402
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 MAP_GUID = "01bcbd07-bdbf-41c0-9999-5d58fb1a3aa1"
 WORLD = 10240            # metres; one detail pixel = 1 m
@@ -225,7 +225,11 @@ def main():
     ap.add_argument("--format", choices=("jpg", "webp"), default="jpg", help="tile format")
     add_root_option(ap)
     args = ap.parse_args()
-    check_paths(ap, args, "game", "textures", "png", "preview", "out")
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
+    args.png = checked(ap, args.png, args.root)
+    args.preview = checked(ap, args.preview, args.root)
+    args.out = checked(ap, args.out, args.root)
 
     data = load(args.game, args.textures)
     img = render(data, args.size)

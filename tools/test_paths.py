@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from paths import add_root_option, check_paths, safe_path
+from paths import add_root_option, checked, safe_path
 
 TOOLS = Path(__file__).resolve().parent
 
@@ -53,8 +53,9 @@ def test_sibling_with_shared_prefix_is_refused(tree):
 
 
 def test_absolute_path_outside_is_refused(tree):
+    target = os.path.join(tree, "file.json")
     with pytest.raises(ValueError, match="outside"):
-        safe_path(os.path.join(tree, "file.json"))
+        safe_path(target)
 
 
 def test_symlink_leading_outside_is_refused(tree):
@@ -79,8 +80,9 @@ def test_path_under_any_of_several_roots_is_allowed(tree):
 
 def test_path_outside_every_root_is_refused(tree):
     first, second = os.path.join(tree, "first"), os.path.join(tree, "second")
+    target = os.path.join(tree, "third", "file.json")
     with pytest.raises(ValueError, match="outside"):
-        safe_path(os.path.join(tree, "third", "file.json"), roots=[first, second])
+        safe_path(target, roots=[first, second])
 
 
 def test_working_directory_stays_allowed_with_a_root(tree):
@@ -102,23 +104,26 @@ def test_root_option_is_repeatable_and_defaults_to_empty():
     assert make_parser("--root", "a", "--root", "b")[1].root == ["a", "b"]
 
 
-def test_check_paths_resolves_the_named_arguments(tree):
+def test_checked_resolves_the_given_path(tree):
     ap, args = make_parser("--out", "deeper/file.json")
-    check_paths(ap, args, "out")
-    assert args.out == os.path.join(tree, "inside", "deeper", "file.json")
+    assert checked(ap, args.out, args.root) == os.path.join(tree, "inside", "deeper", "file.json")
 
 
-def test_check_paths_accepts_a_path_under_a_given_root(tree):
+def test_checked_accepts_a_path_under_a_given_root(tree):
     target = os.path.join(tree, "elsewhere", "file.json")
     ap, args = make_parser("--out", target, "--root", os.path.join(tree, "elsewhere"))
-    check_paths(ap, args, "out")
-    assert args.out == target
+    assert checked(ap, args.out, args.root) == target
 
 
-def test_check_paths_ends_a_refused_path_with_a_usage_error(tree, capsys):
+def test_checked_keeps_an_absent_optional_argument_none(tree):
+    ap, args = make_parser()
+    assert checked(ap, args.out, args.root) is None
+
+
+def test_checked_ends_a_refused_path_with_a_usage_error(tree, capsys):
     ap, args = make_parser("--out", os.path.join(tree, "file.json"))
     with pytest.raises(SystemExit) as exit_info:
-        check_paths(ap, args, "out")
+        checked(ap, args.out, args.root)
     assert exit_info.value.code == 2
     assert "outside" in capsys.readouterr().err
 

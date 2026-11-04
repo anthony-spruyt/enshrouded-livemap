@@ -10,7 +10,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("before")
@@ -19,7 +19,9 @@ ap.add_argument("addr")
 ap.add_argument("names", nargs="?")
 add_root_option(ap)
 args = ap.parse_args()
-check_paths(ap, args, "before", "after", "names")
+args.before = checked(ap, args.before, args.root)
+args.after = checked(ap, args.after, args.root)
+args.names = checked(ap, args.names, args.root)
 
 
 def window(path, addr, span=1 << 20):

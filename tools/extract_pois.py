@@ -18,7 +18,7 @@ import os
 import re
 import sys
 
-from paths import add_root_option, check_paths
+from paths import add_root_option, checked
 
 # Map marker types of build 25988414 (keen::ecs::MapMarker.markerType), named from the
 # templates that use them. Order = order in the page's marker panel.
@@ -284,7 +284,11 @@ def main():
     ap.add_argument("--language", default="En_Us")
     add_root_option(ap)
     a = ap.parse_args()
-    check_paths(ap, a, "server", "out", "game", "loca", "registry")
+    a.server = checked(ap, a.server, a.root)
+    a.out = checked(ap, a.out, a.root)
+    a.game = checked(ap, a.game, a.root)
+    a.loca = checked(ap, a.loca, a.root)
+    a.registry = checked(ap, a.registry, a.root)
     names = None
     if a.game and a.loca and a.registry:
         from game_texts import GameTexts, guid_id

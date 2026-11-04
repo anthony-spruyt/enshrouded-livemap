@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(enshrouded_livemap VERSION 1.7.0 LANGUAGES CXX ASM_MASM) # x-release-please-version
+project(enshrouded_livemap VERSION 1.7.1 LANGUAGES CXX ASM_MASM) # x-release-please-version
 set(LIVEMAP_LOCAL_SUFFIX "" CACHE STRING "Optional local compatibility build identifier")
 
 set(CMAKE_CXX_STANDARD 23)

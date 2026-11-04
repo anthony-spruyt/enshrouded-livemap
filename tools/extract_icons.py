@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kfc_content import Kfc, texture  # noqa: E402
+from kfc_content import Kfc, texture
 
 SIZE = 72
 # web map category -> game marker texture. As in MapMarkerRegistryResource (marker type id =
@@ -56,12 +56,13 @@ def find_descriptors(folder, names):
     for f in os.listdir(folder):
         if not f.endswith(".json"):
             continue
-        d = json.load(open(os.path.join(folder, f), encoding="utf-8"))
+        with open(os.path.join(folder, f), encoding="utf-8") as fh:
+            d = json.load(fh)
         if d.get("debugName") in names:
             found[d["debugName"]] = d
     missing = set(names) - set(found)
     if missing:
-        raise SystemExit("not found in %s: %s" % (folder, ", ".join(sorted(missing))))
+        raise SystemExit("not found in {}: {}".format(folder, ", ".join(sorted(missing))))
     return found
 
 
@@ -92,7 +93,7 @@ def main():
     with open(os.path.join(args.out, "icons.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(index, f, indent=1, sort_keys=True)
         f.write("\n")
-    print("%d icons in %s" % (len(index), args.out))
+    print(f"{len(index)} icons in {args.out}")
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kfc_content import Kfc, texture  # noqa: E402
+from kfc_content import Kfc, texture
 
 MAP_GUID = "01bcbd07-bdbf-41c0-9999-5d58fb1a3aa1"
 WORLD = 10240  # metres; one detail pixel = 1 m
@@ -58,14 +58,18 @@ WEBP_QUALITY = 91  # --format webp; q91 = SSIM 0.9895 at 91 % of the bytes of JP
 
 def descriptor(folder, part):
     for name in os.listdir(folder):
-        if name.startswith(MAP_GUID) and name.endswith("_%d.json" % part):
-            return json.load(open(os.path.join(folder, name), encoding="utf-8"))
-    raise FileNotFoundError("map texture part %d not in %s" % (part, folder))
+        if name.startswith(MAP_GUID) and name.endswith(f"_{part}.json"):
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                return json.load(f)
+    raise FileNotFoundError(f"map texture part {part} not in {folder}")
 
 
 def load(game, folder):
     kfc = Kfc(game)
-    tex = lambda part: texture(kfc, descriptor(folder, part))
+
+    def tex(part):
+        return texture(kfc, descriptor(folder, part))
+
     data = {
         "baseGradient": tex(0)[0, :, :3].astype(np.float32),
         "isolineGradient": tex(1)[0, :, :3].astype(np.float32),
@@ -80,8 +84,8 @@ def load(game, folder):
         for x in range(10):
             part = 7 + 2 * (y * 10 + x)
             d, f = descriptor(folder, part), descriptor(folder, part + 1)
-            assert d["debugName"] == "DetailHeight(%d,%d)" % (x, y), d["debugName"]
-            assert f["debugName"] == "FogZone(%d,%d)" % (x, y), f["debugName"]
+            assert d["debugName"] == f"DetailHeight({x},{y})", d["debugName"]
+            assert f["debugName"] == f"FogZone({x},{y})", f["debugName"]
             rows = slice((9 - y) * 1024, (10 - y) * 1024)
             cols = slice(x * 1024, (x + 1) * 1024)
             detail[rows, cols] = texture(kfc, d)[:, :, 0]
@@ -139,8 +143,8 @@ def render(data, size, band=512):
         # one extra row above and below for the contour line gradients
         e0, e1 = max(0, r0 - 1), min(size, r1 + 1)
         box = (0, e0 * mpp / 8, 1280, e1 * mpp / 8)
-        H = resample(base, (size, e1 - e0), box)
-        t = (np.clip((H - SEA_FLOOR) / (HEIGHT_TOP - SEA_FLOOR), 0, 1)) ** HEIGHT_GAMMA
+        height = resample(base, (size, e1 - e0), box)
+        t = (np.clip((height - SEA_FLOOR) / (HEIGHT_TOP - SEA_FLOOR), 0, 1)) ** HEIGHT_GAMMA
         detail = area_mean(data["detail"][e0 * k : e1 * k], k)
         fog = data["fog"][e0 * k : e1 * k]
         level = fog[::k, ::k, 1]
@@ -150,7 +154,7 @@ def render(data, size, band=512):
         col *= np.clip(1 + SHADE_STRENGTH * (detail - 127) / 127, 0.2, 2.5)[..., None] * BRIGHTNESS
 
         # contour lines, anti-aliased by the local height change per pixel
-        metres = H * METRES_PER_UNIT
+        metres = height * METRES_PER_UNIT
         line_col = gradient(data["isolineGradient"], t)
         land = level != 16
         for spacing, alpha in CONTOURS:
@@ -208,7 +212,7 @@ def write_tiles(img, out_dir, levels, background, fmt="jpg"):
                     tile.save(buf, "WEBP", quality=WEBP_QUALITY, method=6)
                 else:
                     tile.save(buf, "JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
-                with open(os.path.join(out_dir, "%d_%d_%d.%s" % (z, x, y, fmt)), "wb") as f:
+                with open(os.path.join(out_dir, f"{z}_{x}_{y}.{fmt}"), "wb") as f:
                     f.write(buf.getvalue())
                 written += 1
                 total += len(buf.getvalue())
@@ -237,9 +241,9 @@ def main():
         # The average sea at the world's edge fills partial tiles and is the page background
         # (maps.json "background"), so the map has no visible edge.
         border = np.concatenate([img[:, :64].reshape(-1, 3), img[:, -64:].reshape(-1, 3)])
-        sea = tuple(int(round(v)) for v in border.mean(axis=0))
+        sea = tuple(round(v) for v in border.mean(axis=0))
         n, total = write_tiles(img, args.out, range(-5, 1), sea, args.format)
-        print("%d tiles, %.1f MB in %s; background %s" % (n, total / 2**20, args.out, "#%02x%02x%02x" % sea))
+        print(f"{n} tiles, {total / 2**20:.1f} MB in {args.out}; background #{sea[0]:02x}{sea[1]:02x}{sea[2]:02x}")
 
 
 if __name__ == "__main__":

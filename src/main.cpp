@@ -5,10 +5,13 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include <cstdio>
+#include <ctime>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include "a2s.h"
-
 #include "config.h"
 #include "log.h"
 #include "proxy.h"
@@ -18,12 +21,6 @@
 #include "announce.h"
 #include "link.h"
 #include "public_ip.h"
-
-#include <mutex>
-
-#include <cstdio>
-#include <ctime>
-#include <thread>
 
 namespace {
 
@@ -39,7 +36,7 @@ std::wstring exe_dir() {
 
 // The link to share: PublicUrl from livemap.ini, or the public IP asked once an hour.
 std::mutex g_link_mutex;
-std::string g_link;
+std::string g_link;  // NOLINT(runtime/string)
 
 std::string current_link() {
     std::lock_guard lock(g_link_mutex);

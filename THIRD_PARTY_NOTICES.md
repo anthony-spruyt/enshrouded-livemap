@@ -4,9 +4,9 @@ The iphlpapi.dll of this mod statically links the following libraries. The web p
 livemap folder uses the font Alegreya (see the end of this file); its map art, icons and UI
 graphics come from Enshrouded's own game files, (c) Keen Games.
 
-## SafetyHook (https://github.com/cursey/safetyhook), v0.7.0
+## SafetyHook (<https://github.com/cursey/safetyhook>), v0.7.0
 
-```
+```text
 Boost Software License - Version 1.0 - August 17th, 2003
 
 Permission is hereby granted, free of charge, to any person or organization
@@ -29,11 +29,12 @@ FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
 SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
 FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.```
-
-## Zydis (https://github.com/zyantific/zydis)
-
+DEALINGS IN THE SOFTWARE.
 ```
+
+## Zydis (<https://github.com/zyantific/zydis>)
+
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-2024 Florian Bernd
@@ -59,9 +60,9 @@ SOFTWARE.
 
 ```
 
-## Zycore (https://github.com/zyantific/zycore-c)
+## Zycore (<https://github.com/zyantific/zycore-c>)
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2018-2024 Florian Bernd
@@ -87,7 +88,7 @@ SOFTWARE.
 
 ```
 
-## Alegreya (https://github.com/huertatipografica/Alegreya), livemap/fonts
+## Alegreya (<https://github.com/huertatipografica/Alegreya>), livemap/fonts
 
 Copyright 2011 The Alegreya Project Authors. Licensed under the SIL Open Font License,
 Version 1.1; the full licence is in livemap/fonts/OFL.txt.

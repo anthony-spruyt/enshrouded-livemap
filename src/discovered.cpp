@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace livemap::discovered {
 

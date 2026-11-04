@@ -26,9 +26,9 @@ int failures = 0;
     } while (0)
 
 const livemap::Named* find(std::span<const livemap::Named> list, const char* name) {
-    for (const livemap::Named& n : list) {
-        if (std::strcmp(n.name, name) == 0) {
-            return &n;
+    for (size_t i = 0; i < list.size(); ++i) {
+        if (std::strcmp(list[i].name, name) == 0) {
+            return &list[i];
         }
     }
     return nullptr;

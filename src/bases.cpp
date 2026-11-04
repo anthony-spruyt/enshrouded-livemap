@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 namespace livemap::bases {
 

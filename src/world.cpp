@@ -9,6 +9,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <safetyhook.hpp>
@@ -486,7 +487,7 @@ void log_raw_slot(int index, uintptr_t slot) {
     for (int i = 0; i < 0x40; ++i) {
         uint8_t c = 0;
         read_u8(slot + kName + i, c);
-        std::snprintf(hex + i * 3, 4, "%02x ", c);
+        std::snprintf(hex + i * 3, 4, "%02x ", c);  // NOLINT(runtime/printf)
     }
     log("SLOT   %d raw +0x20: %s", index, hex);
 }

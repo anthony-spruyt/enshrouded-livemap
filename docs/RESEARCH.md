@@ -118,7 +118,7 @@ The server has the enum strings and the "ambient_effects" name, but not this sam
   entities[].templateIndex -> templates[] guid, transform fixed point (hi + lo/65536 metres).
   Neither the server nor the client chunks carry the component directly (0 hits), only templates.
 - Chests are templates named LootChest_Random_<wood|silver|gold|shell>[_Locked_Pickable_T..]
-  [_fog][_water][_Sarcophagus]: 3141 placed, plus 38 _FishingLocation_* treasure spots.
+  \[_fog\]\[_water\]\[_Sarcophagus\]: 3141 placed, plus 38 _FishingLocation_* treasure spots.
 - Dungeon interiors are placed off the island in the corner x < 1600, z > 8000 (Fallen Crypt
   save points, 245 sarcophagi); the extractor drops them.
 - kfc-parser filters need the qualified name (`-f tkeen::MapMarkerRegistryResource`); the client
@@ -205,8 +205,8 @@ records at world+0x188), [rbp+0x7450] = the system, [rbp+0x38] = pointer to the 
 index of InteractionOfferRuntime that the system uses.
 
 Which entities: templates with `InteractionOfferRuntime.defaultVerbId` 1317200649 are the
-loot chests (69 LootChest_Random_* with RandomLootContainer) but also 104 others, among them
-all player storage (Prop_Decoration_T*_Storage_*, Base_Chest_Player_Storage); 3711698580 is the
+loot chests (69 `LootChest_Random_*` with RandomLootContainer) but also 104 others, among them
+all player storage (`Prop_Decoration_T*_Storage_*`, Base_Chest_Player_Storage); 3711698580 is the
 locked verb (29 locked random chests, 47 locked doors). So the verb only pre-filters; the
 `keen::ecs::RandomLootContainer` component decides.
 
@@ -245,7 +245,7 @@ from `kfc-parser unpack -f tkeen::UiTextureResource`.
 (tileCount 10 x 10) has 207 texture parts, which a shader combines:
 
 | Part | Name | Format | Content |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 0 | baseGradient | 151 x 1 RGBA | colour by height, dark purple (59,42,55) to beige (169,169,156) |
 | 1 | isolineGradient | 128 x 1 RGBA | contour line colour by height |
 | 2 | fogZoneBorderGradient | 32 x 1 | brightness across a shroud border (0 at the edge, peak, plateau) |
@@ -317,14 +317,14 @@ Minimap uses), `sample(out[4], weather, position, time)` -> weights Clear / Rain
   ramp over despawnFadeTime before despawn) x restrictMask(layer) x (1 - excludeMask(layer)) x
   rainMask(u, v), then v = clamp(v - rainThreshold, 0, 1) / (1 - rainThreshold); summed per
   effect, each capped at 1, rain = max(rain - blizzard, 0).
-- Region masks are sampled at (x * worldToRelative.x, z * worldToRelative.y) (checked in the
+- Region masks are sampled at (x \* worldToRelative.x, z \* worldToRelative.y) (checked in the
   machine code before the call). The rain mask at the offset from the zone centre, divided by the
   radius and rotated: u = (dz sin r + dx cos r) / 2 + 1/2, v = (dz cos r - dx sin r) / 2 + 1/2;
   tiling phenomena wrap, the others clamp to 0.
 - The zone centre moves along (cos r, sin r) at its speed (FUN_140a988e0), as the page assumed.
 - Masks (FUN_140a97f10, tiled FUN_140a97b00): 1-bit images, originalSize, a stored sub-rectangle
   (pixelOffset, pixelCount), bits row by row, least significant first, row 0 at z = 0; bilinear
-  over the four neighbours at (size * u - 0.5, size * v - 0.5).
+  over the four neighbours at (size \* u - 0.5, size \* v - 0.5).
 - Snow: s = clamp(y * 0.03125 - 40.84375, 0, 1) x snowBorderMask (snowBorderRangeMapping): above
   about 1307 m and inside the mask. Output: clear = 1 - rain - blizzard, rain = (rain + blizzard)
   (1 - s), snow = rain s, blizzard = blizzard s.

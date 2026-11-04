@@ -88,7 +88,8 @@ def main():
     ap.add_argument("--textures")
     args = ap.parse_args()
     path = glob.glob(os.path.join(args.server, "WeatherSystemResource", "*.json"))[0]
-    r = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as f:
+        r = json.load(f)
     out = {
         "source": "keen::WeatherSystemResource " + r["$guid"],
         "worldSize": r["worldSize"]["x"],
@@ -113,16 +114,15 @@ def main():
     }
     if args.game and args.textures:
         out["snowGrid"] = {"n": 256, "bytes": snow_grid(r, args.game, args.textures)}
-    text = json.dumps(out, separators=(",", ":"))
+    text = json.dumps(out, separators=(",", ":")) + "\n"
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     # Pre-compressed twin: the web server sends it to browsers that accept gzip.
     with gzip.open(args.out + ".gz", "wb", compresslevel=9) as f:
         f.write(text.encode("utf-8"))
-    print(
-        "wrote %s (%d KB, %d KB gzipped)"
-        % (args.out, os.path.getsize(args.out) // 1024, os.path.getsize(args.out + ".gz") // 1024)
-    )
+    kb = os.path.getsize(args.out) // 1024
+    gz_kb = os.path.getsize(args.out + ".gz") // 1024
+    print(f"wrote {args.out} ({kb} KB, {gz_kb} KB gzipped)")
 
 
 if __name__ == "__main__":

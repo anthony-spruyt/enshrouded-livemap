@@ -9,7 +9,8 @@ from collections import defaultdict
 
 import numpy as np
 
-ids_by = {int(k): v for k, v in json.load(open(sys.argv[3]))["ids"].items()}
+with open(sys.argv[3]) as f:
+    ids_by = {int(k): v for k, v in json.load(f)["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 
 
@@ -30,11 +31,11 @@ def hits(path):
 
 before, after = hits(sys.argv[1]), hits(sys.argv[2])
 new, gone = sorted(after - before), sorted(before - after)
-print("before %d hits, after %d, new %d, gone %d" % (len(before), len(after), len(new), len(gone)))
+print(f"before {len(before)} hits, after {len(after)}, new {len(new)}, gone {len(gone)}")
 for title, rows in (("NEW", new), ("GONE", gone)):
     by_id = defaultdict(list)
     for addr, v in rows:
         by_id[v].append(addr)
-    print("== %s: %d ids" % (title, len(by_id)))
+    print(f"== {title}: {len(by_id)} ids")
     for v, addrs in sorted(by_id.items(), key=lambda kv: kv[1][0])[:60]:
-        print("  %08x  %-70s %s" % (v, ids_by[v][:70], " ".join("%#x" % a for a in addrs[:4])))
+        print(f"  {v:08x}  {ids_by[v][:70]:<70} {' '.join(f'{a:#x}' for a in addrs[:4])}")

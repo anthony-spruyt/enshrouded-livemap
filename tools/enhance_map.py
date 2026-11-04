@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import render_map  # noqa: E402
+import render_map
 
 RELIEF = 1.8  # strength of the added relief: colour *= 1 + RELIEF * highpass / 127
 BLUR = 3.0  # px at 1 m per pixel: the relief the picture already has (5 m per pixel)
@@ -32,7 +32,8 @@ PAD = 64
 
 def load_picture(path, rgba_size):
     if path.endswith(".rgba"):
-        raw = open(path, "rb").read()
+        with open(path, "rb") as f:
+            raw = f.read()
         return np.frombuffer(raw[: rgba_size * rgba_size * 4], np.uint8).reshape(rgba_size, rgba_size, 4)[..., :3]
     return np.asarray(Image.open(path).convert("RGB"))
 
@@ -80,10 +81,10 @@ def main():
     if args.preview:
         Image.fromarray(img).resize((1024, 1024), Image.LANCZOS).save(args.preview, "JPEG", quality=85)
     border = np.concatenate([img[:, :64].reshape(-1, 3), img[:, -64:].reshape(-1, 3)])
-    edge = tuple(int(round(v)) for v in border.mean(axis=0))
+    edge = tuple(round(v) for v in border.mean(axis=0))
     render_map.WEBP_QUALITY = 89  # HD: same bytes as JPEG q84, SSIM 0.9881 vs 0.9877
     n, total = render_map.write_tiles(img, args.out, range(-5, 1), edge, args.format)
-    print("%d tiles, %.1f MB in %s; background #%02x%02x%02x" % (n, total / 2**20, args.out, *edge))
+    print(f"{n} tiles, {total / 2**20:.1f} MB in {args.out}; background #{edge[0]:02x}{edge[1]:02x}{edge[2]:02x}")
 
 
 if __name__ == "__main__":

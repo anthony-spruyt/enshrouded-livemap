@@ -118,12 +118,12 @@ NICE_LABELS = [
 INTERIOR_CORNERS = [(1600.0, 8000.0), (2600.0, 8200.0)]  # (x below, z above) rectangles
 
 LABEL_STRIP = re.compile(
-    r"^(8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_)|_(noui|gameplay|gameplayonly|generic|placeholder)\b", re.I
+    r"^(8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_)|_(noui|gameplay|gameplayonly|generic|placeholder)\b", re.IGNORECASE
 )
 BIOMES = re.compile(
     r"\b(deepforest|steppes|grassland|coldheights|coldHeights|desert|wetlands|ancientlands|"
     r"ancientLands|general|generic|talltrees|tallTrees)_",
-    re.I,
+    re.IGNORECASE,
 )
 
 
@@ -178,7 +178,8 @@ def load_templates(server_dir, names=None):
     templates = {}
     for path in glob.glob(os.path.join(server_dir, "TemplateResource", "*.json")):
         try:
-            d = json.load(open(path, encoding="utf-8"))
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
         except (OSError, ValueError):
             continue
         name = d.get("name") or ""
@@ -228,7 +229,8 @@ def load_regions(server_dir, texts, instances):
     tpls = {}
     for path in glob.glob(os.path.join(server_dir, "TemplateResource", "*.json")):
         try:
-            text = open(path, encoding="utf-8").read()
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
         except OSError:
             continue
         if "MapLabel_general_Tower_" not in text:
@@ -259,7 +261,8 @@ def load_instances(server_dir, templates):
     out = []
     for path in glob.glob(os.path.join(server_dir, "SceneEntityChunkResource", "*.json")):
         try:
-            d = json.load(open(path, encoding="utf-8"))
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
         except (OSError, ValueError):
             continue
         tpl = d.get("templates") or []
@@ -278,6 +281,30 @@ def load_instances(server_dir, templates):
     return out
 
 
+def load_names(a):
+    from game_texts import GameTexts, guid_id
+
+    texts = GameTexts(a.game, a.loca, a.language)
+    with open(a.registry, encoding="utf-8") as f:
+        registry = {v["markerId"]["value"]: v for v in json.load(f)["mapMarkers"]["values"]}
+    type_names = {}
+    for g in MARKER_TYPES:
+        v = registry.get(guid_id(g))
+        if v and v.get("typeName"):
+            type_names[g] = texts.by_guid(v["typeName"])
+    print(f"game texts: {len(texts.texts)} ({a.language}), type names {type_names}", file=sys.stderr)
+    return (texts, type_names)
+
+
+def write_pois(out, text):
+    import gzip
+
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(text)
+    with gzip.open(out + ".gz", "wb", compresslevel=9) as f:
+        f.write(text.encode("utf-8"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", required=True)
@@ -288,21 +315,7 @@ def main():
     ap.add_argument("--registry", help="unpacked MapMarkerRegistryResource json (client)")
     ap.add_argument("--language", default="En_Us")
     a = ap.parse_args()
-    names = None
-    if a.game and a.loca and a.registry:
-        from game_texts import GameTexts, guid_id
-
-        texts = GameTexts(a.game, a.loca, a.language)
-        registry = {
-            v["markerId"]["value"]: v for v in json.load(open(a.registry, encoding="utf-8"))["mapMarkers"]["values"]
-        }
-        type_names = {}
-        for g in MARKER_TYPES:
-            v = registry.get(guid_id(g))
-            if v and v.get("typeName"):
-                type_names[g] = texts.by_guid(v["typeName"])
-        names = (texts, type_names)
-        print(f"game texts: {len(texts.texts)} ({a.language}), type names {type_names}", file=sys.stderr)
+    names = load_names(a) if a.game and a.loca and a.registry else None
     templates = load_templates(a.server, names)
     instances = load_instances(a.server, templates)
     counts = collections.Counter(i[0] for i in instances)
@@ -315,7 +328,7 @@ def main():
     # The most common label of a category is its default; points carry a label only when it differs.
     defaults = {}
     per_cat = collections.defaultdict(collections.Counter)
-    for cat, x, y, z, label, _ in instances:
+    for cat, _x, _y, _z, label, _ in instances:
         per_cat[cat][label] += 1
     for cat, c in per_cat.items():
         defaults[cat] = c.most_common(1)[0][0]
@@ -333,8 +346,8 @@ def main():
     discovery = {str(i): key_of[id(e)] for i, e in enumerate(pois) if id(e) in key_of}
     data = {
         "categories": [
-            {"id": c, "label": l, "color": col, "on": on, "label_default": defaults.get(c, l)}
-            for c, l, col, on in CATEGORIES
+            {"id": c, "label": label, "color": col, "on": on, "label_default": defaults.get(c, label)}
+            for c, label, col, on in CATEGORIES
         ],
         "pois": pois,
         "discoveryKeys": discovery,
@@ -342,18 +355,11 @@ def main():
     if names:
         data["regions"] = load_regions(a.server, names[0], instances)
         print(f"regions: {data['regions']}", file=sys.stderr)
-    text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-    with open(a.out, "w", encoding="utf-8") as f:
-        f.write(text)
-    import gzip
-
-    with gzip.open(a.out + ".gz", "wb", compresslevel=9) as f:
-        f.write(text.encode("utf-8"))
+    text = json.dumps(data, separators=(",", ":"), ensure_ascii=False) + "\n"
+    write_pois(a.out, text)
     print(f"{len(discovery)} points with a discovery key", file=sys.stderr)
-    print(
-        f"wrote {len(pois)} pois to {a.out} ({len(text) // 1024} KB, {os.path.getsize(a.out + '.gz') // 1024} KB gzipped)",
-        file=sys.stderr,
-    )
+    gz_kb = os.path.getsize(a.out + ".gz") // 1024
+    print(f"wrote {len(pois)} pois to {a.out} ({len(text) // 1024} KB, {gz_kb} KB gzipped)", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
 // Runs only on private executable fixtures supplied to CMake; nothing is executed/hooked.
 #include <windows.h>
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <cstdio>
+#include <string>
 #include <vector>
 #include "../src/scan.h"
 
@@ -88,4 +90,5 @@ int wmain(int argc, wchar_t** argv) {
         check(argv[3], "26404334");
     }
     std::puts("supported builds, unknown fingerprints, corrupt/duplicate mandatory signatures and optional mining rejection passed");
+    return 0;
 }

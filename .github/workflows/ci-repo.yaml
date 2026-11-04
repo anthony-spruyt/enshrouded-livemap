@@ -92,6 +92,13 @@ jobs:
           UPSTREAM_URL = "https://github.com/oggii/enshrouded-livemap/releases/download/v1.7.0/EnshroudedLiveMap-1.7.0.zip"
           UPSTREAM_SHA256 = "edb1c346b3d245307239de8b2561713c04d2b49170011b98f3e718c760d325b9"
           DLL = "iphlpapi.dll"
+          # Upstream's files after the repo's whitespace and markdown lint fixes; any other edit changes the digest.
+          LINTED = {
+              "THIRD_PARTY_NOTICES.md": "b7b5f996ea18bdb3bdcaaa1e608044efd711fb673a70f0e95eeeb25c02a16ae9",
+              "livemap/pois.json": "00923cfe8befed0c799cc9dec28f83595d67dd8f5931fee5a7c1295fa6b2fcb6",
+              "livemap/weather.json": "456705c74c348184a6db0ae7966913708ccfa94eeba062df535ff45b50e06858",
+              "livemap/fonts/OFL.txt": "ad9c189d8fe80860a6508268d1427d2cd0fec35982f89e935f292077378c7221",
+          }
 
           def fail(message):
               print(f"::error::{message}")
@@ -129,12 +136,16 @@ jobs:
           if not built[DLL]:
               fail(f"{DLL} is empty")
 
-          different = [n for n in sorted(built) if n != DLL and built[n] != upstream[n]]
+          different = [n for n in sorted(built) if n != DLL and n not in LINTED and built[n] != upstream[n]]
           for name in different:
               print(f"::error::differs from upstream's zip: {name}")
-          if different:
-              fail(f"{len(different)} non-DLL files are not byte-identical to upstream's 1.7.0 zip")
-          print(f"file list equals upstream's 1.7.0 zip ({len(built)} files); {len(built) - 1} non-DLL files are byte-identical")
+          unpinned = [n for n, pin in LINTED.items() if hashlib.sha256(built[n]).hexdigest() != pin]
+          for name in unpinned:
+              print(f"::error::does not match its pinned digest: {name}")
+          if different or unpinned:
+              fail(f"{len(different)} non-DLL files are not byte-identical to upstream's 1.7.0 zip, {len(unpinned)} linted files differ from their pins")
+          identical = len(built) - 1 - len(LINTED)
+          print(f"file list equals upstream's 1.7.0 zip ({len(built)} files); {identical} non-DLL files are byte-identical, {len(LINTED)} match their pinned digests")
 
       - name: Check the hook sites against the public server build
         shell: python

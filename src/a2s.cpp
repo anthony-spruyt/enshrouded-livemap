@@ -1,12 +1,13 @@
 #include "a2s.h"
 
 #include <cstdint>
+#include <string>
 
 namespace livemap::a2s {
 
 namespace {
 
-const std::string kHeader("\xFF\xFF\xFF\xFF", 4);
+const std::string kHeader("\xFF\xFF\xFF\xFF", 4);  // NOLINT(runtime/string)
 
 // Reads a zero-terminated string at `at`; false when the reply ends first.
 bool skip_string(const std::string& r, size_t& at) {

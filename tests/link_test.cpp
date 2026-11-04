@@ -1,6 +1,7 @@
 // Plain assert-based tests for the map link (no framework, runs on the build PC).
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include "../src/link.h"
 

@@ -3,7 +3,7 @@
 
 This is a fork of [oggii/enshrouded-livemap](https://github.com/oggii/enshrouded-livemap).
 It exists because upstream only accepts the game builds listed in its source and has no CI, so every Enshrouded server update stops the map until someone patches and rebuilds it.
-`main` is upstream's v1.7.0 plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `patches/` and `docs/COMPAT-*.md`).
+`main` is upstream's v1.7.0 plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `docs/COMPAT-*.md`).
 Upstream's later, unreleased work is reverted on `main` until it is reviewed.
 Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
 Compatibility patches are still written by hand.
@@ -159,9 +159,16 @@ second adds its hook on top of the first one.
 
 ## Build
 
-`build.cmd` (Visual Studio 2022 Build Tools, CMake, Ninja) builds `build\iphlpapi.dll`, runs the
-unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
-`livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
+With the Visual Studio 2022 Build Tools (x64 Native Tools prompt), CMake and Ninja, the three commands CI runs build
+`build\iphlpapi.dll`, run the unit tests and build `build\livemap_selftest.exe`:
+
+```bat
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure --no-tests=error
+```
+
+The selftest checks a server exe on disk: `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so

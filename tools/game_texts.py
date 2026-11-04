@@ -32,8 +32,9 @@ def guid_id(guid):
 
 class GameTexts:
     def __init__(self, game_dir, collection_json, language="En_Us"):
-        d = json.load(open(collection_json, encoding="utf-8"))
-        lang = next(l for l in d["languages"] if l["language"] == language)
+        with open(collection_json, encoding="utf-8") as f:
+            d = json.load(f)
+        lang = next(entry for entry in d["languages"] if entry["language"] == language)
         blob = Kfc(game_dir).read(lang["data"]["hash"])
         rel, count = struct.unpack_from("<iI", blob, 0)
         self.texts = {}

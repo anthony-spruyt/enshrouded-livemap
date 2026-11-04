@@ -9,7 +9,8 @@ import sys
 
 import numpy as np
 
-ids_by = {int(k): v for k, v in json.load(open(sys.argv[2]))["ids"].items()}
+with open(sys.argv[2]) as f:
+    ids_by = {int(k): v for k, v in json.load(f)["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 found = 0
 with open(sys.argv[1], "rb") as f:
@@ -31,13 +32,14 @@ with open(sys.argv[1], "rb") as f:
                 name_at = off - 8 + rel
                 name = (
                     data[name_at : name_at + n].decode("utf-8", "replace")
-                    if 0 <= name_at and n < 200 and name_at + n <= len(data)
+                    if name_at >= 0 and n < 200 and name_at + n <= len(data)
                     else "?"
                 )
                 found += 1
                 if found <= 40:
+                    kind = "player" if flag else "world"
                     print(
-                        "%#x id %08x idx %d type %d %s  name=%r  template=%s"
-                        % (start + off - 8, a[i], idx, typ, "player" if flag else "world", name, ids_by[int(a[i])])
+                        f"{start + off - 8:#x} id {int(a[i]):08x} idx {idx} type {typ} {kind}  "
+                        f"name={name!r}  template={ids_by[int(a[i])]}"
                     )
 print("descriptor-like matches:", found)

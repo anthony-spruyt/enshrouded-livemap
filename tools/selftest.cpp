@@ -45,9 +45,9 @@ int wmain(int argc, wchar_t** argv) {
     std::printf("server build %s\n", t.build);
     bool ok = true;
     const auto expected_of = [&](std::span<const livemap::Named> list, std::string_view name) -> const livemap::Named* {
-        for (const livemap::Named& n : list) {
-            if (name == n.name) {
-                return &n;
+        for (size_t i = 0; i < list.size(); ++i) {
+            if (name == list[i].name) {
+                return &list[i];
             }
         }
         return nullptr;

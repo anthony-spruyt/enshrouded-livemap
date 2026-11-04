@@ -1,8 +1,8 @@
 #include "ecs.h"
 
-#include "memory.h"
-
 #include <windows.h>
+
+#include "memory.h"
 
 namespace livemap {
 

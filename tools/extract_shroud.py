@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import render_map  # noqa: E402
+import render_map
 
 SIZE = 2048
 
@@ -40,7 +40,10 @@ def main():
     Image.fromarray(level, "L").save(args.out, optimize=True)
     values, counts = np.unique(level, return_counts=True)
     print(args.out, os.path.getsize(args.out), "bytes")
-    print("level: share of the world", {int(v): "%.1f %%" % (100 * c / level.size) for v, c in zip(values, counts)})
+    print(
+        "level: share of the world",
+        {int(v): "%.1f %%" % (100 * c / level.size) for v, c in zip(values, counts, strict=False)},
+    )
 
 
 if __name__ == "__main__":

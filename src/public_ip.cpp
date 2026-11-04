@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <winhttp.h>
 
+#include <string>
+
 #include "link.h"
 
 namespace livemap::public_ip {

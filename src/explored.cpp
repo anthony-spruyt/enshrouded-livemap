@@ -2,6 +2,10 @@
 
 #include <cmath>
 #include <cstdio>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace livemap::explored {
 

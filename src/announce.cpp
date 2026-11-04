@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+#include <string>
+#include <utility>
+
 #include <safetyhook.hpp>
 
 #include "log.h"

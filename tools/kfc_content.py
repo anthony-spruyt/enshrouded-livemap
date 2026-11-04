@@ -71,9 +71,9 @@ class Kfc:
     def read(self, h):
         k = self.key(h)
         if k not in self.content:
-            raise KeyError("content not in this game's files: %r" % (h,))
+            raise KeyError(f"content not in this game's files: {h!r}")
         offset, _flags, container = self.content[k]
-        with open(os.path.join(self.dir, "%s_%03d.dat" % (self.name, container)), "rb") as f:
+        with open(os.path.join(self.dir, f"{self.name}_{container:03d}.dat"), "rb") as f:
             f.seek(offset)
             return f.read(h["size"])
 
@@ -104,5 +104,6 @@ def load_descriptors(folder):
     out = {}
     for f in os.listdir(folder):
         if f.endswith(".json"):
-            out[f] = json.load(open(os.path.join(folder, f), encoding="utf-8"))
+            with open(os.path.join(folder, f), encoding="utf-8") as fh:
+                out[f] = json.load(fh)
     return out

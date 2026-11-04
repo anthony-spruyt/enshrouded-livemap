@@ -1,6 +1,7 @@
 #include "text.h"
 
 #include <cstdint>
+#include <string>
 
 namespace livemap::text {
 

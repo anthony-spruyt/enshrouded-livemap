@@ -23,6 +23,7 @@ constexpr Build kBuilds[] = {
     {1792148062, 0x1dcf000, "25988414"},  // 16 Oct 2026, Game Version SVN 1269579
     {1792507668, 0x1dd1000, "26083076"},  // 20 Oct 2026, Game Version SVN 1273043
     {1793351714, 0x1dde000, "26319703"},  // 2 Nov 2026, Game Version SVN 1283531
+    {1793700549, 0x1dde000, "26404334"},  // 3 Nov 2026, Game Version SVN 1285601
 };
 
 struct Pattern {
@@ -146,7 +147,8 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
         return false;
     }
     out.build = build->label;
-    const bool patch1 = std::strcmp(build->label, "26319703") == 0;
+    const bool patch1 = std::strcmp(build->label, "26319703") == 0 ||
+                        std::strcmp(build->label, "26404334") == 0;
     out.mining_layout = patch1 ? MiningLayout::StackRecord : MiningLayout::InlineArray;
     const IMAGE_SECTION_HEADER* text = nullptr;
     auto sec = IMAGE_FIRST_SECTION(nt);

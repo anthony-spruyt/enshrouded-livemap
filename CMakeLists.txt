@@ -69,7 +69,7 @@ target_compile_definitions(livemap_selftest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
 
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)
-# Keep assert-based regression checks enabled in Release, as in the upstream tests.
+# Keep the new assert-based regression checks enabled in Release.
 target_compile_options(mining_test PRIVATE /UNDEBUG)
 add_executable(compat_test tests/compat_test.cpp)
 target_link_libraries(compat_test PRIVATE livemap_core)
@@ -77,8 +77,14 @@ target_compile_definitions(compat_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNIC
 target_compile_options(compat_test PRIVATE /UNDEBUG)
 set(LIVEMAP_TEST_OLD_EXE "" CACHE FILEPATH "Private Steam 26083076 fixture")
 set(LIVEMAP_TEST_NEW_EXE "" CACHE FILEPATH "Private Steam 26319703 fixture")
+set(LIVEMAP_TEST_HOTFIX_EXE "" CACHE FILEPATH "Private Steam 26404334 fixture")
 if(LIVEMAP_TEST_OLD_EXE AND LIVEMAP_TEST_NEW_EXE)
     add_test(NAME old_build_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_OLD_EXE}")
     add_test(NAME patch1_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_NEW_EXE}")
-    add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}")
+    if(LIVEMAP_TEST_HOTFIX_EXE)
+        add_test(NAME hotfix4_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_HOTFIX_EXE}")
+        add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}" "${LIVEMAP_TEST_HOTFIX_EXE}")
+    else()
+        add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}")
+    endif()
 endif()

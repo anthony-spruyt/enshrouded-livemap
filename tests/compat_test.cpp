@@ -6,7 +6,8 @@
 #include <vector>
 #include "../src/scan.h"
 
-void check(const wchar_t* path, bool patch1) {
+void check(const wchar_t* path, const char* build) {
+    const bool patch1=std::strcmp(build,"26083076")!=0;
     HMODULE module=LoadLibraryExW(path,nullptr,DONT_RESOLVE_DLL_REFERENCES);
     assert(module);
     auto image=reinterpret_cast<const uint8_t*>(module);
@@ -15,7 +16,7 @@ void check(const wchar_t* path, bool patch1) {
     livemap::Targets targets;
     std::string error;
     assert(livemap::find_targets(image,targets,error));
-    assert(std::strcmp(targets.build,patch1?"26319703":"26083076")==0);
+    assert(std::strcmp(targets.build,build)==0);
     assert(targets.mining_layout==(patch1?livemap::MiningLayout::StackRecord:livemap::MiningLayout::InlineArray));
     std::vector<uint8_t> copy(image,image+size);
     auto mutable_nt=reinterpret_cast<IMAGE_NT_HEADERS64*>(copy.data()+reinterpret_cast<IMAGE_DOS_HEADER*>(copy.data())->e_lfanew);
@@ -57,7 +58,8 @@ void check(const wchar_t* path, bool patch1) {
     FreeLibrary(module);
 }
 int wmain(int argc,wchar_t**argv) {
-    assert(argc==3);
-    check(argv[1],false);check(argv[2],true);
-    std::puts("both supported builds, unknown fingerprints, corrupt/duplicate mandatory signatures and optional mining rejection passed");
+    assert(argc==3 || argc==4);
+    check(argv[1],"26083076");check(argv[2],"26319703");
+    if(argc==4)check(argv[3],"26404334");
+    std::puts("supported builds, unknown fingerprints, corrupt/duplicate mandatory signatures and optional mining rejection passed");
 }

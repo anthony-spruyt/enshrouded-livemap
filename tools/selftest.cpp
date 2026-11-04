@@ -29,17 +29,18 @@ int wmain(int argc, wchar_t** argv) {
         return 1;
     }
     const bool is_new = std::strcmp(t.build, "26083076") == 0;
-    const bool patch1 = std::strcmp(t.build, "26319703") == 0;
+    const bool hotfix4 = std::strcmp(t.build, "26404334") == 0;
+    const bool patch1 = std::strcmp(t.build, "26319703") == 0 || hotfix4;
     std::printf("server build %s\n", t.build);
     struct { const char* name; uintptr_t at; uintptr_t expected; } sites[] = {
         {"player_table", t.player_table, patch1 ? 0x7bed90ull : is_new ? 0x7b5800ull : 0x7b34c0ull},
         {"movement", t.movement, patch1 ? 0x9581aull : is_new ? 0x91d2aull : 0x90e7aull},
-        {"daytime", t.daytime, patch1 ? 0x969be2ull : is_new ? 0x95f842ull : 0x95d1f2ull},
+        {"daytime", t.daytime, hotfix4 ? 0x969c72ull : patch1 ? 0x969be2ull : is_new ? 0x95f842ull : 0x95d1f2ull},
         {"registry", t.registry, patch1 ? 0x67e720ull : is_new ? 0x677240ull : 0x675e10ull},
         {"mining", t.mining, patch1 ? 0x22a01aull : is_new ? 0x2245a8ull : 0x2236f8ull},
         {"chest", t.chest, patch1 ? 0xa578aull : is_new ? 0xa1afaull : 0xa0c4aull},
         {"bases", t.bases, patch1 ? 0xee3f0ull : is_new ? 0xea090ull : 0xe91e0ull},
-        {"chat_post", t.chat_post, patch1 ? 0x915170ull : is_new ? 0x90b330ull : 0x908ce0ull},
+        {"chat_post", t.chat_post, hotfix4 ? 0x915200ull : patch1 ? 0x915170ull : is_new ? 0x90b330ull : 0x908ce0ull},
     };
     bool ok = true;
     for (const auto& s : sites) {

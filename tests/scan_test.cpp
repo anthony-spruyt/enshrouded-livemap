@@ -19,14 +19,14 @@ namespace {
 
 int failures = 0;
 
-#define EXPECT(cond, ...)                                                           \
-    do {                                                                            \
-        if (!(cond)) {                                                              \
-            std::printf("FAIL %s:%d  %s  ", __FILE__, __LINE__, #cond);             \
-            std::printf(__VA_ARGS__);                                               \
-            std::printf("\n");                                                      \
-            ++failures;                                                             \
-        }                                                                           \
+#define EXPECT(cond, ...)                                               \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            std::printf("FAIL %s:%d  %s  ", __FILE__, __LINE__, #cond); \
+            std::printf(__VA_ARGS__);                                   \
+            std::printf("\n");                                          \
+            ++failures;                                                 \
+        }                                                               \
     } while (0)
 
 constexpr size_t kTextRva = 0x1000;
@@ -63,7 +63,9 @@ public:
     // ?? bytes stay zero.
     void plant(size_t rva, const std::string& hex) {
         for (size_t i = 0; i < hex.size(); i += 3) {
-            if (hex[i] != '?') bytes_[rva + i / 3] = static_cast<uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16));
+            if (hex[i] != '?') {
+                bytes_[rva + i / 3] = static_cast<uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16));
+            }
         }
     }
     void write32(size_t rva, uint32_t value) { std::memcpy(&bytes_[rva], &value, sizeof value); }
@@ -97,15 +99,16 @@ public:
         patterns_.clear();
         for (const snapshot::Site& s : sites_) {
             std::vector<livemap::Named>& list = named_.emplace_back();
-            for (const snapshot::Operand& op : s.operands) list.push_back({op.name, static_cast<uint32_t>(op.offset)});
+            for (const snapshot::Operand& op : s.operands) {
+                list.push_back({op.name, static_cast<uint32_t>(op.offset)});
+            }
         }
         for (size_t i = 0; i < sites_.size(); ++i) {
             const snapshot::Site& s = sites_[i];
             patterns_.push_back({s.name, s.hex.c_str(), static_cast<uint32_t>(s.offset), s.mandatory, named_[i]});
         }
         sigset_ = {"synthetic", patterns_};
-        build_ = {row_.label, stamp_ ? *stamp_ : row_.time_date_stamp, row_.size_of_image, &sigset_,
-                  row_.patch1 ? livemap::MiningLayout::StackRecord : livemap::MiningLayout::InlineArray, {}, {}};
+        build_ = {row_.label, stamp_ ? *stamp_ : row_.time_date_stamp, row_.size_of_image, &sigset_, row_.patch1 ? livemap::MiningLayout::StackRecord : livemap::MiningLayout::InlineArray, {}, {}};
         return build_;
     }
 
@@ -125,21 +128,39 @@ size_t byte_count(const std::string& hex) {
 
 const livemap::Build& shipped(const snapshot::Row& row) {
     for (const livemap::Build& b : livemap::kBuilds) {
-        if (std::strcmp(b.label, row.label) == 0) return b;
+        if (std::strcmp(b.label, row.label) == 0) {
+            return b;
+        }
     }
     std::printf("FAIL %s is not in builds.json\n", row.label);
     std::exit(1);
 }
 
 uint32_t expected_rva(const snapshot::Row& row, const std::string& site) {
-    if (site == "player_table") return row.player_table;
-    if (site == "movement") return row.movement;
-    if (site == "daytime") return row.daytime;
-    if (site == "registry") return row.registry;
-    if (site == "mining") return row.mining;
-    if (site == "chest") return row.chest;
-    if (site == "bases") return row.bases;
-    if (site == "chat_post") return row.chat_post;
+    if (site == "player_table") {
+        return row.player_table;
+    }
+    if (site == "movement") {
+        return row.movement;
+    }
+    if (site == "daytime") {
+        return row.daytime;
+    }
+    if (site == "registry") {
+        return row.registry;
+    }
+    if (site == "mining") {
+        return row.mining;
+    }
+    if (site == "chest") {
+        return row.chest;
+    }
+    if (site == "bases") {
+        return row.bases;
+    }
+    if (site == "chat_post") {
+        return row.chat_post;
+    }
     return 0;
 }
 
@@ -147,11 +168,15 @@ uint32_t expected_rva(const snapshot::Row& row, const std::string& site) {
 void plant_build(Image& image, const snapshot::Row& row, bool accessor, bool join_line) {
     for (const snapshot::Site& site : row.patch1 ? snapshot::patch1_sites() : snapshot::launch_sites()) {
         if (site.name == std::string("param_entity")) {
-            if (!accessor) continue;
+            if (!accessor) {
+                continue;
+            }
             image.plant(kAccessorRva, site.hex);
             image.write32(kAccessorRva + site.operands[0].offset, kPlantedTable);
         } else if (site.name == std::string("join_line")) {
-            if (!join_line) continue;
+            if (!join_line) {
+                continue;
+            }
             image.plant(kJoinLineRva, site.hex);
             image.write32(kJoinLineRva + site.operands[0].offset, kPlantedTag);
             const size_t call = kJoinLineRva + snapshot::kJoinCallOffset;
@@ -211,7 +236,9 @@ void check_rejections(const snapshot::Row& row) {
         EXPECT(error.find("registry") != std::string::npos, "%s: %s", row.label, error.c_str());
     }
     for (const snapshot::Site& site : row.patch1 ? snapshot::patch1_sites() : snapshot::launch_sites()) {
-        if (site.name != std::string("player_table") && site.name != std::string("chest")) continue;
+        if (site.name != std::string("player_table") && site.name != std::string("chest")) {
+            continue;
+        }
         Image image(row);
         plant_build(image, row, true, false);
         image.plant(kDuplicateRva, site.hex);
@@ -236,7 +263,9 @@ void check_rejections(const snapshot::Row& row) {
         Image image(row);
         plant_build(image, row, row.patch1, true);
         for (const snapshot::Site& site : row.patch1 ? snapshot::patch1_sites() : snapshot::launch_sites()) {
-            if (site.name == std::string("join_line")) image.plant(kJoinLineRva + 0x1000, site.hex);
+            if (site.name == std::string("join_line")) {
+                image.plant(kJoinLineRva + 0x1000, site.hex);
+            }
         }
         livemap::ChatSites chat;
         EXPECT(!livemap::find_chat_sites(image.base(), shipped(row), chat), "%s: two join lines accepted", row.label);
@@ -328,7 +357,9 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
             image.plant(kImageSize - byte_count(site.hex), site.hex);
             const bool ok = livemap::find_targets(image.base(), only(table.build()), t, error);
             EXPECT(ok == inside, "%s: %s hook site %s .text: %s", row.label, name, inside ? "inside" : "past the end of", error.c_str());
-            if (!inside) EXPECT(error.find(name) != std::string::npos, "%s: %s", row.label, error.c_str());
+            if (!inside) {
+                EXPECT(error.find(name) != std::string::npos, "%s: %s", row.label, error.c_str());
+            }
         }
     }
     for (const bool inside : {true, false}) {
@@ -341,7 +372,9 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
         image.plant(kImageSize - byte_count(table.site("param_entity").hex), table.site("param_entity").hex);
         const bool ok = livemap::find_targets(image.base(), only(table.build()), t, error);
         EXPECT(ok == inside, "%s: operand %s .text: %s", row.label, inside ? "ending on the last byte of" : "read past", error.c_str());
-        if (!inside) EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
+        if (!inside) {
+            EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
+        }
     }
 }
 
@@ -401,7 +434,9 @@ void check_join_sites_stay_in_text(const snapshot::Row& row) {
         at.tag_offset = kTextEnd - at.join_start - sizeof(uint32_t) + (inside ? 0 : 1);
         livemap::ChatSites chat;
         EXPECT(find_join_sites(row, at, chat) == inside, "%s: join tag %s .text", row.label, inside ? "ending on the last byte of" : "read past");
-        if (inside) EXPECT(chat.join_tag == kPlantedTag, "%s: join_tag 0x%x", row.label, chat.join_tag);
+        if (inside) {
+            EXPECT(chat.join_tag == kPlantedTag, "%s: join_tag 0x%x", row.label, chat.join_tag);
+        }
     }
 }
 
@@ -427,10 +462,14 @@ void check_join_line_variants(const snapshot::Row& row) {
         plant_build(image, row, row.patch1, true);
         image.plant(call, c.call_op);
         image.plant(kJoinLineRva + snapshot::kJoinAfterOffset, c.after_op);
-        if (c.other_function) image.write32(call + 1, static_cast<uint32_t>(row.chat_post + 0x10 - (call + 5)));
+        if (c.other_function) {
+            image.write32(call + 1, static_cast<uint32_t>(row.chat_post + 0x10 - (call + 5)));
+        }
         livemap::ChatSites chat;
         EXPECT(livemap::find_chat_sites(image.base(), shipped(row), chat) == c.accepted, "%s: %s", row.label, c.what);
-        if (c.accepted) EXPECT(chat.shared == c.shared && chat.join_call == image.at(call), "%s: %s", row.label, c.what);
+        if (c.accepted) {
+            EXPECT(chat.shared == c.shared && chat.join_call == image.at(call), "%s: %s", row.label, c.what);
+        }
     }
 }
 
@@ -455,6 +494,8 @@ int main() {
             EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
         }
     }
-    if (failures == 0) std::puts("find_targets and find_chat_sites match the hard-coded builds");
+    if (failures == 0) {
+        std::puts("find_targets and find_chat_sites match the hard-coded builds");
+    }
     return failures == 0 ? 0 : 1;
 }

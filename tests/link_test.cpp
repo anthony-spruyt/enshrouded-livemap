@@ -8,9 +8,12 @@ namespace link = livemap::link;
 
 static int failures = 0;
 
-#define EXPECT(cond)                                                                              \
-    do {                                                                                          \
-        if (!(cond)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++failures; } \
+#define EXPECT(cond)                                                    \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
+            ++failures;                                                 \
+        }                                                               \
     } while (0)
 
 int main() {

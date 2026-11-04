@@ -27,9 +27,13 @@ size_t readable_span(uintptr_t address, size_t max) {
     size_t total = 0;
     while (total < max) {
         MEMORY_BASIC_INFORMATION info{};
-        if (VirtualQuery(reinterpret_cast<LPCVOID>(address + total), &info, sizeof info) == 0) break;
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(address + total), &info, sizeof info) == 0) {
+            break;
+        }
         const DWORD readable = PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE;
-        if (info.State != MEM_COMMIT || (info.Protect & readable) == 0 || (info.Protect & PAGE_GUARD) != 0) break;
+        if (info.State != MEM_COMMIT || (info.Protect & readable) == 0 || (info.Protect & PAGE_GUARD) != 0) {
+            break;
+        }
         uintptr_t end = reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize;
         total = end - address;
     }
@@ -73,11 +77,17 @@ uintptr_t entity_component(uintptr_t record, int type_index, uint16_t expect_siz
 }
 
 int type_index(const TypeTable& table, uint32_t hash) {
-    if (table.base == 0) return -1;
+    if (table.base == 0) {
+        return -1;
+    }
     for (int i = 0; i < kTypeCount; ++i) {
         uint32_t h = 0;
-        if (!read_u32(table.base + static_cast<uintptr_t>(i) * table.stride, h)) return -1;
-        if (h == hash) return i;
+        if (!read_u32(table.base + static_cast<uintptr_t>(i) * table.stride, h)) {
+            return -1;
+        }
+        if (h == hash) {
+            return i;
+        }
     }
     return -1;
 }
@@ -86,22 +96,30 @@ bool find_type_table(uintptr_t registry, int known_index, uint32_t known_hash, c
                      TypeTable& out) {
     constexpr uint32_t kStrides[] = {4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80, 96, 112, 128};
     constexpr size_t kWindow = 0x4000;
-    if (registry == 0 || known_index < 0 || known_index >= kTypeCount) return false;
+    if (registry == 0 || known_index < 0 || known_index >= kTypeCount) {
+        return false;
+    }
     // Roots: the registry itself, then everything its first 0x400 bytes point at.
     uintptr_t roots[1 + 0x400 / 8];
     size_t root_count = 0;
     roots[root_count++] = registry;
     for (uintptr_t k = 0; k < 0x400; k += 8) {
         uintptr_t p = 0;
-        if (read_ptr(registry + k, p) && p > 0x10000 && (p & 3) == 0 && readable_span(p, 16) == 16) roots[root_count++] = p;
+        if (read_ptr(registry + k, p) && p > 0x10000 && (p & 3) == 0 && readable_span(p, 16) == 16) {
+            roots[root_count++] = p;
+        }
     }
     for (size_t r = 0; r < root_count; ++r) {
         size_t span = readable_span(roots[r], kWindow);
         for (uint32_t stride : kStrides) {
             uintptr_t need = static_cast<uintptr_t>(known_index) * stride + 4;
-            if (need > span) continue;
+            if (need > span) {
+                continue;
+            }
             for (uintptr_t base = roots[r]; base + need <= roots[r] + span; base += 4) {
-                if (*reinterpret_cast<const uint32_t*>(base + static_cast<uintptr_t>(known_index) * stride) != known_hash) continue;
+                if (*reinterpret_cast<const uint32_t*>(base + static_cast<uintptr_t>(known_index) * stride) != known_hash) {
+                    continue;
+                }
                 TypeTable t{base, stride};
                 if (type_index(t, check[0]) >= 0 && type_index(t, check[1]) >= 0) {
                     out = t;

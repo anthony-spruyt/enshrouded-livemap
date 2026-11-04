@@ -15,19 +15,21 @@ namespace {
 
 int failures = 0;
 
-#define EXPECT(cond, ...)                                                           \
-    do {                                                                            \
-        if (!(cond)) {                                                              \
-            std::printf("FAIL %s:%d  %s  ", __FILE__, __LINE__, #cond);             \
-            std::printf(__VA_ARGS__);                                               \
-            std::printf("\n");                                                      \
-            ++failures;                                                             \
-        }                                                                           \
+#define EXPECT(cond, ...)                                               \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            std::printf("FAIL %s:%d  %s  ", __FILE__, __LINE__, #cond); \
+            std::printf(__VA_ARGS__);                                   \
+            std::printf("\n");                                          \
+            ++failures;                                                 \
+        }                                                               \
     } while (0)
 
 const livemap::Named* find(std::span<const livemap::Named> list, const char* name) {
     for (const livemap::Named& n : list) {
-        if (std::strcmp(n.name, name) == 0) return &n;
+        if (std::strcmp(n.name, name) == 0) {
+            return &n;
+        }
     }
     return nullptr;
 }
@@ -52,14 +54,25 @@ void check_sigset(const livemap::Sigset& generated, const std::vector<snapshot::
 }
 
 void check_expected(const livemap::Build& build, const snapshot::Row& row) {
-    struct { const char* site; uint32_t rva; } sites[] = {
-        {"player_table", row.player_table}, {"movement", row.movement}, {"daytime", row.daytime},
-        {"registry", row.registry},         {"mining", row.mining},     {"chest", row.chest},
-        {"bases", row.bases},               {"chat_post", row.chat_post}, {"param_entity", row.param_entity},
+    struct {
+        const char* site;
+        uint32_t rva;
+    } sites[] = {
+        {"player_table", row.player_table},
+        {"movement", row.movement},
+        {"daytime", row.daytime},
+        {"registry", row.registry},
+        {"mining", row.mining},
+        {"chest", row.chest},
+        {"bases", row.bases},
+        {"chat_post", row.chat_post},
+        {"param_entity", row.param_entity},
     };
     size_t checked = 0;
     for (const auto& s : sites) {
-        if (s.rva == 0) continue;
+        if (s.rva == 0) {
+            continue;
+        }
         ++checked;
         const livemap::Named* named = find(build.expected, s.site);
         EXPECT(named != nullptr && named->value == s.rva, "%s expected rva of %s differs", row.label, s.site);
@@ -74,7 +87,9 @@ void check_expected(const livemap::Build& build, const snapshot::Row& row) {
 void check_sites_fill_a_slot() {
     for (const livemap::Sigset& set : livemap::kSigsets) {
         for (const livemap::Pattern& p : set.patterns) {
-            if (std::string_view(p.site) == "join_line") continue;
+            if (std::string_view(p.site) == "join_line") {
+                continue;
+            }
             EXPECT(livemap::target_member(p.site) != nullptr, "sigset %s: site %s fills no Targets slot", set.name, p.site);
         }
     }
@@ -87,10 +102,14 @@ int main() {
     for (const snapshot::Row& row : snapshot::kRows) {
         const livemap::Build* found = nullptr;
         for (const livemap::Build& b : livemap::kBuilds) {
-            if (std::strcmp(b.label, row.label) == 0) found = &b;
+            if (std::strcmp(b.label, row.label) == 0) {
+                found = &b;
+            }
         }
         EXPECT(found != nullptr, "build %s is missing from builds.json", row.label);
-        if (found == nullptr) continue;
+        if (found == nullptr) {
+            continue;
+        }
         const livemap::Build& build = *found;
         EXPECT(build.time_date_stamp == row.time_date_stamp, "%s TimeDateStamp differs", row.label);
         EXPECT(build.size_of_image == row.size_of_image, "%s SizeOfImage differs", row.label);
@@ -103,12 +122,18 @@ int main() {
     for (const char* name : {"launch", "patch1"}) {
         const livemap::Sigset* found = nullptr;
         for (const livemap::Sigset& candidate : livemap::kSigsets) {
-            if (std::strcmp(candidate.name, name) == 0) found = &candidate;
+            if (std::strcmp(candidate.name, name) == 0) {
+                found = &candidate;
+            }
         }
         EXPECT(found != nullptr, "sigset %s is missing from builds.json", name);
-        if (found != nullptr) check_sigset(*found, std::strcmp(name, "launch") == 0 ? snapshot::launch_sites() : snapshot::patch1_sites());
+        if (found != nullptr) {
+            check_sigset(*found, std::strcmp(name, "launch") == 0 ? snapshot::launch_sites() : snapshot::patch1_sites());
+        }
     }
     check_sites_fill_a_slot();
-    if (failures == 0) std::puts("builds.json reproduces the hard-coded builds");
+    if (failures == 0) {
+        std::puts("builds.json reproduces the hard-coded builds");
+    }
     return failures == 0 ? 0 : 1;
 }

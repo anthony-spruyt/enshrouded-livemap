@@ -10,6 +10,7 @@ u16 container, 8 padding}. A blob is `size` bytes at `offset` in enshrouded_<con
 Texture descriptors (keen::UiTextureResource) come from `kfc-parser unpack -f
 tkeen::UiTextureResource`; `texture()` decodes one to an RGBA numpy array (first mip level).
 """
+
 import json
 import os
 import struct
@@ -17,10 +18,24 @@ import struct
 import numpy as np
 import texture2ddecoder
 
-HEADER_FIELDS = ["version", "containers", "unused0", "unused1", "resource_locations", "resource_indices",
-                 "content_buckets", "content_keys", "content_values", "resource_buckets", "resource_keys",
-                 "resource_values", "resource_bundle_buckets", "resource_bundle_keys", "resource_bundle_values",
-                 "resource_chunks"]
+HEADER_FIELDS = [
+    "version",
+    "containers",
+    "unused0",
+    "unused1",
+    "resource_locations",
+    "resource_indices",
+    "content_buckets",
+    "content_keys",
+    "content_values",
+    "resource_buckets",
+    "resource_keys",
+    "resource_values",
+    "resource_bundle_buckets",
+    "resource_bundle_keys",
+    "resource_bundle_values",
+    "resource_chunks",
+]
 
 
 class Kfc:
@@ -44,7 +59,7 @@ class Kfc:
             values = f.read(16 * n)
         self.content = {}
         for i in range(n):
-            key = keys[16 * i:16 * i + 16]
+            key = keys[16 * i : 16 * i + 16]
             offset, flags, container = struct.unpack_from("<IHH", values, 16 * i)
             self.content[key] = (offset, flags, container)
 
@@ -69,16 +84,18 @@ def texture(kfc, desc):
     fmt = desc["format"]
     data = kfc.read(desc["data"]["hash"])
     if fmt == "R8G8B8A8_unorm":
-        return np.frombuffer(data[:w * h * 4], np.uint8).reshape(h, w, 4).copy()
+        return np.frombuffer(data[: w * h * 4], np.uint8).reshape(h, w, 4).copy()
     if fmt == "R16_unorm":
-        return np.frombuffer(data[:w * h * 2], "<u2").reshape(h, w).copy()
+        return np.frombuffer(data[: w * h * 2], "<u2").reshape(h, w).copy()
     blocks = ((w + 3) // 4) * ((h + 3) // 4)
-    decode, size = {"BC4_unorm_block": (texture2ddecoder.decode_bc4, 8),
-                    "BC5_unorm_block": (texture2ddecoder.decode_bc5, 16),
-                    "BC7_unorm_block": (texture2ddecoder.decode_bc7, 16),
-                    "BC1_unorm_block": (texture2ddecoder.decode_bc1, 8),
-                    "BC3_unorm_block": (texture2ddecoder.decode_bc3, 16)}[fmt]
-    bgra = np.frombuffer(decode(data[:blocks * size], w, h), np.uint8).reshape(h, w, 4)
+    decode, size = {
+        "BC4_unorm_block": (texture2ddecoder.decode_bc4, 8),
+        "BC5_unorm_block": (texture2ddecoder.decode_bc5, 16),
+        "BC7_unorm_block": (texture2ddecoder.decode_bc7, 16),
+        "BC1_unorm_block": (texture2ddecoder.decode_bc1, 8),
+        "BC3_unorm_block": (texture2ddecoder.decode_bc3, 16),
+    }[fmt]
+    bgra = np.frombuffer(decode(data[: blocks * size], w, h), np.uint8).reshape(h, w, 4)
     return bgra[:, :, [2, 1, 0, 3]].copy()
 
 

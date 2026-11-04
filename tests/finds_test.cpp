@@ -9,9 +9,12 @@ using livemap::finds::Store;
 
 static int failures = 0;
 
-#define EXPECT(cond)                                                                   \
-    do {                                                                               \
-        if (!(cond)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++failures; } \
+#define EXPECT(cond)                                                    \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
+            ++failures;                                                 \
+        }                                                               \
     } while (0)
 
 static void hits_within_6m_merge() {
@@ -109,7 +112,10 @@ int main() {
     version_moves_on_change();
     json_round_trip();
     ore_like_filter();
-    if (failures == 0) { std::printf("finds tests passed\n"); return EXIT_SUCCESS; }
+    if (failures == 0) {
+        std::printf("finds tests passed\n");
+        return EXIT_SUCCESS;
+    }
     std::printf("%d finds test(s) failed\n", failures);
     return EXIT_FAILURE;
 }

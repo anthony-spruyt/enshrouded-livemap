@@ -10,14 +10,19 @@ using livemap::bases::Store;
 
 static int failures = 0;
 
-#define EXPECT(cond)                                                                              \
-    do {                                                                                          \
-        if (!(cond)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++failures; } \
+#define EXPECT(cond)                                                    \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
+            ++failures;                                                 \
+        }                                                               \
     } while (0)
 
 static Base at(double x, double z) {
     Base b;
-    b.x = x; b.y = 850; b.z = z;
+    b.x = x;
+    b.y = 850;
+    b.z = z;
     b.size_x = b.size_y = b.size_z = 40;
     return b;
 }
@@ -40,7 +45,9 @@ int main() {
 
     // Altar 2 is taken down: still listed shortly after, gone after kStaleMs without a sighting.
     const uint64_t last2 = t;
-    for (uint64_t now = t + 50; now <= last2 + kStaleMs + 100; now += 50) s.see(1, 0, at(3753.25, 1422.25), now);
+    for (uint64_t now = t + 50; now <= last2 + kStaleMs + 100; now += 50) {
+        s.see(1, 0, at(3753.25, 1422.25), now);
+    }
     t = last2 + kStaleMs + 100;
     EXPECT(s.count(t) == 1 && s.version(t) == 3);
 
@@ -57,12 +64,17 @@ int main() {
 
     const std::string json = s.to_json(t);
     EXPECT(json == "{\"version\":6,\"bases\":[{\"x\":3760.0,\"y\":850.0,\"z\":1422.2,\"size\":[60.0,40.0,60.0],\"abandoned\":true}]}");
-    if (failures) std::printf("json: %s\n", json.c_str());
+    if (failures) {
+        std::printf("json: %s\n", json.c_str());
+    }
 
     // The server stops walking (the last altar is gone): the list empties all the same.
     EXPECT(s.count(t + kStaleMs + 1) == 0 && s.version(t + kStaleMs + 1) == 7);
 
-    if (failures) std::printf("%d failure(s)\n", failures);
-    else std::printf("all bases tests passed\n");
+    if (failures) {
+        std::printf("%d failure(s)\n", failures);
+    } else {
+        std::printf("all bases tests passed\n");
+    }
     return failures ? 1 : 0;
 }

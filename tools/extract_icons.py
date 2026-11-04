@@ -8,6 +8,7 @@ Usage (descriptors from `kfc-parser unpack -f tkeen::UiTextureResource`):
   python tools/extract_icons.py --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
       --textures <unpack folder>/UiTextureResource --out web/icons
 """
+
 import argparse
 import json
 import os

@@ -1,6 +1,7 @@
 """Compares two regdump frame files: where marker "visible" ids appear in the second but not the
 first (and the other way round). Read-only analysis on the host.
 Usage: python3 diffids.py before.bin after.bin marker-ids.json"""
+
 import json
 import struct
 import sys
@@ -21,7 +22,7 @@ def hits(path):
                 break
             start, length = struct.unpack("<QQ", head)
             data = f.read(length)
-            a = np.frombuffer(data[:(len(data) // 4) * 4], "<u4")
+            a = np.frombuffer(data[: (len(data) // 4) * 4], "<u4")
             for i in np.nonzero(np.isin(a, ids))[0]:
                 out.add((start + 4 * int(i), int(a[i])))
     return out

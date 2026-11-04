@@ -2,6 +2,7 @@
 offset from the field, uint32 length}, +8 id, +0xc index, +0x10 type 3/4/5, +0x11 player flag)
 whose id is one of the markers' "visible" knowledge ids. Prints each match with its name.
 Usage: python3 descscan.py frames.bin marker-ids.json"""
+
 import json
 import struct
 import sys
@@ -18,7 +19,7 @@ with open(sys.argv[1], "rb") as f:
             break
         start, length = struct.unpack("<QQ", head)
         data = f.read(length)
-        a = np.frombuffer(data[:(len(data) // 4) * 4], "<u4")
+        a = np.frombuffer(data[: (len(data) // 4) * 4], "<u4")
         for i in np.nonzero(np.isin(a, ids))[0]:
             off = 4 * int(i)
             if off < 8 or off + 0x28 > len(data):
@@ -28,8 +29,15 @@ with open(sys.argv[1], "rb") as f:
             if idx < 20000 and typ in (3, 4, 5) and flag in (0, 1):
                 rel, n = struct.unpack_from("<iI", data, off - 8)
                 name_at = off - 8 + rel
-                name = data[name_at:name_at + n].decode("utf-8", "replace") if 0 <= name_at and n < 200 and name_at + n <= len(data) else "?"
+                name = (
+                    data[name_at : name_at + n].decode("utf-8", "replace")
+                    if 0 <= name_at and n < 200 and name_at + n <= len(data)
+                    else "?"
+                )
                 found += 1
                 if found <= 40:
-                    print("%#x id %08x idx %d type %d %s  name=%r  template=%s" % (start + off - 8, a[i], idx, typ, "player" if flag else "world", name, ids_by[int(a[i])]))
+                    print(
+                        "%#x id %08x idx %d type %d %s  name=%r  template=%s"
+                        % (start + off - 8, a[i], idx, typ, "player" if flag else "world", name, ids_by[int(a[i])])
+                    )
 print("descriptor-like matches:", found)

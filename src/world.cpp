@@ -113,10 +113,14 @@ void probe_arm(uint32_t handle, uint64_t account) {
             ProbeLine l;
             char who[8] = {};
             int used = 0;
-            if (buf[0] == '#' || std::sscanf(buf, "%d %7s %x %x %n", &l.type, who, &l.loca1, &l.loca2, &used) < 4) continue;
+            if (buf[0] == '#' || std::sscanf(buf, "%d %7s %x %x %n", &l.type, who, &l.loca1, &l.loca2, &used) < 4) {
+                continue;
+            }
             l.self = std::strcmp(who, "self") == 0;
             l.text = buf + used;
-            while (!l.text.empty() && (l.text.back() == '\n' || l.text.back() == '\r')) l.text.pop_back();
+            while (!l.text.empty() && (l.text.back() == '\n' || l.text.back() == '\r')) {
+                l.text.pop_back();
+            }
             lines.push_back(l);
         }
         std::fclose(f);
@@ -132,14 +136,27 @@ void probe_arm(uint32_t handle, uint64_t account) {
 }
 
 void probe_step(uintptr_t manager) {
-    if (g_chat_post == nullptr || GetTickCount64() < g_probe_at_ms.load(std::memory_order_relaxed)) return;
+    if (g_chat_post == nullptr || GetTickCount64() < g_probe_at_ms.load(std::memory_order_relaxed)) {
+        return;
+    }
     std::lock_guard lock(g_probe_mutex);
-    if (g_probe_next >= g_probe_lines.size()) return;
+    if (g_probe_next >= g_probe_lines.size()) {
+        return;
+    }
     uintptr_t chat = 0;
-    if (!read_ptr(manager + 0x60, chat) || chat == 0) return;
+    if (!read_ptr(manager + 0x60, chat) || chat == 0) {
+        return;
+    }
     const ProbeLine& l = g_probe_lines[g_probe_next];
-    struct { const char* ptr; uint64_t length; } text{l.text.c_str(), l.text.size()};
-    struct { uint64_t value; uint8_t has; uint8_t pad[7]; } opt{};
+    struct {
+        const char* ptr;
+        uint64_t length;
+    } text{l.text.c_str(), l.text.size()};
+    struct {
+        uint64_t value;
+        uint8_t has;
+        uint8_t pad[7];
+    } opt{};
     alignas(8) uint8_t out[16] = {};
     g_chat_post(out, chat, static_cast<uint8_t>(l.type), &text, l.loca1, l.loca2, l.self ? g_probe_handle : 0,
                 l.self ? g_probe_account : 0, &opt);
@@ -157,9 +174,13 @@ void on_player_table(SafetyHookContext& ctx) {
 // Every entity the movement system moves passes here; only players are kept.
 void on_movement(SafetyHookContext& ctx) {
     uint32_t entity = param_entity(ctx.rbx, entity_table().load());
-    if (entity == 0) return;
+    if (entity == 0) {
+        return;
+    }
     for (Slot& s : g_slots) {
-        if (s.entity.load(std::memory_order_relaxed) != entity) continue;
+        if (s.entity.load(std::memory_order_relaxed) != entity) {
+            continue;
+        }
         uintptr_t pos = 0;
         uint64_t x = 0, y = 0, z = 0;
         if (read_ptr(ctx.rsp + 0x58, pos) && read_u64(pos, x) && read_u64(pos + 8, y) && read_u64(pos + 16, z)) {
@@ -196,7 +217,11 @@ const char* item_name(uint32_t id) {
     size_t lo = 0, hi = std::size(kItemNames);
     while (lo < hi) {
         size_t mid = (lo + hi) / 2;
-        if (kItemNames[mid].id < id) lo = mid + 1; else hi = mid;
+        if (kItemNames[mid].id < id) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
     }
     return lo < std::size(kItemNames) && kItemNames[lo].id == id ? kItemNames[lo].name : nullptr;
 }
@@ -222,11 +247,17 @@ void on_mining(SafetyHookContext& ctx) {
             name ? name : "?", sample.amount, static_cast<unsigned long long>(ctx.rbx), entity,
             readable ? "" : " (unreadable)");
     }
-    if (!readable || entity == 0) return;
-    if (name == nullptr || !finds::is_ore_like(name)) return;
+    if (!readable || entity == 0) {
+        return;
+    }
+    if (name == nullptr || !finds::is_ore_like(name)) {
+        return;
+    }
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load(std::memory_order_relaxed) != entity || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
+        if (s.entity.load(std::memory_order_relaxed) != entity || s.seen_ms.load(std::memory_order_relaxed) == 0) {
+            continue;
+        }
         std::string player;
         {
             std::lock_guard lock(g_names_mutex);
@@ -260,7 +291,9 @@ bool in_world(double x, double y, double z) {
 
 bool read_position(uintptr_t transform, double& x, double& y, double& z) {
     uint64_t fx = 0, fy = 0, fz = 0;
-    if (transform == 0 || !read_u64(transform, fx) || !read_u64(transform + 8, fy) || !read_u64(transform + 16, fz)) return false;
+    if (transform == 0 || !read_u64(transform, fx) || !read_u64(transform + 8, fy) || !read_u64(transform + 16, fz)) {
+        return false;
+    }
     x = meters(static_cast<int64_t>(fx));
     y = meters(static_cast<int64_t>(fy));
     z = meters(static_cast<int64_t>(fz));
@@ -271,22 +304,32 @@ bool read_position(uintptr_t transform, double& x, double& y, double& z) {
 bool guess_position(uintptr_t record, double& x, double& y, double& z) {
     for (int i = 0; i < kTypeCount; ++i) {
         uintptr_t t = entity_component(record, i, kTransformSize);
-        if (t == 0 || !read_position(t, x, y, z)) continue;
+        if (t == 0 || !read_position(t, x, y, z)) {
+            continue;
+        }
         uint32_t q[4] = {};
         float f[4] = {};
         bool ok = true;
-        for (int k = 0; k < 4 && ok; ++k) ok = read_u32(t + 0x18 + k * 4, q[k]);
-        if (!ok) continue;
+        for (int k = 0; k < 4 && ok; ++k) {
+            ok = read_u32(t + 0x18 + k * 4, q[k]);
+        }
+        if (!ok) {
+            continue;
+        }
         std::memcpy(f, q, sizeof f);
         double n = std::sqrt(static_cast<double>(f[0]) * f[0] + static_cast<double>(f[1]) * f[1] +
                              static_cast<double>(f[2]) * f[2] + static_cast<double>(f[3]) * f[3]);
-        if (n > 0.9 && n < 1.1) return true;
+        if (n > 0.9 && n < 1.1) {
+            return true;
+        }
     }
     return false;
 }
 
 void resolve_types(uintptr_t system, uint16_t offer_index, uintptr_t record) {
-    if (g_types_state.load(std::memory_order_relaxed) != 0) return;
+    if (g_types_state.load(std::memory_order_relaxed) != 0) {
+        return;
+    }
     uintptr_t owner = 0, world = 0, registry = 0;
     if (!read_ptr(system, owner) || !read_ptr(owner + 0x30, world) || !read_ptr(world, registry)) {
         log("CHEST registry not readable (system %llx)", static_cast<unsigned long long>(system));
@@ -305,7 +348,9 @@ void resolve_types(uintptr_t system, uint16_t offer_index, uintptr_t record) {
         "RandomLootContainer=%d",
         found ? "found" : "NOT found", static_cast<unsigned long long>(GetTickCount64() - t0),
         static_cast<unsigned long long>(g_types.base), g_types.stride, offer_index, g_idx_transform, g_idx_random_loot);
-    if (!found) g_types = {};
+    if (!found) {
+        g_types = {};
+    }
     g_types_state.store(found ? 1 : -1, std::memory_order_relaxed);
 }
 
@@ -314,12 +359,19 @@ std::string nearest_player(double x, double z, double within) {
     double best_d = within * within;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load(std::memory_order_relaxed) == 0 || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
+        if (s.entity.load(std::memory_order_relaxed) == 0 || s.seen_ms.load(std::memory_order_relaxed) == 0) {
+            continue;
+        }
         double dx = meters(s.x.load(std::memory_order_relaxed)) - x, dz = meters(s.z.load(std::memory_order_relaxed)) - z;
         double d = dx * dx + dz * dz;
-        if (d < best_d) { best_d = d; best = i; }
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
     }
-    if (best < 0) return {};
+    if (best < 0) {
+        return {};
+    }
     std::lock_guard lock(g_names_mutex);
     return g_names[best];
 }
@@ -337,7 +389,9 @@ void on_chest(SafetyHookContext& ctx) {
     if (g_interaction_logs.fetch_add(1, std::memory_order_relaxed) < 300 || chest_like) {
         log("INTERACT entity %u guest %u verb %u offer-type %u%s", entity, guest, verb, offer_index, chest_like ? " (chest-like)" : "");
     }
-    if (!chest_like || record == 0) return;
+    if (!chest_like || record == 0) {
+        return;
+    }
     resolve_types(system, offer_index, record);
     int rl = -1;
     double x = 0, y = 0, z = 0;
@@ -346,9 +400,13 @@ void on_chest(SafetyHookContext& ctx) {
         rl = entity_has(record, g_idx_random_loot) ? 1 : 0;
         pos = read_position(entity_component(record, g_idx_transform, kTransformSize), x, y, z);
     }
-    if (!pos) pos = guess_position(record, x, y, z);
+    if (!pos) {
+        pos = guess_position(record, x, y, z);
+    }
     log("CHEST entity %u verb %u random-loot %d position %s%.1f %.1f %.1f", entity, verb, rl, pos ? "" : "unknown ", x, y, z);
-    if (!pos || rl == 0) return;
+    if (!pos || rl == 0) {
+        return;
+    }
     g_finds.record_chest(x, y, z, -1, nearest_player(x, z, 12.0), unix_now(), rl);
 }
 
@@ -385,15 +443,21 @@ void on_base(SafetyHookContext& ctx) {
 void on_registry(SafetyHookContext& ctx) {
     uintptr_t name_ptr = 0;
     uint64_t length = 0;
-    if (!read_ptr(ctx.rdx, name_ptr) || !read_u64(ctx.rdx + 8, length) || length == 0 || length > 80) return;
+    if (!read_ptr(ctx.rdx, name_ptr) || !read_u64(ctx.rdx + 8, length) || length == 0 || length > 80) {
+        return;
+    }
     char name[81] = {};
     for (uint64_t i = 0; i < length; ++i) {
         uint8_t c = 0;
-        if (!read_u8(name_ptr + i, c)) return;
+        if (!read_u8(name_ptr + i, c)) {
+            return;
+        }
         name[i] = static_cast<char>(c);
     }
     log("SERVICE %-40s %llx", name, static_cast<unsigned long long>(ctx.r8));
-    if (std::strcmp(name, "WeatherSystem") == 0) g_weather_system.store(ctx.r8, std::memory_order_relaxed);
+    if (std::strcmp(name, "WeatherSystem") == 0) {
+        g_weather_system.store(ctx.r8, std::memory_order_relaxed);
+    }
 }
 
 // The name field is {char* data, u64 length, u64 capacity}, UTF-8 (raw slot dumps 2026-10-22:
@@ -403,11 +467,15 @@ void on_registry(SafetyHookContext& ctx) {
 std::string read_name(uintptr_t field) {
     uintptr_t ptr = 0;
     uint64_t length = 0;
-    if (!read_ptr(field, ptr) || !read_u64(field + 8, length) || ptr < 0x10000 || length == 0 || length > 128) return {};
+    if (!read_ptr(field, ptr) || !read_u64(field + 8, length) || ptr < 0x10000 || length == 0 || length > 128) {
+        return {};
+    }
     std::string s(static_cast<size_t>(length), '\0');
     for (size_t i = 0; i < s.size(); ++i) {
         uint8_t c = 0;
-        if (!read_u8(ptr + i, c)) return {};
+        if (!read_u8(ptr + i, c)) {
+            return {};
+        }
         s[i] = static_cast<char>(c);
     }
     return text::clean_utf8(s);
@@ -451,7 +519,6 @@ void append_escaped(std::string& out, const std::string& s) {
     }
 }
 
-
 // Weather (build 25988414, read 2026-10-20 on the test server):
 // WeatherSystem+0x28 -> pool {allocator, records, capacity, ?, ?}; records are 0x48 bytes:
 // +0x00 u32 free-list word (bit 31 set = free slot), +0x08 u8 layer, +0x09 u8 phenomenon index,
@@ -466,7 +533,9 @@ constexpr uint64_t kMaxRecords = 1024;
 bool world_time_ns(int64_t& out) {
     uintptr_t day = g_daytime.load(std::memory_order_relaxed);
     uint64_t anchor_session = 0, anchor_world = 0;
-    if (day == 0 || !read_u64(day + 0x10, anchor_session) || !read_u64(day + 0x18, anchor_world)) return false;
+    if (day == 0 || !read_u64(day + 0x10, anchor_session) || !read_u64(day + 0x18, anchor_world)) {
+        return false;
+    }
     int64_t session = g_world_time.load(std::memory_order_relaxed);
     out = static_cast<int64_t>(anchor_world) + (session - static_cast<int64_t>(anchor_session));
     return true;
@@ -492,7 +561,9 @@ void append_weather(std::string& out) {
         uint8_t layer = 0, phenomenon = 0;
         uint64_t x = 0, z = 0, spawn = 0, despawn = 0;
         uint32_t rot = 0, radius = 0, speed = 0;
-        if (!read_u32(r, word) || (word & 0x80000000u) != 0) continue;
+        if (!read_u32(r, word) || (word & 0x80000000u) != 0) {
+            continue;
+        }
         if (!read_u8(r + 8, layer) || !read_u8(r + 9, phenomenon) || !read_u64(r + 0x10, x) ||
             !read_u64(r + 0x20, z) || !read_u32(r + 0x28, rot) || !read_u32(r + 0x2c, radius) ||
             !read_u32(r + 0x30, speed) || !read_u64(r + 0x38, spawn) || !read_u64(r + 0x40, despawn)) {
@@ -502,7 +573,9 @@ void append_weather(std::string& out) {
         std::memcpy(&frot, &rot, 4);
         std::memcpy(&fradius, &radius, 4);
         std::memcpy(&fspeed, &speed, 4);
-        if (!(fradius > 0.0f && fradius < 100000.0f)) continue;
+        if (!(fradius > 0.0f && fradius < 100000.0f)) {
+            continue;
+        }
         std::snprintf(buf, sizeof buf,
                       "%s{\"layer\":%u,\"phenomenon\":%u,\"spawn\":[%.1f,%.1f],\"rotation\":%.4f,\"radius\":%.1f,"
                       "\"speed\":%.3f,\"spawnTime\":%.3f,\"despawnTime\":%.3f}",
@@ -527,22 +600,30 @@ void refresh_explored() {
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
         const uint64_t seen = s.seen_ms.load(std::memory_order_relaxed);
-        if (s.entity.load(std::memory_order_relaxed) == 0 || seen == 0 || now - seen > 5000) continue;
+        if (s.entity.load(std::memory_order_relaxed) == 0 || seen == 0 || now - seen > 5000) {
+            continue;
+        }
         std::string name;
         {
             std::lock_guard lock(g_names_mutex);
             name = g_names[i];
         }
-        if (name.empty()) continue;
+        if (name.empty()) {
+            continue;
+        }
         g_explored.reveal(name, meters(s.x.load(std::memory_order_relaxed)), meters(s.z.load(std::memory_order_relaxed)));
     }
 }
 
 void refresh_discovered(int64_t unix_now) {
     uintptr_t manager = g_manager.load(std::memory_order_relaxed);
-    if (manager == 0 || g_discovered_off) return;
+    if (manager == 0 || g_discovered_off) {
+        return;
+    }
     uintptr_t records = 0;
-    if (!read_ptr(manager + kKnowledgeRecords, records) || records < 0x10000) return;
+    if (!read_ptr(manager + kKnowledgeRecords, records) || records < 0x10000) {
+        return;
+    }
     std::vector<std::string> online;
     for (int i = 0; i < kSlotCount; ++i) {
         uintptr_t slot = manager + kSlots + static_cast<uintptr_t>(i) * kStride;
@@ -557,7 +638,9 @@ void refresh_discovered(int64_t unix_now) {
             std::lock_guard lock(g_names_mutex);
             name = g_names[i];
         }
-        if (name.empty()) continue;
+        if (name.empty()) {
+            continue;
+        }
         online.push_back(name);
         const uintptr_t record = records + static_cast<uintptr_t>(handle & 0x3f) * kRecordStride;
         uintptr_t keys = 0, values = 0;
@@ -575,11 +658,16 @@ void refresh_discovered(int64_t unix_now) {
             return;
         }
         std::vector<uint32_t> k(count), v(count);
-        if (count && (!read_bytes(keys, k.data(), count * 4) || !read_bytes(values, v.data(), count * 4))) continue;
+        if (count && (!read_bytes(keys, k.data(), count * 4) || !read_bytes(values, v.data(), count * 4))) {
+            continue;
+        }
         std::vector<uint32_t> set;
         set.reserve(count);
-        for (size_t j = 0; j < k.size(); ++j)
-            if (v[j] != 0) set.push_back(k[j]);
+        for (size_t j = 0; j < k.size(); ++j) {
+            if (v[j] != 0) {
+                set.push_back(k[j]);
+            }
+        }
         if (g_discovered.update(name, std::move(set), unix_now)) {
             log("DISCOVERED %s: %llu knowledge keys", name.c_str(), static_cast<unsigned long long>(count));
         }
@@ -593,7 +681,10 @@ void install_bases(const Targets& t) {
         return;
     }
     auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.bases), on_base);
-    if (!h) { log("could not hook bases: Flame Altars are off"); return; }
+    if (!h) {
+        log("could not hook bases: Flame Altars are off");
+        return;
+    }
     g_bases_hook = std::move(*h);
     log("hooked %-12s at %llx", "bases", static_cast<unsigned long long>(t.bases));
 }
@@ -605,7 +696,10 @@ void install_mining(const Targets& t) {
     }
     g_mining_layout.store(t.mining_layout, std::memory_order_relaxed);
     auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.mining), on_mining);
-    if (!h) { log("could not hook mining: ore finds are off"); return; }
+    if (!h) {
+        log("could not hook mining: ore finds are off");
+        return;
+    }
     g_mining_hook = std::move(*h);
     log("hooked %-12s at %llx", "mining", static_cast<unsigned long long>(t.mining));
 }
@@ -616,7 +710,10 @@ void install_chest(const Targets& t) {
         return;
     }
     auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.chest), on_chest);
-    if (!h) { log("could not hook chest: looted chests are off"); return; }
+    if (!h) {
+        log("could not hook chest: looted chests are off");
+        return;
+    }
     g_chest_hook = std::move(*h);
     log("hooked %-12s at %llx", "chest", static_cast<unsigned long long>(t.chest));
 }
@@ -653,14 +750,18 @@ bool install(const Targets& t, std::string& error) {
 
 void refresh_players() {
     uintptr_t manager = g_manager.load(std::memory_order_relaxed);
-    if (manager == 0) return;
+    if (manager == 0) {
+        return;
+    }
     for (int i = 0; i < kSlotCount; ++i) {
         uintptr_t slot = manager + kSlots + static_cast<uintptr_t>(i) * kStride;
         uint32_t handle = 0, entity = 0;
         uint8_t state = 0;
         bool in_game = read_u32(slot, handle) && handle != 0 && read_u8(slot + kState, state) &&
                        state == kInGame && read_u32(slot + kEntity, entity) && entity != 0;
-        if (!in_game) entity = 0;
+        if (!in_game) {
+            entity = 0;
+        }
         uint32_t previous = g_slots[i].entity.exchange(entity, std::memory_order_relaxed);
         if (previous == 0 && entity != 0 && g_chat_post != nullptr) {
             uint64_t account = 0;
@@ -690,7 +791,9 @@ std::atomic<int> g_flame_level{-1};
 
 void set_flame_level(int level) {
     int previous = g_flame_level.exchange(level, std::memory_order_relaxed);
-    if (previous != level) log("FLAME level %d (from the server's A2S_INFO)", level);
+    if (previous != level) {
+        log("FLAME level %d (from the server's A2S_INFO)", level);
+    }
 }
 
 std::string snapshot_json() {
@@ -717,7 +820,9 @@ std::string snapshot_json() {
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
         uint32_t entity = s.entity.load(std::memory_order_relaxed);
-        if (entity == 0) continue;
+        if (entity == 0) {
+            continue;
+        }
         std::string name;
         {
             std::lock_guard lock(g_names_mutex);
@@ -778,7 +883,9 @@ void log_diagnostics() {
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
         uint32_t entity = s.entity.load(std::memory_order_relaxed);
-        if (entity == 0) continue;
+        if (entity == 0) {
+            continue;
+        }
         log("POS    entity %u x %.2f y %.2f z %.2f (seen %llu ms ago)", entity,
             meters(s.x.load(std::memory_order_relaxed)), meters(s.y.load(std::memory_order_relaxed)),
             meters(s.z.load(std::memory_order_relaxed)),

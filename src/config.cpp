@@ -18,13 +18,17 @@ std::string random_key() {
     BCryptGenRandom(nullptr, bytes, sizeof bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     static constexpr char kAlphabet[] = "abcdefghjkmnpqrstuvwxyz23456789";
     std::string key;
-    for (unsigned char b : bytes) key += kAlphabet[b % (sizeof kAlphabet - 1)];
+    for (unsigned char b : bytes) {
+        key += kAlphabet[b % (sizeof kAlphabet - 1)];
+    }
     return key;
 }
 
 std::string narrow(const wchar_t* s) {
     std::string out;
-    for (; *s; ++s) out += (*s < 128) ? static_cast<char>(*s) : '?';
+    for (; *s; ++s) {
+        out += (*s < 128) ? static_cast<char>(*s) : '?';
+    }
     return out;
 }
 
@@ -55,7 +59,9 @@ Config load_config(const std::wstring& dir) {
             "; matter). Players can type <address>/<Key>, e.g. 203.0.113.5:15637/ourmap. Short words are\n"
             "; easier to type but easier to guess. Everyone with the key sees all player positions;\n"
             "; change it to lock old links out.\n"
-            "Key=" + random_key() + "\n"
+            "Key=" +
+            random_key() +
+            "\n"
             "; Milliseconds between updates of the page (100 to 5000).\n"
             "UpdateMs=250\n"
             "Log=1\n"
@@ -77,14 +83,18 @@ Config load_config(const std::wstring& dir) {
         std::string json;
         char chunk[4096];
         size_t n;
-        while ((n = std::fread(chunk, 1, sizeof chunk, f)) > 0 && json.size() < 1 << 20) json.append(chunk, n);
+        while ((n = std::fread(chunk, 1, sizeof chunk, f)) > 0 && json.size() < 1 << 20) {
+            json.append(chunk, n);
+        }
         std::fclose(f);
         c.game_query_port = link::query_port(json);
     }
     if (port.empty() || port == "auto" || number == 0) {
         c.port_from_game = true;
         c.port = c.game_query_port;
-        if (c.port == 0) c.port = 15680;
+        if (c.port == 0) {
+            c.port = 15680;
+        }
     } else {
         c.port = number >= 1 && number <= 65535 ? number : 15680;
     }
@@ -97,8 +107,12 @@ Config load_config(const std::wstring& dir) {
     GetPrivateProfileStringW(L"livemap", L"Key", L"", buf, 128, path.c_str());
     c.key = narrow(buf);
     c.update_ms = static_cast<int>(GetPrivateProfileIntW(L"livemap", L"UpdateMs", 250, path.c_str()));
-    if (c.update_ms < 100) c.update_ms = 100;
-    if (c.update_ms > 5000) c.update_ms = 5000;
+    if (c.update_ms < 100) {
+        c.update_ms = 100;
+    }
+    if (c.update_ms > 5000) {
+        c.update_ms = 5000;
+    }
     c.log = GetPrivateProfileIntW(L"livemap", L"Log", 1, path.c_str()) != 0;
     c.log_diagnostics = GetPrivateProfileIntW(L"livemap", L"LogDiagnostics", 1, path.c_str()) != 0;
     c.finds = GetPrivateProfileIntW(L"livemap", L"Finds", 1, path.c_str()) != 0;

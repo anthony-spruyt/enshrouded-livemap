@@ -48,7 +48,10 @@ Code find_code(const uint8_t* base, const IMAGE_NT_HEADERS64* nt) {
 Masked parse(const char* text) {
     Masked p;
     for (const char* s = text; s[0] != 0 && s[1] != 0;) {
-        if (*s == ' ') { ++s; continue; }
+        if (*s == ' ') {
+            ++s;
+            continue;
+        }
         if (s[0] == '?' && s[1] == '?') {
             p.bytes.push_back(0);
             p.fixed.push_back(false);
@@ -66,13 +69,23 @@ std::vector<uintptr_t> find_all(const uint8_t* begin, size_t size, const Masked&
     std::vector<uintptr_t> hits;
     const size_t n = p.bytes.size();
     size_t lead = 0;
-    while (lead < n && !p.fixed[lead]) ++lead;
-    if (lead == n) return hits;
+    while (lead < n && !p.fixed[lead]) {
+        ++lead;
+    }
+    if (lead == n) {
+        return hits;
+    }
     for (size_t i = 0; i + n <= size; ++i) {
-        if (begin[i + lead] != p.bytes[lead]) continue;
+        if (begin[i + lead] != p.bytes[lead]) {
+            continue;
+        }
         bool ok = true;
-        for (size_t k = 0; k < n && ok; ++k) ok = !p.fixed[k] || begin[i + k] == p.bytes[k];
-        if (ok) hits.push_back(reinterpret_cast<uintptr_t>(begin + i));
+        for (size_t k = 0; k < n && ok; ++k) {
+            ok = !p.fixed[k] || begin[i + k] == p.bytes[k];
+        }
+        if (ok) {
+            hits.push_back(reinterpret_cast<uintptr_t>(begin + i));
+        }
     }
     return hits;
 }
@@ -92,7 +105,9 @@ uintptr_t find_unique(const uint8_t* begin, size_t size, const Pattern& p, int& 
 
 const Named* find_operand(const Pattern& p, const char* name) {
     for (const Named& op : p.operands) {
-        if (std::strcmp(op.name, name) == 0) return &op;
+        if (std::strcmp(op.name, name) == 0) {
+            return &op;
+        }
     }
     return nullptr;
 }
@@ -106,7 +121,9 @@ const Build* recognise(const IMAGE_NT_HEADERS64* nt, std::span<const Build> buil
     const Build* found = nullptr;
     matches = 0;
     for (const Build& b : builds) {
-        if (!has_fingerprint(nt, b)) continue;
+        if (!has_fingerprint(nt, b)) {
+            continue;
+        }
         found = &b;
         ++matches;
     }
@@ -120,7 +137,9 @@ bool read_match(const Code& code, const Pattern& p, uintptr_t start, Targets& ou
         return false;
     }
     const Named* table = find_operand(p, "entity_table");
-    if (table == nullptr) return true;
+    if (table == nullptr) {
+        return true;
+    }
     if (!code.holds(start + table->value, sizeof out.entity_table)) {
         error = std::format("pattern '{}' reads its entity table outside .text, not hooking", p.site);
         return false;
@@ -131,11 +150,15 @@ bool read_match(const Code& code, const Pattern& p, uintptr_t start, Targets& ou
 
 bool join_sites(const Code& code, const Pattern& join, const Pattern& post, ChatSites& out) {
     const std::vector<uintptr_t> hits = find_all(code.begin, code.size, parse(join.bytes));
-    if (hits.size() != 1) return false;
+    if (hits.size() != 1) {
+        return false;
+    }
     int count = 0;
     uintptr_t chat = find_unique(code.begin, code.size, post, count);
     const Named* tag = find_operand(join, "join_tag");
-    if (chat == 0 || tag == nullptr) return false;
+    if (chat == 0 || tag == nullptr) {
+        return false;
+    }
     chat += post.offset;
     const uintptr_t call = hits[0] + join.offset;
     // The call, the instruction after it and chat_post are hooked with kCallLength bytes each; the tag is copied out of the match.
@@ -145,11 +168,15 @@ bool join_sites(const Code& code, const Pattern& join, const Pattern& post, Chat
     const uint8_t call_op = *reinterpret_cast<const uint8_t*>(call);
     const uint8_t after_op = *reinterpret_cast<const uint8_t*>(call + kCallLength);
     if (call_op == 0xe8) {
-        if (call_target(call) != chat) return false;
+        if (call_target(call) != chat) {
+            return false;
+        }
     } else if (call_op != 0xe9) {
         return false;  // neither the call nor another mod's jump to its hook
     }
-    if (after_op != 0x44 && after_op != 0xe9) return false;
+    if (after_op != 0x44 && after_op != 0xe9) {
+        return false;
+    }
     out.join_call = call;
     out.join_after = call + kCallLength;
     out.chat_post = chat;
@@ -165,14 +192,20 @@ uintptr_t Targets::* target_member(std::string_view site) {
         std::string_view site;
         uintptr_t Targets::* member;
     } kMembers[] = {
-        {"player_table", &Targets::player_table}, {"movement", &Targets::movement},
-        {"daytime", &Targets::daytime},           {"registry", &Targets::registry},
-        {"mining", &Targets::mining},             {"chest", &Targets::chest},
-        {"chat_post", &Targets::chat_post},       {"bases", &Targets::bases},
+        {"player_table", &Targets::player_table},
+        {"movement", &Targets::movement},
+        {"daytime", &Targets::daytime},
+        {"registry", &Targets::registry},
+        {"mining", &Targets::mining},
+        {"chest", &Targets::chest},
+        {"chat_post", &Targets::chat_post},
+        {"bases", &Targets::bases},
         {"param_entity", &Targets::param_entity},
     };
     for (const auto& m : kMembers) {
-        if (m.site == site) return m.member;
+        if (m.site == site) {
+            return m.member;
+        }
     }
     return nullptr;
 }
@@ -210,7 +243,9 @@ bool find_targets(const uint8_t* base, std::span<const Build> builds, Targets& o
     // Mandatory sites stop the hooking when they are not found exactly once; optional ones leave
     // their feature off and the rest keeps working.
     for (const Pattern& p : build->sigset->patterns) {
-        if (std::strcmp(p.site, kJoinLineSite) == 0) continue;
+        if (std::strcmp(p.site, kJoinLineSite) == 0) {
+            continue;
+        }
         uintptr_t Targets::* const member = target_member(p.site);
         if (member == nullptr) {
             error = std::format("sigset '{}' has the unknown site '{}', not hooking", build->sigset->name, p.site);
@@ -220,7 +255,9 @@ bool find_targets(const uint8_t* base, std::span<const Build> builds, Targets& o
         const uintptr_t start = find_unique(code.begin, code.size, p, count);
         out.*member = start == 0 ? 0 : start + p.offset;
         if (start != 0) {
-            if (!read_match(code, p, start, out, error)) return false;
+            if (!read_match(code, p, start, out, error)) {
+                return false;
+            }
         } else if (p.mandatory) {
             error = std::format("pattern '{}' matched {} times (need exactly 1), not hooking", p.site, count);
             return false;
@@ -240,13 +277,19 @@ bool find_targets(const uint8_t* base, std::span<const Build> builds, Targets& o
 bool find_chat_sites(const uint8_t* base, const Build& build, ChatSites& out) {
     auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    if (!has_fingerprint(nt, build)) return false;
+    if (!has_fingerprint(nt, build)) {
+        return false;
+    }
     const Code code = find_code(base, nt);
     const Pattern* join = nullptr;
     const Pattern* post = nullptr;
     for (const Pattern& p : build.sigset->patterns) {
-        if (std::strcmp(p.site, kJoinLineSite) == 0) join = &p;
-        if (std::strcmp(p.site, "chat_post") == 0) post = &p;
+        if (std::strcmp(p.site, kJoinLineSite) == 0) {
+            join = &p;
+        }
+        if (std::strcmp(p.site, "chat_post") == 0) {
+            post = &p;
+        }
     }
     return join != nullptr && post != nullptr && join_sites(code, *join, *post, out);
 }

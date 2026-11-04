@@ -4,6 +4,7 @@ densest clusters (many different ids close together = a per-player "discovered" 
 lookup table). Read-only analysis on the host (numpy).
 Usage: ... | python3 idscan_host.py marker-ids.json [--save frames.bin]
 """
+
 import json
 import struct
 import sys
@@ -29,11 +30,14 @@ while True:
         save.write(data)
     if len(data) < 4:
         continue
-    a = np.frombuffer(data[:(len(data) // 4) * 4], "<u4")
+    a = np.frombuffer(data[: (len(data) // 4) * 4], "<u4")
     m = np.isin(a, ids)
     for i in np.nonzero(m)[0]:
         hits.append((start + 4 * int(i), int(a[i])))
-print("scanned %.0f MB, %d hits of %d ids, %d distinct ids found" % (total / 1e6, len(hits), len(ids), len({h[1] for h in hits})))
+print(
+    "scanned %.0f MB, %d hits of %d ids, %d distinct ids found"
+    % (total / 1e6, len(hits), len(ids), len({h[1] for h in hits}))
+)
 hits.sort()
 # Clusters: hits less than 4 KB apart belong together.
 clusters = []

@@ -14,6 +14,7 @@ Usage:
       --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
       --textures <unpack folder>/UiTextureResource --out web/tiles-hd [--scale 1.002 --offset -1 -1]
 """
+
 import argparse
 import os
 import sys
@@ -24,15 +25,15 @@ from PIL import Image, ImageFilter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render_map  # noqa: E402
 
-RELIEF = 1.8      # strength of the added relief: colour *= 1 + RELIEF * highpass / 127
-BLUR = 3.0        # px at 1 m per pixel: the relief the picture already has (5 m per pixel)
+RELIEF = 1.8  # strength of the added relief: colour *= 1 + RELIEF * highpass / 127
+BLUR = 3.0  # px at 1 m per pixel: the relief the picture already has (5 m per pixel)
 PAD = 64
 
 
 def load_picture(path, rgba_size):
     if path.endswith(".rgba"):
         raw = open(path, "rb").read()
-        return np.frombuffer(raw[:rgba_size * rgba_size * 4], np.uint8).reshape(rgba_size, rgba_size, 4)[..., :3]
+        return np.frombuffer(raw[: rgba_size * rgba_size * 4], np.uint8).reshape(rgba_size, rgba_size, 4)[..., :3]
     return np.asarray(Image.open(path).convert("RGB"))
 
 
@@ -40,10 +41,10 @@ def enhance(picture, detail, scale, offset, band=512):
     size = render_map.WORLD
     n = picture.shape[0]
     padded = Image.fromarray(np.pad(picture, ((PAD, PAD), (PAD, PAD), (0, 0)), mode="edge"))
-    per_px = n / size                  # picture pixels per metre
+    per_px = n / size  # picture pixels per metre
     c0 = n / 2 + PAD
 
-    def px(u, o):                      # output pixel (1 m) -> padded picture coordinate
+    def px(u, o):  # output pixel (1 m) -> padded picture coordinate
         return c0 + (u * per_px - n / 2) * scale + o
 
     out = np.empty((size, size, 3), np.uint8)
@@ -55,7 +56,7 @@ def enhance(picture, detail, scale, offset, band=512):
         e0, e1 = max(0, r0 - margin), min(size, r1 + margin)
         d8 = detail[e0:e1]
         blur = np.asarray(Image.fromarray(d8, "L").filter(ImageFilter.GaussianBlur(BLUR)), np.float32)
-        high = (d8.astype(np.float32) - blur)[r0 - e0:r0 - e0 + (r1 - r0)]
+        high = (d8.astype(np.float32) - blur)[r0 - e0 : r0 - e0 + (r1 - r0)]
         out[r0:r1] = np.clip(colour * (1 + RELIEF * high[..., None] / 127.0), 0, 255).astype(np.uint8)
     return out
 
@@ -82,7 +83,7 @@ def main():
     edge = tuple(int(round(v)) for v in border.mean(axis=0))
     render_map.WEBP_QUALITY = 89  # HD: same bytes as JPEG q84, SSIM 0.9881 vs 0.9877
     n, total = render_map.write_tiles(img, args.out, range(-5, 1), edge, args.format)
-    print("%d tiles, %.1f MB in %s; background #%02x%02x%02x" % (n, total / 2 ** 20, args.out, *edge))
+    print("%d tiles, %.1f MB in %s; background #%02x%02x%02x" % (n, total / 2**20, args.out, *edge))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 pointers (reading `span` bytes per node) until a node holds a pointer into one of the target
 ranges; prints the path as base+offset steps. Usage:
 python3 pathfind.py frames.bin <start hex>[,<start hex>...] <target lo hex>-<hi hex>[,...] [depth] [span hex]"""
+
 import bisect
 import struct
 import sys

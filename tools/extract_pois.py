@@ -9,6 +9,7 @@ Entity transforms in the chunks are fixed point: value = hi + lo / 65536 (metres
 
 Usage: python tools/extract_pois.py --server <dir> --out web/pois.json [--survey]
 """
+
 import argparse
 import collections
 import glob
@@ -117,10 +118,13 @@ NICE_LABELS = [
 INTERIOR_CORNERS = [(1600.0, 8000.0), (2600.0, 8200.0)]  # (x below, z above) rectangles
 
 LABEL_STRIP = re.compile(
-    r"^(8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_)|_(noui|gameplay|gameplayonly|generic|placeholder)\b",
-    re.I)
-BIOMES = re.compile(r"\b(deepforest|steppes|grassland|coldheights|coldHeights|desert|wetlands|ancientlands|"
-                    r"ancientLands|general|generic|talltrees|tallTrees)_", re.I)
+    r"^(8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_)|_(noui|gameplay|gameplayonly|generic|placeholder)\b", re.I
+)
+BIOMES = re.compile(
+    r"\b(deepforest|steppes|grassland|coldheights|coldHeights|desert|wetlands|ancientlands|"
+    r"ancientLands|general|generic|talltrees|tallTrees)_",
+    re.I,
+)
 
 
 def label_from(name):
@@ -194,12 +198,16 @@ def load_templates(server_dir, names=None):
             continue
         if cat == "questarea" and "noui" in name.lower():
             continue
-        label = label_from(name) if marker else CATEGORIES[CAT_INDEX[cat]][1].rstrip("s").replace("Sarcophagi", "Sarcophagus")
+        label = (
+            label_from(name)
+            if marker
+            else CATEGORIES[CAT_INDEX[cat]][1].rstrip("s").replace("Sarcophagi", "Sarcophagus")
+        )
         if marker and names:
             game_name = names[0].by_guid(marker.get("markerId"))
             type_name = names[1].get(marker["markerType"])
             if game_name and type_name and game_name != type_name:
-                label = type_name + " · " + game_name     # "Ancient Spire · Revelwood"
+                label = type_name + " · " + game_name  # "Ancient Spire · Revelwood"
             elif game_name or type_name:
                 label = game_name or type_name
         if flags:
@@ -283,8 +291,11 @@ def main():
     names = None
     if a.game and a.loca and a.registry:
         from game_texts import GameTexts, guid_id
+
         texts = GameTexts(a.game, a.loca, a.language)
-        registry = {v["markerId"]["value"]: v for v in json.load(open(a.registry, encoding="utf-8"))["mapMarkers"]["values"]}
+        registry = {
+            v["markerId"]["value"]: v for v in json.load(open(a.registry, encoding="utf-8"))["mapMarkers"]["values"]
+        }
         type_names = {}
         for g in MARKER_TYPES:
             v = registry.get(guid_id(g))
@@ -320,9 +331,14 @@ def main():
     pois.sort(key=lambda e: (e[0], e[1], e[3]))
     # Point index -> knowledge key that marks it discovered (the page's Known / Undiscovered filter).
     discovery = {str(i): key_of[id(e)] for i, e in enumerate(pois) if id(e) in key_of}
-    data = {"categories": [{"id": c, "label": l, "color": col, "on": on, "label_default": defaults.get(c, l)}
-                           for c, l, col, on in CATEGORIES],
-            "pois": pois, "discoveryKeys": discovery}
+    data = {
+        "categories": [
+            {"id": c, "label": l, "color": col, "on": on, "label_default": defaults.get(c, l)}
+            for c, l, col, on in CATEGORIES
+        ],
+        "pois": pois,
+        "discoveryKeys": discovery,
+    }
     if names:
         data["regions"] = load_regions(a.server, names[0], instances)
         print(f"regions: {data['regions']}", file=sys.stderr)
@@ -330,11 +346,14 @@ def main():
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(text)
     import gzip
+
     with gzip.open(a.out + ".gz", "wb", compresslevel=9) as f:
         f.write(text.encode("utf-8"))
     print(f"{len(discovery)} points with a discovery key", file=sys.stderr)
-    print(f"wrote {len(pois)} pois to {a.out} ({len(text) // 1024} KB, {os.path.getsize(a.out + '.gz') // 1024} KB gzipped)",
-          file=sys.stderr)
+    print(
+        f"wrote {len(pois)} pois to {a.out} ({len(text) // 1024} KB, {os.path.getsize(a.out + '.gz') // 1024} KB gzipped)",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

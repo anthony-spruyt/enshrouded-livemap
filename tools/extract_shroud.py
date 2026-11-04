@@ -13,6 +13,7 @@ Usage:
   python tools/extract_shroud.py --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
       --textures <unpack folder>/UiTextureResource --out web/shroud.png
 """
+
 import argparse
 import os
 import sys
@@ -34,7 +35,7 @@ def main():
     args = ap.parse_args()
     fog = render_map.load(args.game, args.textures)["fog"]
     step = render_map.WORLD // SIZE
-    level = np.ascontiguousarray(fog[step // 2::step, step // 2::step, 1])
+    level = np.ascontiguousarray(fog[step // 2 :: step, step // 2 :: step, 1])
     assert level.shape == (SIZE, SIZE), level.shape
     Image.fromarray(level, "L").save(args.out, optimize=True)
     values, counts = np.unique(level, return_counts=True)

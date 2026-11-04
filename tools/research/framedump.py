@@ -1,5 +1,6 @@
 """Hex view of a saved regdump frames file around an address, as uint32 rows, with known ids
 marked. Usage: python3 framedump.py frames.bin marker-ids.json <addr hex> [before] [after]"""
+
 import json
 import struct
 import sys

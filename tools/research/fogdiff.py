@@ -2,6 +2,7 @@
 bits (after & before == before, after != before): what an explored-area bitmap does when fog is
 revealed. Pages with many such changes and few other changes come first.
 Usage: python3 fogdiff.py before.bin after.bin [top]"""
+
 import struct
 import sys
 

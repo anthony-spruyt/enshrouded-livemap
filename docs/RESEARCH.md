@@ -433,4 +433,3 @@ Minimap uses), `sample(out[4], weather, position, time)` -> weights Clear / Rain
   come from the client's UiTextureResource (`fancy_box_frame_full`, `separator_line_horizontal`,
   `hairline_horizontal`, `fancy_box_background_pattern`, `player_position`) via
   `tools/kfc_content.py`.
-

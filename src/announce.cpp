@@ -44,12 +44,21 @@ void on_join_call(SafetyHookContext& ctx) {
 }
 
 void on_join_after(SafetyHookContext&) {
-    if (!g_pending.armed) return;
+    if (!g_pending.armed) {
+        return;
+    }
     Pending p = g_pending;
     g_pending = {};
     std::string line = g_line();
-    struct { const char* ptr; uint64_t length; } text{line.c_str(), line.size()};
-    struct { uint64_t value; uint8_t has; uint8_t pad[7]; } opt{};
+    struct {
+        const char* ptr;
+        uint64_t length;
+    } text{line.c_str(), line.size()};
+    struct {
+        uint64_t value;
+        uint8_t has;
+        uint8_t pad[7];
+    } opt{};
     alignas(8) uint8_t out[16] = {};
     g_post(out, p.chat, kSystemLine, &text, 0, 0, p.handle, p.account, &opt);
     log("announce: \"%s\" after the join of player handle %u%s", line.c_str(), p.handle,

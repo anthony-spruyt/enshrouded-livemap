@@ -28,7 +28,9 @@ std::atomic<int> g_clients{0};
 bool send_all(SOCKET s, const char* data, size_t size) {
     while (size > 0) {
         int n = send(s, data, static_cast<int>(size > 65536 ? 65536 : size), 0);
-        if (n <= 0) return false;
+        if (n <= 0) {
+            return false;
+        }
         data += n;
         size -= static_cast<size_t>(n);
     }
@@ -50,28 +52,54 @@ const char* content_type(const std::string& path) {
         size_t n = std::strlen(ext);
         return path.size() >= n && path.compare(path.size() - n, n, ext) == 0;
     };
-    if (ends(".html")) return "text/html; charset=utf-8";
-    if (ends(".js")) return "text/javascript; charset=utf-8";
-    if (ends(".css")) return "text/css; charset=utf-8";
-    if (ends(".json")) return "application/json";
-    if (ends(".png")) return "image/png";
-    if (ends(".jpg") || ends(".jpeg")) return "image/jpeg";
-    if (ends(".webp")) return "image/webp";
-    if (ends(".svg")) return "image/svg+xml";
-    if (ends(".woff2")) return "font/woff2";
-    if (ends(".txt")) return "text/plain; charset=utf-8";
+    if (ends(".html")) {
+        return "text/html; charset=utf-8";
+    }
+    if (ends(".js")) {
+        return "text/javascript; charset=utf-8";
+    }
+    if (ends(".css")) {
+        return "text/css; charset=utf-8";
+    }
+    if (ends(".json")) {
+        return "application/json";
+    }
+    if (ends(".png")) {
+        return "image/png";
+    }
+    if (ends(".jpg") || ends(".jpeg")) {
+        return "image/jpeg";
+    }
+    if (ends(".webp")) {
+        return "image/webp";
+    }
+    if (ends(".svg")) {
+        return "image/svg+xml";
+    }
+    if (ends(".woff2")) {
+        return "font/woff2";
+    }
+    if (ends(".txt")) {
+        return "text/plain; charset=utf-8";
+    }
     return "application/octet-stream";
 }
 
 bool read_file(const std::string& rel, std::string& out) {
     std::wstring path = g_web_dir;
-    for (char c : rel) path += (c == '/') ? L'\\' : static_cast<wchar_t>(c);
+    for (char c : rel) {
+        path += (c == '/') ? L'\\' : static_cast<wchar_t>(c);
+    }
     FILE* f = _wfopen(path.c_str(), L"rb");
-    if (f == nullptr) return false;
+    if (f == nullptr) {
+        return false;
+    }
     char buf[65536];
     size_t n;
     out.clear();
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+        out.append(buf, n);
+    }
     std::fclose(f);
     return true;
 }
@@ -82,8 +110,12 @@ std::string query_param(const std::string& query, const char* name) {
     size_t pos = 0;
     while (pos < query.size()) {
         size_t end = query.find('&', pos);
-        if (end == std::string::npos) end = query.size();
-        if (query.compare(pos, key.size(), key) == 0) return query.substr(pos + key.size(), end - pos - key.size());
+        if (end == std::string::npos) {
+            end = query.size();
+        }
+        if (query.compare(pos, key.size(), key) == 0) {
+            return query.substr(pos + key.size(), end - pos - key.size());
+        }
         pos = end + 1;
     }
     return {};
@@ -104,9 +136,13 @@ bool accepts_gzip(const std::string& req) {
 
 // Only plain file names and one folder level: letters, digits, '-', '_', '.', '/', no "..".
 bool safe_path(const std::string& p) {
-    if (p.empty() || p.find("..") != std::string::npos || p[0] == '/') return false;
+    if (p.empty() || p.find("..") != std::string::npos || p[0] == '/') {
+        return false;
+    }
     for (char c : p) {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '/')) return false;
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '/')) {
+            return false;
+        }
     }
     return true;
 }
@@ -115,10 +151,14 @@ void stream_events(SOCKET s) {
     const char* head =
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
         "Connection: keep-alive\r\nX-Accel-Buffering: no\r\n\r\n";
-    if (!send_all(s, head, std::strlen(head))) return;
+    if (!send_all(s, head, std::strlen(head))) {
+        return;
+    }
     for (;;) {
         std::string msg = "data: " + world::snapshot_json() + "\n\n";
-        if (!send_all(s, msg.data(), msg.size())) return;
+        if (!send_all(s, msg.data(), msg.size())) {
+            return;
+        }
         Sleep(static_cast<DWORD>(g_config.update_ms));
     }
 }
@@ -130,7 +170,9 @@ void handle(SOCKET s) {
     char buf[2048];
     while (req.find("\r\n\r\n") == std::string::npos && req.size() < 16384) {
         int n = recv(s, buf, sizeof buf, 0);
-        if (n <= 0) return;
+        if (n <= 0) {
+            return;
+        }
         req.append(buf, n);
     }
     size_t sp1 = req.find(' ');
@@ -197,7 +239,8 @@ void handle(SOCKET s) {
     // them. The page itself is always fetched, so an update shows at the next load.
     const char* type = content_type(rel);
     const char* cache = std::strncmp(type, "image/", 6) == 0 ? "public, max-age=86400"
-                        : rel == "index.html" ? "no-store" : "public, max-age=600";
+                        : rel == "index.html"                ? "no-store"
+                                                             : "public, max-age=600";
     send_response(s, "200 OK", type, body, cache, encoding);
 }
 

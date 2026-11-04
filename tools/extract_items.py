@@ -4,6 +4,7 @@ ItemInfo/<guid>_*.json: itemId.value, the 32-bit id the server uses at runtime).
 
 Usage: python tools/extract_items.py --server <unpacked dir> --out src/items_generated.h
 """
+
 import argparse
 import glob
 import json

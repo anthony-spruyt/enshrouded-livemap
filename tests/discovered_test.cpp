@@ -8,9 +8,12 @@ using livemap::discovered::Store;
 
 static int failures = 0;
 
-#define EXPECT(cond)                                                                              \
-    do {                                                                                          \
-        if (!(cond)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++failures; } \
+#define EXPECT(cond)                                                    \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
+            ++failures;                                                 \
+        }                                                               \
     } while (0)
 
 int main() {
@@ -38,6 +41,8 @@ int main() {
     EXPECT(!u.from_json("not json"));
     EXPECT(u.players() == 0);
     EXPECT(u.from_json("{\"version\":1,\"players\":{}}"));
-    if (failures == 0) std::printf("discovered: all passed\n");
+    if (failures == 0) {
+        std::printf("discovered: all passed\n");
+    }
     return failures == 0 ? 0 : 1;
 }

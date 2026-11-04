@@ -160,8 +160,8 @@ second adds its hook on top of the first one.
 
 ## Build
 
-`build.cmd` (Visual Studio 2022 Build Tools, CMake, Ninja) builds `build\iphlpapi.dll`, runs the
-unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
+`build.cmd` (Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools, CMake, Ninja) builds
+`build\iphlpapi.dll`, runs the unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
 `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in

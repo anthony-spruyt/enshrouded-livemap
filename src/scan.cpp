@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iterator>
 #include <cstdlib>
+#include <format>
 #include <span>
 #include <vector>
 
@@ -72,6 +73,11 @@ constexpr const char* kJoinLine =
 constexpr size_t kJoinTagOffset = 0x29;
 constexpr size_t kJoinCallOffset = 0x78;
 constexpr size_t kJoinAfterOffset = 0x7d;
+
+// id = [[param]+table][([param+8]-1)*16], with table the disp32 of "mov rcx, [rax+table]" at +0x1c.
+constexpr const char* kParamEntity =
+    "49 8b c0 48 85 d2 75 ?? 8b 41 08 85 c0 75 01 c3 8d 50 ff 48 8b 01 48 03 d2 48 8b 88 ?? ?? ?? ?? 8b 04 d1 c3";
+constexpr size_t kParamEntityTableOffset = 0x1c;
 
 
 // Patch #1: independently checked against Steam 26319703. Do not reuse on unknown builds.
@@ -178,6 +184,14 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
             error = buf;
             return false;
         }
+    }
+    if (const std::vector<uintptr_t> accessor = find_all(code, size, parse(kParamEntity)); accessor.size() == 1) {
+        out.param_entity = accessor[0];
+        const uint8_t* disp = code + (accessor[0] - reinterpret_cast<uintptr_t>(code)) + kParamEntityTableOffset;
+        std::memcpy(&out.entity_table, disp, sizeof out.entity_table);
+    } else if (patch1) {
+        error = std::format("pattern 'param_entity' matched {} times (need exactly 1), not hooking", accessor.size());
+        return false;
     }
     // Optional sites: missing ones leave their feature off, the rest keeps working.
     int count = 0;

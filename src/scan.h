@@ -35,6 +35,10 @@ struct Targets {
     // (16-byte BaseId, wasAbandoned at +0x28), [rbp-0x10] = the altar's transform (position
     // 3 x int64 32.32 fixed point), [rbp-0x8] = its build zone (size float3 at +4).
     uintptr_t bases = 0;
+    // The game's accessor for the entity id of the row an ECS system visits (FUN_14065fc00 on
+    // 26404334); its disp32 is the world's entity id table: +0x828 on 25988414, +0x830 on 26404334.
+    uintptr_t param_entity = 0;
+    uint32_t entity_table = 0x828;
     const char* build = nullptr;  // label of the recognised server build
 };
 

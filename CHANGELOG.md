@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.1...v1.7.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **movement:** read the entity id table offset from the game ([#4](https://github.com/anthony-spruyt/enshrouded-livemap/issues/4)) ([922f576](https://github.com/anthony-spruyt/enshrouded-livemap/commit/922f576a592021a799bb1aea5a763ee9da291527))
+
 ## [1.7.1](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.0...v1.7.1) (2026-11-04)
 
 

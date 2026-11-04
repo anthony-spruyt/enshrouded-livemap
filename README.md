@@ -145,13 +145,6 @@ data, `tools/extract_shroud.py`; the Flame level is the first keyword of the ser
 Click a player in the list to follow them (click again or drag the map to stop). Add
 `&follow=<name>` to the link to follow that player whenever they are online.
 
-### Optional: HD map style
-
-On Nexus Mods there is an optional file with a second, colourful map style: an HD map picture
-by Nick (shipped in Aerox912's Sparkweave Minimap, Nexus #143), made sharp with the game's
-relief by `tools/enhance_map.py`. Unzip it over the install; it adds `livemap/tiles-hd` and a
-`maps.json` with both styles. The picture is not part of this repository.
-
 ## Works with Shared XP
 
 Shared XP 1.1.3 or newer. Both mods add a line to the chat after "Player X joined." and can run together; whichever starts

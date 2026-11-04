@@ -7,7 +7,7 @@ namespace livemap::a2s {
 
 namespace {
 
-const std::string kHeader("\xFF\xFF\xFF\xFF", 4);  // NOLINT(runtime/string)
+constexpr char kHeader[] = "\xFF\xFF\xFF\xFF";
 
 // Reads a zero-terminated string at `at`; false when the reply ends first.
 bool skip_string(const std::string& r, size_t& at) {
@@ -22,7 +22,7 @@ bool skip_string(const std::string& r, size_t& at) {
 }  // namespace
 
 std::string info_request(const std::string& challenge) {
-    return kHeader + "TSource Engine Query" + std::string(1, '\0') + challenge;
+    return std::string(kHeader) + "TSource Engine Query" + std::string(1, '\0') + challenge;
 }
 
 std::string challenge_of(const std::string& reply) {

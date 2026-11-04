@@ -20,7 +20,7 @@ int query_port(const std::string& json) {
         ++at;
     }
     char* end = nullptr;
-    long v = std::strtol(json.c_str() + at, &end, 10);
+    const auto v = std::strtol(json.c_str() + at, &end, 10);
     if (end == json.c_str() + at || v < 1 || v > 65535) {
         return 0;
     }

@@ -117,10 +117,8 @@ NICE_LABELS = [
 # Dungeon interiors are placed in the top-left corner of the world, outside the island.
 INTERIOR_CORNERS = [(1600.0, 8000.0), (2600.0, 8200.0)]  # (x below, z above) rectangles
 
-LABEL_STRIP = re.compile(
-    r"(?:^(?:8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_))|_(?:noui|gameplay|gameplayonly|generic|placeholder)\b",
-    re.IGNORECASE,
-)
+LABEL_PREFIX = re.compile(r"^(?:8kmaplabel_|maplabel_|mapmarker_|_npc_|npc_)", re.IGNORECASE)
+LABEL_SUFFIX = re.compile(r"_(?:noui|gameplay|gameplayonly|generic|placeholder)\b", re.IGNORECASE)
 BIOMES = re.compile(
     r"\b(deepforest|steppes|grassland|coldheights|coldHeights|desert|wetlands|ancientlands|"
     r"ancientLands|general|generic|talltrees|tallTrees)_",
@@ -133,7 +131,7 @@ def label_from(name):
         m = re.search(pattern, name)
         if m:
             return m.expand(label) if "\\1" in label else label
-    s = LABEL_STRIP.sub("", name)
+    s = LABEL_SUFFIX.sub("", LABEL_PREFIX.sub("", name))  # prefix first: its trailing _ must not start a suffix match
     s = BIOMES.sub("", s)
     s = re.sub(r"[_\-]+", " ", s).strip()
     s = re.sub(r"\s+\d+(\s|$)", r"\1", s)  # drop bare numbering like " 01"
@@ -300,7 +298,7 @@ def load_names(a):
 def write_pois(out, text):
     import gzip
 
-    with open(out, "w", encoding="utf-8") as f:
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     with gzip.open(out + ".gz", "wb", compresslevel=9) as f:
         f.write(text.encode("utf-8"))

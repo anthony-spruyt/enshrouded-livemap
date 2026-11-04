@@ -461,10 +461,7 @@ void on_registry(SafetyHookContext& ctx) {
     }
 }
 
-// The name field is {char* data, u64 length, u64 capacity}, UTF-8 (raw slot dumps 2026-10-22:
-// "OG Vanilla K" = length 12 / capacity 16, a 19-byte name = 19 / 32). Until 1.0.1 the field
-// was first read as inline text, which turned a pointer without a zero byte early on into a
-// garbled name.
+// The name field is {char* data, u64 length, u64 capacity}, UTF-8: a pointer, not inline text.
 std::string read_name(uintptr_t field) {
     uintptr_t ptr = 0;
     uint64_t length = 0;
@@ -487,7 +484,7 @@ void log_raw_slot(int index, uintptr_t slot) {
     for (int i = 0; i < 0x40; ++i) {
         uint8_t c = 0;
         read_u8(slot + kName + i, c);
-        std::snprintf(hex + i * 3, 4, "%02x ", c);  // NOLINT(runtime/printf)
+        std::snprintf(hex + i * 3, sizeof(hex) - i * 3, "%02x ", c);
     }
     log("SLOT   %d raw +0x20: %s", index, hex);
 }

@@ -161,7 +161,7 @@ bool Store::from_json(const std::string& t) {
         const char* stop = body.c_str() + kend;
         while (s < stop) {
             char* next = nullptr;
-            unsigned long v = std::strtoul(s, &next, 10);
+            const auto v = std::strtoul(s, &next, 10);
             if (next == s) {
                 break;
             }

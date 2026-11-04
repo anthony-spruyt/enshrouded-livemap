@@ -1,8 +1,12 @@
 """The sorted id array around an address in two regdump frame files: its bounds (longest run of
 uint32 sorted by their low 15 bits... checked by trying both orders), its length, and which values
 are only in one of them. Usage: python3 setdiff.py before.bin after.bin <addr hex> [names.tsv]"""
+import os
 import struct
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
 
 
 def window(path, addr, span=1 << 20):
@@ -32,7 +36,7 @@ def run(lo, data, addr, key):
     return lo + 4 * a, words[a:b + 1]
 
 
-before_path, after_path, addr = sys.argv[1], sys.argv[2], int(sys.argv[3], 16)
+before_path, after_path, addr = safe_path(sys.argv[1]), safe_path(sys.argv[2]), int(sys.argv[3], 16)
 for name, key in (("low15", lambda v: v & 0x7FFF), ("low16", lambda v: v & 0xFFFF), ("full", lambda v: v)):
     lo, d = window(before_path, addr)
     s0, w0 = run(lo, d, addr, key)
@@ -47,7 +51,7 @@ s1, w1 = run(lo, d, addr, key)
 print("first words:", " ".join("%08x" % v for v in w1[:8]), "... last:", " ".join("%08x" % v for v in w1[-4:]))
 names = {}
 if len(sys.argv) > 4:
-    for line in open(sys.argv[4], encoding="utf-8"):
+    for line in open(safe_path(sys.argv[4]), encoding="utf-8"):
         p = line.rstrip("\n").split("\t")
         if len(p) >= 2:
             names[int(p[0], 16)] = p[1]

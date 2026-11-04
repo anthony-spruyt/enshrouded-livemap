@@ -2,13 +2,17 @@
 first (and the other way round). Read-only analysis on the host.
 Usage: python3 diffids.py before.bin after.bin marker-ids.json"""
 import json
+import os
 import struct
 import sys
 from collections import defaultdict
 
 import numpy as np
 
-ids_by = {int(k): v for k, v in json.load(open(sys.argv[3]))["ids"].items()}
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
+
+ids_by = {int(k): v for k, v in json.load(open(safe_path(sys.argv[3])))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 
 
@@ -27,7 +31,7 @@ def hits(path):
     return out
 
 
-before, after = hits(sys.argv[1]), hits(sys.argv[2])
+before, after = hits(safe_path(sys.argv[1])), hits(safe_path(sys.argv[2]))
 new, gone = sorted(after - before), sorted(before - after)
 print("before %d hits, after %d, new %d, gone %d" % (len(before), len(after), len(new), len(gone)))
 for title, rows in (("NEW", new), ("GONE", gone)):

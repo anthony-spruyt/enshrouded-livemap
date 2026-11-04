@@ -3,15 +3,19 @@ offset from the field, uint32 length}, +8 id, +0xc index, +0x10 type 3/4/5, +0x1
 whose id is one of the markers' "visible" knowledge ids. Prints each match with its name.
 Usage: python3 descscan.py frames.bin marker-ids.json"""
 import json
+import os
 import struct
 import sys
 
 import numpy as np
 
-ids_by = {int(k): v for k, v in json.load(open(sys.argv[2]))["ids"].items()}
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
+
+ids_by = {int(k): v for k, v in json.load(open(safe_path(sys.argv[2])))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 found = 0
-with open(sys.argv[1], "rb") as f:
+with open(safe_path(sys.argv[1]), "rb") as f:
     while True:
         head = f.read(16)
         if len(head) < 16:

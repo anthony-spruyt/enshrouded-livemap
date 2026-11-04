@@ -19,7 +19,8 @@ game's palette; every pixel comes from the game's data.
 
 Usage (descriptors from `kfc-parser unpack -f tkeen::UiTextureResource`):
   python tools/render_map.py --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
-      --textures <unpack folder>/UiTextureResource --out web/tiles [--size 2048 --png preview.png]
+      --textures <unpack folder>/UiTextureResource --out web/tiles [--size 2048 --png preview.png] --root C:/
+Every path must be inside the working directory or --root.
 """
 import argparse
 import io
@@ -33,6 +34,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kfc_content import Kfc, texture  # noqa: E402
+from paths import safe_path
 
 MAP_GUID = "01bcbd07-bdbf-41c0-9999-5d58fb1a3aa1"
 WORLD = 10240            # metres; one detail pixel = 1 m
@@ -221,7 +223,13 @@ def main():
     ap.add_argument("--preview", help="save a small JPG preview (1024 px) here")
     ap.add_argument("--out", help="tile folder (only with --size 10240)")
     ap.add_argument("--format", choices=("jpg", "webp"), default="jpg", help="tile format")
+    ap.add_argument("--root", help="folder every path argument must be inside (default: the working directory)")
     args = ap.parse_args()
+    args.game = safe_path(args.game, args.root)
+    args.textures = safe_path(args.textures, args.root)
+    args.png = safe_path(args.png, args.root)
+    args.preview = safe_path(args.preview, args.root)
+    args.out = safe_path(args.out, args.root)
 
     data = load(args.game, args.textures)
     img = render(data, args.size)

@@ -5,15 +5,19 @@ lookup table). Read-only analysis on the host (numpy).
 Usage: ... | python3 idscan_host.py marker-ids.json [--save frames.bin]
 """
 import json
+import os
 import struct
 import sys
 from collections import Counter, defaultdict
 
 import numpy as np
 
-ids_by = {int(k): v for k, v in json.load(open(sys.argv[1]))["ids"].items()}
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
+
+ids_by = {int(k): v for k, v in json.load(open(safe_path(sys.argv[1])))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
-save = open(sys.argv[3], "wb") if len(sys.argv) > 3 and sys.argv[2] == "--save" else None
+save = open(safe_path(sys.argv[3]), "wb") if len(sys.argv) > 3 and sys.argv[2] == "--save" else None
 inp = sys.stdin.buffer
 hits = []  # (address, id)
 total = 0

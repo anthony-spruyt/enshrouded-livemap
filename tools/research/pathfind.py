@@ -3,10 +3,14 @@ pointers (reading `span` bytes per node) until a node holds a pointer into one o
 ranges; prints the path as base+offset steps. Usage:
 python3 pathfind.py frames.bin <start hex>[,<start hex>...] <target lo hex>-<hi hex>[,...] [depth] [span hex]"""
 import bisect
+import os
 import struct
 import sys
 
-path = sys.argv[1]
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
+
+path = safe_path(sys.argv[1])
 starts = [int(s, 16) for s in sys.argv[2].split(",")]
 targets = [tuple(int(x, 16) for x in t.split("-")) for t in sys.argv[3].split(",")]
 depth = int(sys.argv[4]) if len(sys.argv) > 4 else 3

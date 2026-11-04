@@ -1,10 +1,14 @@
 """Hex view of a saved regdump frames file around an address, as uint32 rows, with known ids
 marked. Usage: python3 framedump.py frames.bin marker-ids.json <addr hex> [before] [after]"""
 import json
+import os
 import struct
 import sys
 
-path, idfile, addr = sys.argv[1], sys.argv[2], int(sys.argv[3], 16)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
+
+path, idfile, addr = safe_path(sys.argv[1]), safe_path(sys.argv[2]), int(sys.argv[3], 16)
 before = int(sys.argv[4], 0) if len(sys.argv) > 4 else 0x100
 after = int(sys.argv[5], 0) if len(sys.argv) > 5 else 0x400
 ids = {int(k): v for k, v in json.load(open(idfile))["ids"].items()}

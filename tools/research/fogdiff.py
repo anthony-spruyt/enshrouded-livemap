@@ -2,10 +2,14 @@
 bits (after & before == before, after != before): what an explored-area bitmap does when fog is
 revealed. Pages with many such changes and few other changes come first.
 Usage: python3 fogdiff.py before.bin after.bin [top]"""
+import os
 import struct
 import sys
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import safe_path
 
 top = int(sys.argv[3]) if len(sys.argv) > 3 else 25
 
@@ -23,8 +27,9 @@ def frames(path):
     return out
 
 
-fa, fb = frames(sys.argv[1]), frames(sys.argv[2])
-ha, hb = open(sys.argv[1], "rb"), open(sys.argv[2], "rb")
+path_a, path_b = safe_path(sys.argv[1]), safe_path(sys.argv[2])
+fa, fb = frames(path_a), frames(path_b)
+ha, hb = open(path_a, "rb"), open(path_b, "rb")
 pages = []
 compared = 0
 for start, (la, oa) in fa.items():

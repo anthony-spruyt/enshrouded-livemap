@@ -6,7 +6,8 @@ scaled to SIZE px (drawn at about 36 px, so this is sharp on 2x screens too).
 
 Usage (descriptors from `kfc-parser unpack -f tkeen::UiTextureResource`):
   python tools/extract_icons.py --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
-      --textures <unpack folder>/UiTextureResource --out web/icons
+      --textures <unpack folder>/UiTextureResource --out web/icons --root C:/
+Every path must be inside the working directory or --root.
 """
 import argparse
 import json
@@ -18,6 +19,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kfc_content import Kfc, texture  # noqa: E402
+from paths import safe_path
 
 SIZE = 72
 # web map category -> game marker texture. As in MapMarkerRegistryResource (marker type id =
@@ -80,7 +82,11 @@ def main():
     ap.add_argument("--game", required=True)
     ap.add_argument("--textures", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--root", help="folder every path argument must be inside (default: the working directory)")
     args = ap.parse_args()
+    args.game = safe_path(args.game, args.root)
+    args.textures = safe_path(args.textures, args.root)
+    args.out = safe_path(args.out, args.root)
     kfc = Kfc(args.game)
     desc = find_descriptors(args.textures, set(ICONS.values()))
     os.makedirs(args.out, exist_ok=True)

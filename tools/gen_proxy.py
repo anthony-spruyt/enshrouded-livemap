@@ -1,6 +1,7 @@
 """Generate the proxy DLL sources from the real system DLL's export table.
 
-Usage: python tools/gen_proxy.py [C:/Windows/System32/iphlpapi.dll]
+Usage: python tools/gen_proxy.py [<dll inside the working directory>]
+(default: C:/Windows/System32/iphlpapi.dll)
 
 Writes src/proxy.def, src/proxy_stubs.asm and src/proxy_names.inc. Every export of the real
 library gets a stub that jumps through a pointer the DLL fills at load time, so anything in the
@@ -15,8 +16,9 @@ import sys
 
 sys.path.insert(0, site.getusersitepackages())
 import pefile  # noqa: E402
+from paths import safe_path
 
-src = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\Windows\System32\iphlpapi.dll")
+src = pathlib.Path(safe_path(sys.argv[1]) if len(sys.argv) > 1 else r"C:\Windows\System32\iphlpapi.dll")
 out = pathlib.Path(__file__).resolve().parent.parent / "src"
 
 pe = pefile.PE(str(src))

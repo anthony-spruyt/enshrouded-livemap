@@ -7,7 +7,8 @@ Sources (unpacked with kfc-parser, see docs/RESEARCH.md section 9):
 
 Entity transforms in the chunks are fixed point: value = hi + lo / 65536 (metres).
 
-Usage: python tools/extract_pois.py --server <dir> --out web/pois.json [--survey]
+Usage: python tools/extract_pois.py --server <dir> --out web/pois.json [--survey] [--root <dir>]
+Every path must be inside the working directory or --root.
 """
 import argparse
 import collections
@@ -16,6 +17,8 @@ import json
 import os
 import re
 import sys
+
+from paths import safe_path
 
 # Map marker types of build 25988414 (keen::ecs::MapMarker.markerType), named from the
 # templates that use them. Order = order in the page's marker panel.
@@ -279,7 +282,13 @@ def main():
     ap.add_argument("--loca", help="unpacked LocaTagCollectionResource json (client)")
     ap.add_argument("--registry", help="unpacked MapMarkerRegistryResource json (client)")
     ap.add_argument("--language", default="En_Us")
+    ap.add_argument("--root", help="folder every path argument must be inside (default: the working directory)")
     a = ap.parse_args()
+    a.server = safe_path(a.server, a.root)
+    a.out = safe_path(a.out, a.root)
+    a.game = safe_path(a.game, a.root)
+    a.loca = safe_path(a.loca, a.root)
+    a.registry = safe_path(a.registry, a.root)
     names = None
     if a.game and a.loca and a.registry:
         from game_texts import GameTexts, guid_id

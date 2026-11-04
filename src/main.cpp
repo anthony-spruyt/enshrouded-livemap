@@ -38,19 +38,28 @@ std::wstring exe_dir() {
 }
 
 // The link to share: PublicUrl from livemap.ini, or the public IP asked once an hour.
-std::mutex g_link_mutex;
-std::string g_link;
+struct SharedLink {
+    std::mutex mutex;
+    std::string value;
+};
+
+SharedLink& shared_link() {
+    static SharedLink link;
+    return link;
+}
 
 std::string current_link() {
-    std::lock_guard lock(g_link_mutex);
-    return g_link;
+    SharedLink& link = shared_link();
+    std::lock_guard lock(link.mutex);
+    return link.value;
 }
 
 void set_link(const std::string& value) {
     {
-        std::lock_guard lock(g_link_mutex);
-        if (g_link == value) return;
-        g_link = value;
+        SharedLink& link = shared_link();
+        std::lock_guard lock(link.mutex);
+        if (link.value == value) return;
+        link.value = value;
     }
     livemap::log("map link: %s", value.c_str());
 }
@@ -244,10 +253,9 @@ DWORD WINAPI start(LPVOID) {
             last_explored = now;
             livemap::world::refresh_explored();
             const uint64_t version = livemap::world::explored_store().version();
-            if (version != explored_saved && now - last_explored_save >= 30'000) {
-                last_explored_save = now;
-                if (write_file_atomic(explored_path, livemap::world::explored_store().to_json())) explored_saved = version;
-            }
+            const bool due = version != explored_saved && now - last_explored_save >= 30'000;
+            if (due) last_explored_save = now;
+            if (due && write_file_atomic(explored_path, livemap::world::explored_store().to_json())) explored_saved = version;
         }
         if (config.log_diagnostics && now - last_diag >= 30'000) {
             last_diag = now;

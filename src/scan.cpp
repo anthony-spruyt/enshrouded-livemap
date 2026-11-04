@@ -62,6 +62,13 @@ Masked parse(const char* text) {
     return p;
 }
 
+bool matches_at(const uint8_t* at, const Masked& p) {
+    for (size_t k = 0; k < p.bytes.size(); ++k) {
+        if (p.fixed[k] && at[k] != p.bytes[k]) return false;
+    }
+    return true;
+}
+
 std::vector<uintptr_t> find_all(const uint8_t* begin, size_t size, const Masked& p) {
     std::vector<uintptr_t> hits;
     const size_t n = p.bytes.size();
@@ -70,9 +77,7 @@ std::vector<uintptr_t> find_all(const uint8_t* begin, size_t size, const Masked&
     if (lead == n) return hits;
     for (size_t i = 0; i + n <= size; ++i) {
         if (begin[i + lead] != p.bytes[lead]) continue;
-        bool ok = true;
-        for (size_t k = 0; k < n && ok; ++k) ok = !p.fixed[k] || begin[i + k] == p.bytes[k];
-        if (ok) hits.push_back(reinterpret_cast<uintptr_t>(begin + i));
+        if (matches_at(begin + i, p)) hits.push_back(reinterpret_cast<uintptr_t>(begin + i));
     }
     return hits;
 }

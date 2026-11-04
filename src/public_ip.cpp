@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <winhttp.h>
 
+#include <array>
+
 #include "link.h"
 
 namespace livemap::public_ip {
@@ -47,14 +49,14 @@ std::string get(const wchar_t* host, const wchar_t* path, std::string& error) {
 }  // namespace
 
 std::string detect(std::string& error) {
-    const struct { const wchar_t* host; const wchar_t* path; } services[] = {
+    struct Service { const wchar_t* host; const wchar_t* path; };
+    const auto services = std::to_array<Service>({
         {L"api.ipify.org", L"/"},
         {L"icanhazip.com", L"/"},
-    };
+    });
     for (const auto& s : services) {
         std::string why;
-        std::string ip = get(s.host, s.path, why);
-        if (link::valid_ip(ip)) return ip;
+        if (std::string ip = get(s.host, s.path, why); link::valid_ip(ip)) return ip;
         error = why.empty() ? "unexpected answer" : why;
     }
     return {};

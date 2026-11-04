@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <format>
 
 namespace livemap::explored {
 
@@ -82,8 +83,7 @@ bool Store::reveal(const std::string& name, double x, double z) {
         for (int dx = -r; dx <= r; ++dx) {
             const int col = cx + dx;
             if (col < 0 || col >= kCells) continue;
-            const double mx = (col + 0.5) * kCellMetres - x;
-            if (mx * mx + mz * mz > kRadiusMetres * kRadiusMetres) continue;
+            if (const double mx = (col + 0.5) * kCellMetres - x; mx * mx + mz * mz > kRadiusMetres * kRadiusMetres) continue;
             const size_t bit = static_cast<size_t>(row) * kCells + col;
             const uint8_t mask = static_cast<uint8_t>(1u << (bit & 7));
             if (!(g[bit >> 3] & mask)) {
@@ -123,7 +123,7 @@ std::string Store::to_json() {
 
 bool Store::from_json(const std::string& t) {
     size_t i = t.find("\"players\"");
-    if (i == std::string::npos || t.find("\"cells\":" + std::to_string(kCells)) == std::string::npos) return false;
+    if (i == std::string::npos || !t.contains(std::format("\"cells\":{}", kCells))) return false;
     i = t.find('{', i);
     if (i == std::string::npos) return false;
     std::map<std::string, std::vector<uint8_t>> loaded;

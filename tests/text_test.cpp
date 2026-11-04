@@ -1,5 +1,6 @@
 // Plain assert-based tests for cleaning names from game memory (no framework).
 #include <cstdio>
+#include <print>
 #include <string>
 
 #include "../src/text.h"
@@ -32,7 +33,7 @@ int main() {
     EXPECT(clean_utf8("a\tb\x7F" "c\"") == "a b c\"");
     EXPECT(clean_utf8("") == "");
 
-    if (failures) std::printf("%d failure(s)\n", failures);
-    else std::printf("all text tests passed\n");
+    if (failures) std::print("{} failure(s)\n", failures);
+    else std::print("all text tests passed\n");
     return failures ? 1 : 0;
 }

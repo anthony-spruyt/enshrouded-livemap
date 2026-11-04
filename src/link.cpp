@@ -48,7 +48,7 @@ std::string make(const std::string& public_url, const std::string& ip, int port,
     if (!public_url.empty()) {
         base = public_url;
         while (!base.empty() && base.back() == '/') base.pop_back();
-        if (base.find("://") == std::string::npos) base = "http://" + base;
+        if (!base.contains("://")) base = "http://" + base;
     } else if (valid_ip(ip) && port > 0) {
         base = "http://" + (ip.find(':') != std::string::npos ? "[" + ip + "]" : ip) + ":" + std::to_string(port);
     } else {

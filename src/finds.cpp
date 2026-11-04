@@ -71,6 +71,66 @@ struct Reader {
     }
 };
 
+const char* rl_json(int rl) {
+    if (rl > 0) return ",\"rl\":true";
+    if (rl == 0) return ",\"rl\":false";
+    return ",\"rl\":null";
+}
+
+bool read_names(Reader& r, std::vector<std::string>& out) {
+    if (!r.expect('[')) return false;
+    if (r.take(']')) return true;
+    for (;;) {
+        out.push_back(r.string());
+        if (r.take(']')) return true;
+        if (!r.expect(',')) return false;
+    }
+}
+
+bool read_field(Reader& r, const std::string& key, const std::string& f, Deposit& d, Chest& c) {
+    if (f == "x") { c.x = r.number(); d.x = c.x; }
+    else if (f == "y") { c.y = r.number(); d.y = c.y; }
+    else if (f == "z") { c.z = r.number(); d.z = c.z; }
+    else if (f == "sort") { if (r.take('n')) { r.i += 3; } else d.sort = r.string(); }
+    else if (f == "xp") d.xp = static_cast<uint32_t>(r.number());
+    else if (f == "hits") d.hits = static_cast<uint32_t>(r.number());
+    else if (f == "first") d.first = static_cast<int64_t>(r.number());
+    else if (f == "last") d.last = static_cast<int64_t>(r.number());
+    else if (f == "by" && key == "ore") return read_names(r, d.by);
+    else if (f == "by") c.by = r.string();
+    else if (f == "poi") { if (r.take('n')) { r.i += 3; c.poi = -1; } else c.poi = static_cast<int>(r.number()); }
+    else if (f == "at") c.at = static_cast<int64_t>(r.number());
+    else if (f == "rl") { if (r.take('t')) { r.i += 3; c.rl = 1; } else if (r.take('f')) { r.i += 4; c.rl = 0; } else { r.i += 4; c.rl = -1; } }
+    else r.skip_value();
+    return true;
+}
+
+bool read_entry(Reader& r, const std::string& key, Deposit& d, Chest& c) {
+    if (!r.expect('{')) return false;
+    if (r.take('}')) return true;
+    for (;;) {
+        std::string f = r.string();
+        if (!r.expect(':')) return false;
+        r.ws();
+        if (!read_field(r, key, f, d, c) || !r.ok) return false;
+        if (r.take('}')) return true;
+        if (!r.expect(',')) return false;
+    }
+}
+
+bool read_list(Reader& r, const std::string& key, std::vector<Deposit>& ore, std::vector<Chest>& chests) {
+    if (!r.expect('[')) return false;
+    if (r.take(']')) return true;
+    for (;;) {
+        Deposit d{0, 0, 0};
+        Chest c{0, 0, 0};
+        if (!read_entry(r, key, d, c)) return false;
+        if (key == "ore") ore.push_back(d); else chests.push_back(c);
+        if (r.take(']')) return true;
+        if (!r.expect(',')) return false;
+    }
+}
+
 }  // namespace
 
 bool is_ore_like(const std::string& n) {
@@ -123,8 +183,7 @@ bool Store::record_ore(double x, double y, double z, const std::string& sort, ui
 bool Store::record_chest(double x, double y, double z, int poi, const std::string& player, int64_t now, int rl) {
     std::lock_guard lock(mutex_);
     for (Chest& c : chests_) {
-        bool same = (poi >= 0 && c.poi == poi) || dist2(c.x, c.z, x, z) <= kChestMatchRadius * kChestMatchRadius;
-        if (!same) continue;
+        if (const bool same = (poi >= 0 && c.poi == poi) || dist2(c.x, c.z, x, z) <= kChestMatchRadius * kChestMatchRadius; !same) continue;
         if (c.by == player && c.at == now) return false;
         c.by = player;
         c.at = now;
@@ -176,7 +235,7 @@ std::string Store::to_json() const {
         std::snprintf(buf, sizeof buf, "{\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"poi\":", c.x, c.y, c.z);
         out += buf;
         out += c.poi >= 0 ? std::to_string(c.poi) : "null";
-        out += c.rl > 0 ? ",\"rl\":true" : c.rl == 0 ? ",\"rl\":false" : ",\"rl\":null";
+        out += rl_json(c.rl);
         out += ",\"by\":\"";
         append_escaped(out, c.by);
         std::snprintf(buf, sizeof buf, "\",\"at\":%lld}", static_cast<long long>(c.at));
@@ -196,51 +255,9 @@ bool Store::from_json(const std::string& text) {
         for (;;) {
             std::string key = r.string();
             if (!r.expect(':')) return false;
-            if (key == "version") {
-                version = static_cast<uint64_t>(r.number());
-            } else if (key == "ore" || key == "chests") {
-                if (!r.expect('[')) return false;
-                if (!r.take(']')) {
-                    for (;;) {
-                        if (!r.expect('{')) return false;
-                        Deposit d{0, 0, 0};
-                        Chest c{0, 0, 0};
-                        if (!r.take('}')) {
-                            for (;;) {
-                                std::string f = r.string();
-                                if (!r.expect(':')) return false;
-                                r.ws();
-                                if (f == "x") d.x = c.x = r.number();
-                                else if (f == "y") d.y = c.y = r.number();
-                                else if (f == "z") d.z = c.z = r.number();
-                                else if (f == "sort") { if (r.take('n')) { r.i += 3; } else d.sort = r.string(); }
-                                else if (f == "xp") d.xp = static_cast<uint32_t>(r.number());
-                                else if (f == "hits") d.hits = static_cast<uint32_t>(r.number());
-                                else if (f == "first") d.first = static_cast<int64_t>(r.number());
-                                else if (f == "last") d.last = static_cast<int64_t>(r.number());
-                                else if (f == "by" && key == "ore") {
-                                    if (!r.expect('[')) return false;
-                                    if (!r.take(']')) {
-                                        for (;;) { d.by.push_back(r.string()); if (r.take(']')) break; if (!r.expect(',')) return false; }
-                                    }
-                                } else if (f == "by") c.by = r.string();
-                                else if (f == "poi") { if (r.take('n')) { r.i += 3; c.poi = -1; } else c.poi = static_cast<int>(r.number()); }
-                                else if (f == "at") c.at = static_cast<int64_t>(r.number());
-                                else if (f == "rl") { if (r.take('t')) { r.i += 3; c.rl = 1; } else if (r.take('f')) { r.i += 4; c.rl = 0; } else { r.i += 4; c.rl = -1; } }
-                                else r.skip_value();
-                                if (!r.ok) return false;
-                                if (r.take('}')) break;
-                                if (!r.expect(',')) return false;
-                            }
-                        }
-                        if (key == "ore") ore.push_back(d); else chests.push_back(c);
-                        if (r.take(']')) break;
-                        if (!r.expect(',')) return false;
-                    }
-                }
-            } else {
-                r.skip_value();
-            }
+            if (key == "version") version = static_cast<uint64_t>(r.number());
+            else if (key != "ore" && key != "chests") r.skip_value();
+            else if (!read_list(r, key, ore, chests)) return false;
             if (!r.ok) return false;
             if (r.take('}')) break;
             if (!r.expect(',')) return false;

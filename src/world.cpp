@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <format>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -113,7 +114,10 @@ void probe_arm(uint32_t handle, uint64_t account) {
             ProbeLine l;
             char who[8] = {};
             int used = 0;
-            if (buf[0] == '#' || std::sscanf(buf, "%d %7s %x %x %n", &l.type, who, &l.loca1, &l.loca2, &used) < 4) continue;
+            if (buf[0] == '#' || sscanf_s(buf, "%d %7s %x %x %n", &l.type, who, static_cast<unsigned>(sizeof who),
+                                          &l.loca1, &l.loca2, &used) < 4) {
+                continue;
+            }
             l.self = std::strcmp(who, "self") == 0;
             l.text = buf + used;
             while (!l.text.empty() && (l.text.back() == '\n' || l.text.back() == '\r')) l.text.pop_back();
@@ -132,14 +136,15 @@ void probe_arm(uint32_t handle, uint64_t account) {
 }
 
 void probe_step(uintptr_t manager) {
-    if (g_chat_post == nullptr || GetTickCount64() < g_probe_at_ms.load(std::memory_order_relaxed)) return;
+    if (g_chat_post == nullptr || GetTickCount64() < g_probe_at_ms.load()) return;
     std::lock_guard lock(g_probe_mutex);
     if (g_probe_next >= g_probe_lines.size()) return;
     uintptr_t chat = 0;
     if (!read_ptr(manager + 0x60, chat) || chat == 0) return;
     const ProbeLine& l = g_probe_lines[g_probe_next];
     struct { const char* ptr; uint64_t length; } text{l.text.c_str(), l.text.size()};
-    struct { uint64_t value; uint8_t has; uint8_t pad[7]; } opt{};
+    struct { uint64_t value; uint8_t has; std::array<uint8_t, 7> pad; } opt{};
+    static_assert(sizeof(opt) == 16);
     alignas(8) uint8_t out[16] = {};
     g_chat_post(out, chat, static_cast<uint8_t>(l.type), &text, l.loca1, l.loca2, l.self ? g_probe_handle : 0,
                 l.self ? g_probe_account : 0, &opt);
@@ -159,7 +164,7 @@ void on_movement(SafetyHookContext& ctx) {
     uint32_t entity = param_entity(ctx.rbx, entity_table().load());
     if (entity == 0) return;
     for (Slot& s : g_slots) {
-        if (s.entity.load(std::memory_order_relaxed) != entity) continue;
+        if (s.entity.load() != entity) continue;
         uintptr_t pos = 0;
         uint64_t x = 0, y = 0, z = 0;
         if (read_ptr(ctx.rsp + 0x58, pos) && read_u64(pos, x) && read_u64(pos + 8, y) && read_u64(pos + 16, z)) {
@@ -226,7 +231,7 @@ void on_mining(SafetyHookContext& ctx) {
     if (name == nullptr || !finds::is_ore_like(name)) return;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load(std::memory_order_relaxed) != entity || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
+        if (s.entity.load() != entity || s.seen_ms.load() == 0) continue;
         std::string player;
         {
             std::lock_guard lock(g_names_mutex);
@@ -274,8 +279,8 @@ bool guess_position(uintptr_t record, double& x, double& y, double& z) {
         if (t == 0 || !read_position(t, x, y, z)) continue;
         uint32_t q[4] = {};
         float f[4] = {};
-        bool ok = true;
-        for (int k = 0; k < 4 && ok; ++k) ok = read_u32(t + 0x18 + k * 4, q[k]);
+        const bool ok = read_u32(t + 0x18, q[0]) && read_u32(t + 0x1c, q[1]) && read_u32(t + 0x20, q[2]) &&
+                        read_u32(t + 0x24, q[3]);
         if (!ok) continue;
         std::memcpy(f, q, sizeof f);
         double n = std::sqrt(static_cast<double>(f[0]) * f[0] + static_cast<double>(f[1]) * f[1] +
@@ -286,7 +291,7 @@ bool guess_position(uintptr_t record, double& x, double& y, double& z) {
 }
 
 void resolve_types(uintptr_t system, uint16_t offer_index, uintptr_t record) {
-    if (g_types_state.load(std::memory_order_relaxed) != 0) return;
+    if (g_types_state.load() != 0) return;
     uintptr_t owner = 0, world = 0, registry = 0;
     if (!read_ptr(system, owner) || !read_ptr(owner + 0x30, world) || !read_ptr(world, registry)) {
         log("CHEST registry not readable (system %llx)", static_cast<unsigned long long>(system));
@@ -314,7 +319,7 @@ std::string nearest_player(double x, double z, double within) {
     double best_d = within * within;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load(std::memory_order_relaxed) == 0 || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
+        if (s.entity.load() == 0 || s.seen_ms.load() == 0) continue;
         double dx = meters(s.x.load(std::memory_order_relaxed)) - x, dz = meters(s.z.load(std::memory_order_relaxed)) - z;
         double d = dx * dx + dz * dz;
         if (d < best_d) { best_d = d; best = i; }
@@ -418,7 +423,7 @@ void log_raw_slot(int index, uintptr_t slot) {
     for (int i = 0; i < 0x40; ++i) {
         uint8_t c = 0;
         read_u8(slot + kName + i, c);
-        std::snprintf(hex + i * 3, 4, "%02x ", c);
+        std::format_to_n(hex + i * 3, 3, "{:02x} ", c);
     }
     log("SLOT   %d raw +0x20: %s", index, hex);
 }
@@ -526,8 +531,7 @@ void refresh_explored() {
     const uint64_t now = GetTickCount64();
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        const uint64_t seen = s.seen_ms.load(std::memory_order_relaxed);
-        if (s.entity.load(std::memory_order_relaxed) == 0 || seen == 0 || now - seen > 5000) continue;
+        if (const uint64_t seen = s.seen_ms.load(); s.entity.load() == 0 || seen == 0 || now - seen > 5000) continue;
         std::string name;
         {
             std::lock_guard lock(g_names_mutex);
@@ -658,9 +662,11 @@ void refresh_players() {
         uintptr_t slot = manager + kSlots + static_cast<uintptr_t>(i) * kStride;
         uint32_t handle = 0, entity = 0;
         uint8_t state = 0;
-        bool in_game = read_u32(slot, handle) && handle != 0 && read_u8(slot + kState, state) &&
-                       state == kInGame && read_u32(slot + kEntity, entity) && entity != 0;
-        if (!in_game) entity = 0;
+        if (const bool in_game = read_u32(slot, handle) && handle != 0 && read_u8(slot + kState, state) &&
+                                 state == kInGame && read_u32(slot + kEntity, entity) && entity != 0;
+            !in_game) {
+            entity = 0;
+        }
         uint32_t previous = g_slots[i].entity.exchange(entity, std::memory_order_relaxed);
         if (previous == 0 && entity != 0 && g_chat_post != nullptr) {
             uint64_t account = 0;

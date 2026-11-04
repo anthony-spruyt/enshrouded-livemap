@@ -98,6 +98,10 @@ target_link_libraries(scan_test PRIVATE livemap_core)
 target_compile_definitions(scan_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 add_test(NAME scan_synthetic_builds COMMAND scan_test)
 
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# pytest comes from tools/requirements-test.txt; the cache and bytecode stay out of the source tree.
+add_test(NAME tools_paths COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_paths.py")
+
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)
 # assert() checks must stay on in Release.

@@ -160,9 +160,12 @@ second adds its hook on top of the first one.
 
 ## Build
 
-`build.cmd` (Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools, CMake, Ninja) builds
+`build.cmd` (Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools, CMake, Ninja, Python 3) builds
 `build\iphlpapi.dll`, runs the unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
 `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
+
+One of the unit tests runs the Python tools' tests with pytest. Install it once with
+`python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so

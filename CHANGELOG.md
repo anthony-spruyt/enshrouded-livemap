@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.3](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.2...v1.7.3) (2026-11-04)
+
+
+### Code Refactoring
+
+* **scan:** read build signatures and offsets from data/builds.json ([9ea5156](https://github.com/anthony-spruyt/enshrouded-livemap/commit/9ea51566b6b420ce79853339c21731028d6fcd6e))
+
 ## [1.7.2](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.1...v1.7.2) (2026-11-04)
 
 

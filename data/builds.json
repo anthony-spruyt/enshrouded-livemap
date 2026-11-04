@@ -242,6 +242,35 @@
       "expected_operands": {
         "entity_table": "0x830"
       }
+    },
+    {
+      "label": "26430253",
+      "buildids": [
+        "26430253"
+      ],
+      "time_date_stamp": 1793791038,
+      "size_of_image": "0x1dde000",
+      "sigset": "patch1",
+      "mining_layout": "stack_record",
+      "steam": {
+        "depot": "2278521",
+        "manifest": "8886672487109033979",
+        "exe_sha256": "f0d824be7fcd48ebfe2458ff5c28da26060c2074e3ec1fcac587e5a1d508aeb2"
+      },
+      "expected": {
+        "player_table": "0x7bed90",
+        "movement": "0x9581a",
+        "daytime": "0x969c62",
+        "registry": "0x67e720",
+        "mining": "0x22a01a",
+        "chest": "0xa578a",
+        "bases": "0xee3f0",
+        "chat_post": "0x9151f0",
+        "param_entity": "0x65fc00"
+      },
+      "expected_operands": {
+        "entity_table": "0x830"
+      }
     }
   ]
 }

@@ -224,9 +224,9 @@
       "sigset": "patch1",
       "mining_layout": "stack_record",
       "steam": {
-        "depot": "2278521",
-        "manifest": "7782830484557676320",
-        "exe_sha256": "c5c9fe50c6398d2adedd98923c2d04bf9d9b4af64c1447ac167cdf8f874ff84f"
+        "depot": null,
+        "manifest": null,
+        "exe_sha256": null
       },
       "expected": {
         "player_table": "0x7bed90",

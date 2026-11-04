@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Enshrouded server builds the live map supports",
+  "type": "object",
+  "required": ["sigsets", "builds"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "sigsets": {
+      "description": "Named lists of hook site patterns. A pattern is searched for in the .text section and must match exactly once. The order is the order of the checks.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/pattern" }
+      }
+    },
+    "builds": {
+      "description": "One row per server executable, recognised by its PE TimeDateStamp and SizeOfImage.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/build" }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "hex": {
+      "description": "An offset, size or RVA: lower-case hex that fits 32 bits.",
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{1,8}$"
+    },
+    "id": {
+      "description": "A Steam id, kept as text because manifest ids exceed 2^53.",
+      "type": "string",
+      "pattern": "^[0-9]{1,20}$"
+    },
+    "hexMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/hex" }
+    },
+    "pattern": {
+      "type": "object",
+      "required": ["site", "bytes", "offset", "mandatory"],
+      "additionalProperties": false,
+      "properties": {
+        "site": { "$ref": "#/$defs/name" },
+        "bytes": {
+          "description": "Lower-case hex bytes separated by single spaces; ?? matches any byte.",
+          "type": "string",
+          "pattern": "^([0-9a-f]{2}|\\?\\?)( ([0-9a-f]{2}|\\?\\?))*$"
+        },
+        "offset": {
+          "description": "The hook is this many bytes after the start of the match.",
+          "$ref": "#/$defs/hex"
+        },
+        "mandatory": {
+          "description": "True: a build whose match count is not exactly 1 is not hooked at all. False: the feature stays off.",
+          "type": "boolean"
+        },
+        "operands": {
+          "description": "Offsets from the start of the match of values the code reads out of it.",
+          "$ref": "#/$defs/hexMap"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["label", "buildids", "time_date_stamp", "size_of_image", "sigset", "mining_layout", "steam", "expected"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "description": "What the DLL logs as the server build.",
+          "type": "string",
+          "pattern": "^[0-9a-z_.-]{1,32}$"
+        },
+        "buildids": {
+          "description": "Steam build ids that ship this executable.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "time_date_stamp": {
+          "description": "PE FileHeader.TimeDateStamp.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "size_of_image": {
+          "description": "PE OptionalHeader.SizeOfImage.",
+          "$ref": "#/$defs/hex"
+        },
+        "sigset": {
+          "description": "A key of sigsets.",
+          "$ref": "#/$defs/name"
+        },
+        "mining_layout": {
+          "description": "The decoder of the mining hook's registers. A new one is code (src/mining.h).",
+          "enum": ["inline_array", "stack_record"]
+        },
+        "steam": {
+          "type": "object",
+          "required": ["depot", "manifest", "exe_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "depot": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+            "manifest": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+            "exe_sha256": {
+              "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            }
+          }
+        },
+        "expected": {
+          "description": "The RVA of each site in this executable, as the selftest checks it. Site names are those of the sigset.",
+          "$ref": "#/$defs/hexMap"
+        },
+        "expected_operands": {
+          "description": "Values the code reads out of a match, as the selftest checks them.",
+          "$ref": "#/$defs/hexMap"
+        }
+      }
+    }
+  }
+}

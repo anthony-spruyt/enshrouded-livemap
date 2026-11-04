@@ -1,0 +1,247 @@
+{
+  "$schema": "./builds.schema.json",
+  "sigsets": {
+    "launch": [
+      {
+        "site": "player_table",
+        "bytes": "48 8b c4 55 53 56 57 41 54 41 56 41 57 48 8d a8 48 f6 ff ff 48 81 ec 80 0a 00 00",
+        "offset": "0x0",
+        "mandatory": true
+      },
+      {
+        "site": "movement",
+        "bytes": "48 01 0a f3 48 0f 2c c6 f3 49 0f 2c c8 48 03 c8 48 01 4a 08 f3 48 0f 2c cf f3 48 0f 2c c6 48 03 c8 48 01 4a 10 41 b8 48 00 00 00 48 8d 54 24 40 48 8b cb",
+        "offset": "0x25",
+        "mandatory": true
+      },
+      {
+        "site": "daytime",
+        "bytes": "8b cf e8 09 e2 fc ff 48 8b d0 48 8b cf e8 5e 8b fc ff 48 89 47 48 49 3b 07 7c 09 49",
+        "offset": "0x12",
+        "mandatory": true
+      },
+      {
+        "site": "registry",
+        "bytes": "48 89 5c 24 20 55 56 57 41 54 41 55 48 83 ec 20 4c 8b 52 08 33 f6 4c 8b",
+        "offset": "0x0",
+        "mandatory": true
+      },
+      {
+        "site": "param_entity",
+        "bytes": "49 8b c0 48 85 d2 75 ?? 8b 41 08 85 c0 75 01 c3 8d 50 ff 48 8b 01 48 03 d2 48 8b 88 ?? ?? ?? ?? 8b 04 d1 c3",
+        "offset": "0x0",
+        "mandatory": false,
+        "operands": {
+          "entity_table": "0x1c"
+        }
+      },
+      {
+        "site": "mining",
+        "bytes": "48 8b 46 08 33 d2 48 8d 0c 40 48 8b 06 48 89 14 c8 48 89 54 c8 08 89 6c c8 10 44 89 7c c8 14",
+        "offset": "0x16",
+        "mandatory": false
+      },
+      {
+        "site": "chest",
+        "bytes": "48 8b 44 24 38 8b 40 24 89 47 10 48 8b 74 24 30 4c 8b 4c 24 50 44 8b 85 58 74 00 00",
+        "offset": "0xb",
+        "mandatory": false
+      },
+      {
+        "site": "bases",
+        "bytes": "48 8b 45 f0 48 8d 4c 24 70 48 8b 55 f8 48 83 c2 10 0f 10 00 0f 11 44 24 70 0f 10 48 10 0f 11 4d 80 0f 10 40 20 0f 11 45 90 f2 0f 10 48 30 f2 0f 11 4d a0 e8",
+        "offset": "0x0",
+        "mandatory": false
+      },
+      {
+        "site": "chat_post",
+        "bytes": "40 55 56 41 54 41 55 41 57 48 83 ec 30 49 8b 41 08 33 ed 4d 8b f9 45 0f b6 e0 48 8b f2 4c 8b e9 48 3d 00 04 00 00 76 16",
+        "offset": "0x0",
+        "mandatory": false
+      },
+      {
+        "site": "join_line",
+        "bytes": "48 83 7e 60 00 74 ?? 41 8b 4e 0c e8 ?? ?? ?? ?? 49 8b 4e 48 4c 8d 05 ?? ?? ?? ?? 41 8b 16 85 c0 4c 89 85 ?? ?? ?? ?? 41 b9 ?? ?? ?? ?? 41 b8 ?? ?? ?? ?? c6 85 ?? ?? ?? ?? 00 45 0f 44 c1 4c 89 a5 ?? ?? ?? ?? 4c 8d 8d ?? ?? ?? ?? 4c 89 4c 24 40 4c 8d 8d ?? ?? ?? ?? 48 89 4c 24 38 48 8d 8d ?? ?? ?? ?? 89 54 24 30 48 8b 56 60 89 44 24 28 44 89 44 24 20 41 b0 04",
+        "offset": "0x78",
+        "mandatory": false,
+        "operands": {
+          "join_tag": "0x29"
+        }
+      }
+    ],
+    "patch1": [
+      {
+        "site": "player_table",
+        "bytes": "48 8b c4 55 53 56 57 41 54 41 56 41 57 48 8d a8 28 f6 ff ff 48 81 ec a0 0a 00 00",
+        "offset": "0x0",
+        "mandatory": true
+      },
+      {
+        "site": "movement",
+        "bytes": "48 01 0a f3 48 0f 2c c6 f3 49 0f 2c c8 48 03 c8 48 01 4a 08 f3 48 0f 2c cf f3 48 0f 2c c6 48 03 c8 48 01 4a 10 41 b8 48 00 00 00 48 8d 54 24 40 48 8b cb",
+        "offset": "0x25",
+        "mandatory": true
+      },
+      {
+        "site": "daytime",
+        "bytes": "48 8b cf e8 c9 dd fc ff 48 8b d0 48 8b cf e8 0e 87 fc ff 48 89 47 48 49 3b 07 7c 09 49 3b 06 7d 04 b0 01 eb 02",
+        "offset": "0x13",
+        "mandatory": true
+      },
+      {
+        "site": "registry",
+        "bytes": "48 89 5c 24 20 55 56 57 41 54 41 55 48 83 ec 20 4c 8b 52 08 33 f6 4c 8b",
+        "offset": "0x0",
+        "mandatory": true
+      },
+      {
+        "site": "param_entity",
+        "bytes": "49 8b c0 48 85 d2 75 ?? 8b 41 08 85 c0 75 01 c3 8d 50 ff 48 8b 01 48 03 d2 48 8b 88 ?? ?? ?? ?? 8b 04 d1 c3",
+        "offset": "0x0",
+        "mandatory": true,
+        "operands": {
+          "entity_table": "0x1c"
+        }
+      },
+      {
+        "site": "mining",
+        "bytes": "33 c9 89 44 24 68 48 89 4c 24 58 48 8d 54 24 58 48 89 4c 24 60 49 8b cf 89 6c 24 6c",
+        "offset": "0x2",
+        "mandatory": false
+      },
+      {
+        "site": "chest",
+        "bytes": "48 8b 44 24 38 8b 40 24 89 47 10 48 8b 74 24 30 4c 8b 4c 24 50 44 8b 85 58 74 00 00",
+        "offset": "0xb",
+        "mandatory": false
+      },
+      {
+        "site": "bases",
+        "bytes": "48 8b 45 f0 48 8d 4c 24 70 48 8b 55 f8 48 83 c2 10 0f 10 00 0f 11 44 24 70 0f 10 48 10 0f 11 4d 80 0f 10 40 20 0f 11 45 90 f2 0f 10 48 30 f2 0f 11 4d a0 e8",
+        "offset": "0x0",
+        "mandatory": false
+      },
+      {
+        "site": "chat_post",
+        "bytes": "40 55 56 41 54 41 55 41 57 48 83 ec 30 49 8b 41 08 33 ed 4d 8b f9 45 0f b6 e0 48 8b f2 4c 8b e9 48 3d 00 04 00 00 76 16",
+        "offset": "0x0",
+        "mandatory": false
+      },
+      {
+        "site": "join_line",
+        "bytes": "48 83 7e 60 00 74 ?? 41 8b 4e 0c e8 ?? ?? ?? ?? 49 8b 4e 48 4c 8d 05 ?? ?? ?? ?? 41 8b 16 85 c0 4c 89 85 ?? ?? ?? ?? 41 b9 ?? ?? ?? ?? 41 b8 ?? ?? ?? ?? c6 85 ?? ?? ?? ?? 00 45 0f 44 c1 4c 89 a5 ?? ?? ?? ?? 4c 8d 8d ?? ?? ?? ?? 4c 89 4c 24 40 4c 8d 8d ?? ?? ?? ?? 48 89 4c 24 38 48 8d 8d ?? ?? ?? ?? 89 54 24 30 48 8b 56 60 89 44 24 28 44 89 44 24 20 41 b0 04",
+        "offset": "0x78",
+        "mandatory": false,
+        "operands": {
+          "join_tag": "0x29"
+        }
+      }
+    ]
+  },
+  "builds": [
+    {
+      "label": "25988414",
+      "buildids": [
+        "25988414"
+      ],
+      "time_date_stamp": 1792148062,
+      "size_of_image": "0x1dcf000",
+      "sigset": "launch",
+      "mining_layout": "inline_array",
+      "steam": {
+        "depot": null,
+        "manifest": null,
+        "exe_sha256": null
+      },
+      "expected": {
+        "player_table": "0x7b34c0",
+        "movement": "0x90e7a",
+        "daytime": "0x95d1f2",
+        "registry": "0x675e10",
+        "mining": "0x2236f8",
+        "chest": "0xa0c4a",
+        "bases": "0xe91e0",
+        "chat_post": "0x908ce0"
+      }
+    },
+    {
+      "label": "26083076",
+      "buildids": [
+        "26083076"
+      ],
+      "time_date_stamp": 1792507668,
+      "size_of_image": "0x1dd1000",
+      "sigset": "launch",
+      "mining_layout": "inline_array",
+      "steam": {
+        "depot": null,
+        "manifest": null,
+        "exe_sha256": null
+      },
+      "expected": {
+        "player_table": "0x7b5800",
+        "movement": "0x91d2a",
+        "daytime": "0x95f842",
+        "registry": "0x677240",
+        "mining": "0x2245a8",
+        "chest": "0xa1afa",
+        "bases": "0xea090",
+        "chat_post": "0x90b330"
+      }
+    },
+    {
+      "label": "26319703",
+      "buildids": [
+        "26319703"
+      ],
+      "time_date_stamp": 1793351714,
+      "size_of_image": "0x1dde000",
+      "sigset": "patch1",
+      "mining_layout": "stack_record",
+      "steam": {
+        "depot": null,
+        "manifest": null,
+        "exe_sha256": null
+      },
+      "expected": {
+        "player_table": "0x7bed90",
+        "movement": "0x9581a",
+        "daytime": "0x969be2",
+        "registry": "0x67e720",
+        "mining": "0x22a01a",
+        "chest": "0xa578a",
+        "bases": "0xee3f0",
+        "chat_post": "0x915170"
+      }
+    },
+    {
+      "label": "26404334",
+      "buildids": [
+        "26404334"
+      ],
+      "time_date_stamp": 1793700549,
+      "size_of_image": "0x1dde000",
+      "sigset": "patch1",
+      "mining_layout": "stack_record",
+      "steam": {
+        "depot": "2278521",
+        "manifest": "7782830484557676320",
+        "exe_sha256": "c5c9fe50c6398d2adedd98923c2d04bf9d9b4af64c1447ac167cdf8f874ff84f"
+      },
+      "expected": {
+        "player_table": "0x7bed90",
+        "movement": "0x9581a",
+        "daytime": "0x969c72",
+        "registry": "0x67e720",
+        "mining": "0x22a01a",
+        "chest": "0xa578a",
+        "bases": "0xee3f0",
+        "chat_post": "0x915200",
+        "param_entity": "0x65fc00"
+      },
+      "expected_operands": {
+        "entity_table": "0x830"
+      }
+    }
+  ]
+}

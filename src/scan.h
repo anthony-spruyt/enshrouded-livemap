@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include "mining.h"
 
 namespace livemap {
@@ -41,6 +42,9 @@ struct Targets {
     uint32_t entity_table = 0x828;
     const char* build = nullptr;  // label of the recognised server build
 };
+
+// The Targets slot that the site of that name in data/builds.json fills; null for a site that is no hook target.
+uintptr_t Targets::* target_member(std::string_view site);
 
 // Checks that the image at `base` is the analysed build and finds each hook site by a pattern
 // that must match exactly once. On failure `error` says why and nothing should be hooked.

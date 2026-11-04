@@ -23,8 +23,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(safetyhook)
 
+include(cmake/builds.cmake)
+set(LIVEMAP_BUILDS_JSON "${CMAKE_CURRENT_SOURCE_DIR}/data/builds.json")
+set(LIVEMAP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LIVEMAP_BUILDS_JSON}")
+livemap_generate_builds("${LIVEMAP_BUILDS_JSON}" "${LIVEMAP_GENERATED_DIR}/builds_generated.h")
+
 add_library(livemap_core STATIC src/scan.cpp src/finds.cpp src/link.cpp src/text.cpp src/bases.cpp src/a2s.cpp src/discovered.cpp src/explored.cpp)
-target_include_directories(livemap_core PUBLIC src)
+target_include_directories(livemap_core PUBLIC src "${LIVEMAP_GENERATED_DIR}")
 
 # The DLL is named iphlpapi.dll because the server loads it in place of the real one.
 add_library(iphlpapi SHARED
@@ -77,6 +83,17 @@ add_test(NAME ecs_param_entity COMMAND ecs_test)
 add_executable(livemap_selftest tools/selftest.cpp)
 target_link_libraries(livemap_selftest PRIVATE livemap_core)
 target_compile_definitions(livemap_selftest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+
+add_executable(builds_test tests/builds_test.cpp)
+target_link_libraries(builds_test PRIVATE livemap_core)
+add_test(NAME builds_table COMMAND builds_test)
+add_test(NAME builds_generator
+    COMMAND "${CMAKE_COMMAND}" "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}" "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/generator_test"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/builds_generator_test.cmake")
+add_executable(scan_test tests/scan_test.cpp)
+target_link_libraries(scan_test PRIVATE livemap_core)
+target_compile_definitions(scan_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+add_test(NAME scan_synthetic_builds COMMAND scan_test)
 
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 project(enshrouded_livemap VERSION 1.7.0 LANGUAGES CXX ASM_MASM)
+set(LIVEMAP_LOCAL_SUFFIX "" CACHE STRING "Optional local compatibility build identifier")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,7 +36,7 @@ add_library(iphlpapi SHARED
 )
 target_link_libraries(iphlpapi PRIVATE livemap_core safetyhook::safetyhook ws2_32 bcrypt winhttp)
 target_compile_definitions(iphlpapi PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS
-    LIVEMAP_VERSION="${PROJECT_VERSION}")
+    LIVEMAP_VERSION="${PROJECT_VERSION}${LIVEMAP_LOCAL_SUFFIX}")
 target_compile_options(iphlpapi PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4 /permissive->)
 
 # Offline check against an enshrouded_server.exe on disk: would the DLL hook this build?
@@ -65,3 +66,19 @@ add_test(NAME explored COMMAND explored_test)
 add_executable(livemap_selftest tools/selftest.cpp)
 target_link_libraries(livemap_selftest PRIVATE livemap_core)
 target_compile_definitions(livemap_selftest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+
+add_executable(mining_test tests/mining_test.cpp)
+add_test(NAME mining_register_layouts COMMAND mining_test)
+# Keep assert-based regression checks enabled in Release, as in the upstream tests.
+target_compile_options(mining_test PRIVATE /UNDEBUG)
+add_executable(compat_test tests/compat_test.cpp)
+target_link_libraries(compat_test PRIVATE livemap_core)
+target_compile_definitions(compat_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+target_compile_options(compat_test PRIVATE /UNDEBUG)
+set(LIVEMAP_TEST_OLD_EXE "" CACHE FILEPATH "Private Steam 26083076 fixture")
+set(LIVEMAP_TEST_NEW_EXE "" CACHE FILEPATH "Private Steam 26319703 fixture")
+if(LIVEMAP_TEST_OLD_EXE AND LIVEMAP_TEST_NEW_EXE)
+    add_test(NAME old_build_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_OLD_EXE}")
+    add_test(NAME patch1_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_NEW_EXE}")
+    add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}")
+endif()

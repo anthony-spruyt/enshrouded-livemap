@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <string>
+#include "mining.h"
 
 namespace livemap {
 
 struct Targets {
+    MiningLayout mining_layout = MiningLayout::InlineArray;
     // Entry of FUN_1407b34c0, the player table update (every tick): rcx = player manager.
     uintptr_t player_table = 0;
     // FUN_140090c60 (movement: position += velocity * dt), join point after the position adds:

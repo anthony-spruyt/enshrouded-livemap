@@ -201,14 +201,16 @@ int64_t unix_now() {
 
 // A dig produced loot: record ore-like materials as a find at the player's position.
 std::atomic<int> g_mining_logs{0};
+std::atomic<MiningLayout> g_mining_layout{MiningLayout::InlineArray};
 
 void on_mining(SafetyHookContext& ctx) {
     uint32_t entity = 0;
     bool readable = read_u32(ctx.rdi + 0x14c, entity);
-    const char* name = item_name(static_cast<uint32_t>(ctx.rbp));
+    const auto sample = mining_sample(g_mining_layout.load(std::memory_order_relaxed), ctx.rax, ctx.rbp, ctx.r15);
+    const char* name = item_name(sample.item);
     if (g_mining_logs.fetch_add(1, std::memory_order_relaxed) < 60) {
-        log("MINING item %u (%s) amount %u material %llu entity@rdi+0x14c %u%s", static_cast<uint32_t>(ctx.rbp),
-            name ? name : "?", static_cast<uint32_t>(ctx.r15), static_cast<unsigned long long>(ctx.rbx), entity,
+        log("MINING item %u (%s) amount %u material %llu entity@rdi+0x14c %u%s", sample.item,
+            name ? name : "?", sample.amount, static_cast<unsigned long long>(ctx.rbx), entity,
             readable ? "" : " (unreadable)");
     }
     if (!readable || entity == 0) return;
@@ -592,6 +594,7 @@ void install_mining(const Targets& t) {
         log("mining site not found: ore finds are off");
         return;
     }
+    g_mining_layout.store(t.mining_layout, std::memory_order_relaxed);
     auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.mining), on_mining);
     if (!h) { log("could not hook mining: ore finds are off"); return; }
     g_mining_hook = std::move(*h);

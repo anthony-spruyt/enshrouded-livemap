@@ -22,6 +22,7 @@ struct Build {
 constexpr Build kBuilds[] = {
     {1792148062, 0x1dcf000, "25988414"},  // 16 Oct 2026, Game Version SVN 1269579
     {1792507668, 0x1dd1000, "26083076"},  // 20 Oct 2026, Game Version SVN 1273043
+    {1793351714, 0x1dde000, "26319703"},  // 2 Nov 2026, Game Version SVN 1283531
 };
 
 struct Pattern {
@@ -70,6 +71,12 @@ constexpr const char* kJoinLine =
 constexpr size_t kJoinTagOffset = 0x29;
 constexpr size_t kJoinCallOffset = 0x78;
 constexpr size_t kJoinAfterOffset = 0x7d;
+
+
+// Patch #1: independently checked against Steam 26319703. Do not reuse on unknown builds.
+constexpr uint8_t kPlayerTablePatch1[] = {0x48, 0x8b, 0xc4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8d, 0xa8, 0x28, 0xf6, 0xff, 0xff, 0x48, 0x81, 0xec, 0xa0, 0x0a, 0x00, 0x00};
+constexpr uint8_t kDaytimePatch1[] = {0x48, 0x8b, 0xcf, 0xe8, 0xc9, 0xdd, 0xfc, 0xff, 0x48, 0x8b, 0xd0, 0x48, 0x8b, 0xcf, 0xe8, 0x0e, 0x87, 0xfc, 0xff, 0x48, 0x89, 0x47, 0x48, 0x49, 0x3b, 0x07, 0x7c, 0x09, 0x49, 0x3b, 0x06, 0x7d, 0x04, 0xb0, 0x01, 0xeb, 0x02};
+constexpr uint8_t kMiningPatch1[] = {0x33, 0xc9, 0x89, 0x44, 0x24, 0x68, 0x48, 0x89, 0x4c, 0x24, 0x58, 0x48, 0x8d, 0x54, 0x24, 0x58, 0x48, 0x89, 0x4c, 0x24, 0x60, 0x49, 0x8b, 0xcf, 0x89, 0x6c, 0x24, 0x6c};
 
 struct Masked {
     std::vector<uint8_t> bytes;
@@ -139,6 +146,8 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
         return false;
     }
     out.build = build->label;
+    const bool patch1 = std::strcmp(build->label, "26319703") == 0;
+    out.mining_layout = patch1 ? MiningLayout::StackRecord : MiningLayout::InlineArray;
     const IMAGE_SECTION_HEADER* text = nullptr;
     auto sec = IMAGE_FIRST_SECTION(nt);
     for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
@@ -151,9 +160,9 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
     const uint8_t* code = base + text->VirtualAddress;
     const size_t size = text->Misc.VirtualSize;
     const Pattern patterns[] = {
-        {"player_table", kPlayerTable, 0},
+        {"player_table", patch1 ? std::span<const uint8_t>(kPlayerTablePatch1) : std::span<const uint8_t>(kPlayerTable), 0},
         {"movement", kMovement, 0x25},
-        {"daytime", kDaytime, 0x12},
+        {"daytime", patch1 ? std::span<const uint8_t>(kDaytimePatch1) : std::span<const uint8_t>(kDaytime), patch1 ? 0x13u : 0x12u},
         {"registry", kRegistry, 0},
     };
     uintptr_t* slots[] = {&out.player_table, &out.movement, &out.daytime, &out.registry};
@@ -170,7 +179,7 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
     }
     // Optional sites: missing ones leave their feature off, the rest keeps working.
     int count = 0;
-    out.mining = find_unique(code, size, Pattern{"mining", kMining, 0x16}, count);
+    out.mining = find_unique(code, size, Pattern{"mining", patch1 ? std::span<const uint8_t>(kMiningPatch1) : std::span<const uint8_t>(kMining), patch1 ? 2u : 0x16u}, count);
     out.chest = find_unique(code, size, Pattern{"chest", kChest, 0xb}, count);
     out.chat_post = find_unique(code, size, Pattern{"chat_post", kChatPost, 0}, count);
     out.bases = find_unique(code, size, Pattern{"bases", kBasesLoop, 0}, count);

@@ -1,4 +1,4 @@
-﻿// Offline check: maps an enshrouded_server.exe from disk (without running it) and runs the same
+// Offline check: maps an enshrouded_server.exe from disk (without running it) and runs the same
 // build check and pattern search the DLL runs inside the server.
 //
 // Usage: livemap_selftest <path\to\enshrouded_server.exe>
@@ -29,16 +29,17 @@ int wmain(int argc, wchar_t** argv) {
         return 1;
     }
     const bool is_new = std::strcmp(t.build, "26083076") == 0;
+    const bool patch1 = std::strcmp(t.build, "26319703") == 0;
     std::printf("server build %s\n", t.build);
     struct { const char* name; uintptr_t at; uintptr_t expected; } sites[] = {
-        {"player_table", t.player_table, is_new ? 0x7b5800 : 0x7b34c0},
-        {"movement", t.movement, is_new ? 0x91d2a : 0x90e7a},
-        {"daytime", t.daytime, is_new ? 0x95f842 : 0x95d1f2},
-        {"registry", t.registry, is_new ? 0x677240 : 0x675e10},
-        {"mining", t.mining, is_new ? 0x2245a8 : 0x2236f8},
-        {"chest", t.chest, is_new ? 0xa1afa : 0xa0c4a},
-        {"bases", t.bases, is_new ? 0xea090 : 0xe91e0},
-        {"chat_post", t.chat_post, is_new ? 0x90b330 : 0x908ce0},
+        {"player_table", t.player_table, patch1 ? 0x7bed90ull : is_new ? 0x7b5800ull : 0x7b34c0ull},
+        {"movement", t.movement, patch1 ? 0x9581aull : is_new ? 0x91d2aull : 0x90e7aull},
+        {"daytime", t.daytime, patch1 ? 0x969be2ull : is_new ? 0x95f842ull : 0x95d1f2ull},
+        {"registry", t.registry, patch1 ? 0x67e720ull : is_new ? 0x677240ull : 0x675e10ull},
+        {"mining", t.mining, patch1 ? 0x22a01aull : is_new ? 0x2245a8ull : 0x2236f8ull},
+        {"chest", t.chest, patch1 ? 0xa578aull : is_new ? 0xa1afaull : 0xa0c4aull},
+        {"bases", t.bases, patch1 ? 0xee3f0ull : is_new ? 0xea090ull : 0xe91e0ull},
+        {"chat_post", t.chat_post, patch1 ? 0x915170ull : is_new ? 0x90b330ull : 0x908ce0ull},
     };
     bool ok = true;
     for (const auto& s : sites) {

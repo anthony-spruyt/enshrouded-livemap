@@ -1,0 +1,154 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index dbecb3a..61ecdc8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -69,7 +69,7 @@ target_compile_definitions(livemap_selftest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
+ 
+ add_executable(mining_test tests/mining_test.cpp)
+ add_test(NAME mining_register_layouts COMMAND mining_test)
+-# Keep assert-based regression checks enabled in Release, as in the upstream tests.
++# Keep the new assert-based regression checks enabled in Release.
+ target_compile_options(mining_test PRIVATE /UNDEBUG)
+ add_executable(compat_test tests/compat_test.cpp)
+ target_link_libraries(compat_test PRIVATE livemap_core)
+@@ -77,8 +77,14 @@ target_compile_definitions(compat_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNIC
+ target_compile_options(compat_test PRIVATE /UNDEBUG)
+ set(LIVEMAP_TEST_OLD_EXE "" CACHE FILEPATH "Private Steam 26083076 fixture")
+ set(LIVEMAP_TEST_NEW_EXE "" CACHE FILEPATH "Private Steam 26319703 fixture")
++set(LIVEMAP_TEST_HOTFIX_EXE "" CACHE FILEPATH "Private Steam 26404334 fixture")
+ if(LIVEMAP_TEST_OLD_EXE AND LIVEMAP_TEST_NEW_EXE)
+     add_test(NAME old_build_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_OLD_EXE}")
+     add_test(NAME patch1_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_NEW_EXE}")
+-    add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}")
++    if(LIVEMAP_TEST_HOTFIX_EXE)
++        add_test(NAME hotfix4_hook_sites COMMAND livemap_selftest "${LIVEMAP_TEST_HOTFIX_EXE}")
++        add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}" "${LIVEMAP_TEST_HOTFIX_EXE}")
++    else()
++        add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}")
++    endif()
+ endif()
+diff --git a/docs/COMPAT-26404334.md b/docs/COMPAT-26404334.md
+new file mode 100644
+index 0000000..70c3c54
+--- /dev/null
++++ b/docs/COMPAT-26404334.md
+@@ -0,0 +1,35 @@
++# Hotfix #4: Steam 26404334 / SVN 1285601 / v1.0.1.1
++
++This extends the earlier v1.7.0-based26319703 compatibility patch.
++Exact executable SHA256:
++`c5c9fe50c6398d2adedd98923c2d04bf9d9b4af64c1447ac167cdf8f874ff84f`.
++PE timestamp1793700549, image size0x1dde000.
++
++All eight existing Patch #1 signatures still match exactly once. Full
++PE-unwind-delimited function comparisons are instruction-equivalent after
++normalizing relative calls/branches and RIP-relative relocation offsets.
++This includes player-table, movement, daytime, registry, mining, chest,
++bases and chat-post functions. This is evidence for this executable only.
++
++Six hook RVAs remain unchanged; the two relocated sites are daytime
++0x969be2->0x969c72 and chat-post0x915170->0x915200.
++The scanner already resolves both by signatures. No absolute runtime addresses
++or unchecked fallback have been added. Mining retains the26319703 EAX-item,
++EBP-amount register layout. The existing required unique-match, unknown-build,
++defensive read and knowledge-capacity guards remain enabled.
++
++The production changes are the new accepted fingerprint and selecting the
++already-validated Patch #1 signatures/register layout for this build. Offline
++selftest expected RVAs are updated separately. Earlier builds remain supported.
++
++Configure `LIVEMAP_TEST_HOTFIX_EXE` alongside the original two private fixtures
++to run twelve CTest checks, including exact sites and unknown/corrupt/duplicate
++signature rejection across all three supplied executables. Do not distribute
++game executable fixtures with source.
++
++Use `LIVEMAP_LOCAL_SUFFIX=-dcraft.26404334` to identify a local build.
++An isolated copied-world Wine11 instance with no external networking served
++fresh time/weather, eight bases and all saved map-data routes. Steam connection
++cannot complete in that isolated network; this does not verify gameplay or
++normal Steam-connected shutdown. Real mining/movement/chest/knowledge acceptance
++for this hotfix still requires a player on the new build.
+diff --git a/src/scan.cpp b/src/scan.cpp
+index 0980763..f470fd9 100644
+--- a/src/scan.cpp
++++ b/src/scan.cpp
+@@ -23,6 +23,7 @@ constexpr Build kBuilds[] = {
+     {1792148062, 0x1dcf000, "25988414"},  // 16 Oct 2026, Game Version SVN 1269579
+     {1792507668, 0x1dd1000, "26083076"},  // 20 Oct 2026, Game Version SVN 1273043
+     {1793351714, 0x1dde000, "26319703"},  // 2 Nov 2026, Game Version SVN 1283531
++    {1793700549, 0x1dde000, "26404334"},  // 3 Nov 2026, Game Version SVN 1285601
+ };
+ 
+ struct Pattern {
+@@ -146,7 +147,8 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
+         return false;
+     }
+     out.build = build->label;
+-    const bool patch1 = std::strcmp(build->label, "26319703") == 0;
++    const bool patch1 = std::strcmp(build->label, "26319703") == 0 ||
++                        std::strcmp(build->label, "26404334") == 0;
+     out.mining_layout = patch1 ? MiningLayout::StackRecord : MiningLayout::InlineArray;
+     const IMAGE_SECTION_HEADER* text = nullptr;
+     auto sec = IMAGE_FIRST_SECTION(nt);
+diff --git a/tests/compat_test.cpp b/tests/compat_test.cpp
+index 1acf17b..c5458fa 100644
+--- a/tests/compat_test.cpp
++++ b/tests/compat_test.cpp
+@@ -6,7 +6,8 @@
+ #include <vector>
+ #include "../src/scan.h"
+ 
+-void check(const wchar_t* path, bool patch1) {
++void check(const wchar_t* path, const char* build) {
++    const bool patch1=std::strcmp(build,"26083076")!=0;
+     HMODULE module=LoadLibraryExW(path,nullptr,DONT_RESOLVE_DLL_REFERENCES);
+     assert(module);
+     auto image=reinterpret_cast<const uint8_t*>(module);
+@@ -15,7 +16,7 @@ void check(const wchar_t* path, bool patch1) {
+     livemap::Targets targets;
+     std::string error;
+     assert(livemap::find_targets(image,targets,error));
+-    assert(std::strcmp(targets.build,patch1?"26319703":"26083076")==0);
++    assert(std::strcmp(targets.build,build)==0);
+     assert(targets.mining_layout==(patch1?livemap::MiningLayout::StackRecord:livemap::MiningLayout::InlineArray));
+     std::vector<uint8_t> copy(image,image+size);
+     auto mutable_nt=reinterpret_cast<IMAGE_NT_HEADERS64*>(copy.data()+reinterpret_cast<IMAGE_DOS_HEADER*>(copy.data())->e_lfanew);
+@@ -57,7 +58,8 @@ void check(const wchar_t* path, bool patch1) {
+     FreeLibrary(module);
+ }
+ int wmain(int argc,wchar_t**argv) {
+-    assert(argc==3);
+-    check(argv[1],false);check(argv[2],true);
+-    std::puts("both supported builds, unknown fingerprints, corrupt/duplicate mandatory signatures and optional mining rejection passed");
++    assert(argc==3 || argc==4);
++    check(argv[1],"26083076");check(argv[2],"26319703");
++    if(argc==4)check(argv[3],"26404334");
++    std::puts("supported builds, unknown fingerprints, corrupt/duplicate mandatory signatures and optional mining rejection passed");
+ }
+diff --git a/tools/selftest.cpp b/tools/selftest.cpp
+index a81896b..93292f4 100644
+--- a/tools/selftest.cpp
++++ b/tools/selftest.cpp
+@@ -29,17 +29,18 @@ int wmain(int argc, wchar_t** argv) {
+         return 1;
+     }
+     const bool is_new = std::strcmp(t.build, "26083076") == 0;
+-    const bool patch1 = std::strcmp(t.build, "26319703") == 0;
++    const bool hotfix4 = std::strcmp(t.build, "26404334") == 0;
++    const bool patch1 = std::strcmp(t.build, "26319703") == 0 || hotfix4;
+     std::printf("server build %s\n", t.build);
+     struct { const char* name; uintptr_t at; uintptr_t expected; } sites[] = {
+         {"player_table", t.player_table, patch1 ? 0x7bed90ull : is_new ? 0x7b5800ull : 0x7b34c0ull},
+         {"movement", t.movement, patch1 ? 0x9581aull : is_new ? 0x91d2aull : 0x90e7aull},
+-        {"daytime", t.daytime, patch1 ? 0x969be2ull : is_new ? 0x95f842ull : 0x95d1f2ull},
++        {"daytime", t.daytime, hotfix4 ? 0x969c72ull : patch1 ? 0x969be2ull : is_new ? 0x95f842ull : 0x95d1f2ull},
+         {"registry", t.registry, patch1 ? 0x67e720ull : is_new ? 0x677240ull : 0x675e10ull},
+         {"mining", t.mining, patch1 ? 0x22a01aull : is_new ? 0x2245a8ull : 0x2236f8ull},
+         {"chest", t.chest, patch1 ? 0xa578aull : is_new ? 0xa1afaull : 0xa0c4aull},
+         {"bases", t.bases, patch1 ? 0xee3f0ull : is_new ? 0xea090ull : 0xe91e0ull},
+-        {"chat_post", t.chat_post, patch1 ? 0x915170ull : is_new ? 0x90b330ull : 0x908ce0ull},
++        {"chat_post", t.chat_post, hotfix4 ? 0x915200ull : patch1 ? 0x915170ull : is_new ? 0x90b330ull : 0x908ce0ull},
+     };
+     bool ok = true;
+     for (const auto& s : sites) {
+

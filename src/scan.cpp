@@ -73,6 +73,11 @@ constexpr size_t kJoinTagOffset = 0x29;
 constexpr size_t kJoinCallOffset = 0x78;
 constexpr size_t kJoinAfterOffset = 0x7d;
 
+// id = [[param]+table][([param+8]-1)*16], with table the disp32 of "mov rcx, [rax+table]" at +0x1c.
+constexpr const char* kParamEntity =
+    "49 8b c0 48 85 d2 75 ?? 8b 41 08 85 c0 75 01 c3 8d 50 ff 48 8b 01 48 03 d2 48 8b 88 ?? ?? ?? ?? 8b 04 d1 c3";
+constexpr size_t kParamEntityTableOffset = 0x1c;
+
 
 // Patch #1: independently checked against Steam 26319703. Do not reuse on unknown builds.
 constexpr uint8_t kPlayerTablePatch1[] = {0x48, 0x8b, 0xc4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8d, 0xa8, 0x28, 0xf6, 0xff, 0xff, 0x48, 0x81, 0xec, 0xa0, 0x0a, 0x00, 0x00};
@@ -178,6 +183,17 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
             error = buf;
             return false;
         }
+    }
+    const std::vector<uintptr_t> accessor = find_all(code, size, parse(kParamEntity));
+    if (accessor.size() == 1) {
+        out.param_entity = accessor[0];
+        std::memcpy(&out.entity_table, reinterpret_cast<const void*>(accessor[0] + kParamEntityTableOffset),
+                    sizeof out.entity_table);
+    } else if (patch1) {
+        std::snprintf(buf, sizeof buf, "pattern 'param_entity' matched %zu times (need exactly 1), not hooking",
+                      accessor.size());
+        error = buf;
+        return false;
     }
     // Optional sites: missing ones leave their feature off, the rest keeps working.
     int count = 0;

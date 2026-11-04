@@ -97,7 +97,7 @@ add_test(NAME scan_synthetic_builds COMMAND scan_test)
 
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)
-# Keep the new assert-based regression checks enabled in Release.
+# assert() checks must stay on in Release.
 target_compile_options(mining_test PRIVATE /UNDEBUG)
 add_executable(compat_test tests/compat_test.cpp)
 target_link_libraries(compat_test PRIVATE livemap_core)

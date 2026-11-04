@@ -8,10 +8,13 @@
 #include <functional>
 #include <string>
 
+#include "builds.h"
+
 namespace livemap {
 
-// Finds the join line and hooks it; `line` is asked for the text at every join. Returns false,
-// after logging why, when the join line is not found.
-bool install_announce(const uint8_t* base, std::function<std::string()> line);
+// Finds the join line with the signatures of `build` (the recognised server build) and hooks it;
+// `line` is asked for the text at every join. Returns false, after logging why, when the join line is
+// not found.
+bool install_announce(const uint8_t* base, const Build& build, std::function<std::string()> line);
 
 }  // namespace livemap

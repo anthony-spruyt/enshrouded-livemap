@@ -217,7 +217,7 @@ DWORD WINAPI start(LPVOID) {
     start_flame_level(config.game_query_port);
     if (config.announce_in_chat) {
         const int port = config.port;
-        livemap::install_announce(base, [port] { return livemap::link::chat_line(current_link(), port); });
+        livemap::install_announce(base, *targets.matched, [port] { return livemap::link::chat_line(current_link(), port); });
     }
     uint64_t last_diag = 0;
     for (;;) {

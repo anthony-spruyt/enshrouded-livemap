@@ -22,6 +22,29 @@ struct Masked {
     std::vector<bool> fixed;
 };
 
+// The .text section of the mapped image: every address the scan derives has to lie inside it.
+struct Code {
+    const uint8_t* begin = nullptr;
+    size_t size = 0;
+
+    bool holds(uintptr_t at, size_t length) const {
+        const uintptr_t first = reinterpret_cast<uintptr_t>(begin);
+        return begin != nullptr && at >= first && at - first < size && length <= size - (at - first);
+    }
+};
+
+Code find_code(const uint8_t* base, const IMAGE_NT_HEADERS64* nt) {
+    Code code;
+    auto sec = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+        if (std::memcmp(sec[i].Name, ".text", 5) == 0) {
+            code.begin = base + sec[i].VirtualAddress;
+            code.size = sec[i].Misc.VirtualSize;
+        }
+    }
+    return code;
+}
+
 Masked parse(const char* text) {
     Masked p;
     for (const char* s = text; s[0] != 0 && s[1] != 0;) {
@@ -74,22 +97,35 @@ const Named* find_operand(const Pattern& p, const char* name) {
     return nullptr;
 }
 
-const Build* recognise(const IMAGE_NT_HEADERS64* nt) {
-    for (const Build& b : kBuilds) {
-        if (nt->FileHeader.TimeDateStamp == b.time_date_stamp && nt->OptionalHeader.SizeOfImage == b.size_of_image) return &b;
-    }
-    return nullptr;
+bool has_fingerprint(const IMAGE_NT_HEADERS64* nt, const Build& b) {
+    return nt->FileHeader.TimeDateStamp == b.time_date_stamp && nt->OptionalHeader.SizeOfImage == b.size_of_image;
 }
 
-bool join_sites(const uint8_t* code, size_t size, const Pattern& join, const Pattern& post, ChatSites& out) {
-    const std::vector<uintptr_t> hits = find_all(code, size, parse(join.bytes));
+// The row of the image, or null when no row or more than one row has its fingerprint (`matches` says how many).
+const Build* recognise(const IMAGE_NT_HEADERS64* nt, std::span<const Build> builds, size_t& matches) {
+    const Build* found = nullptr;
+    matches = 0;
+    for (const Build& b : builds) {
+        if (!has_fingerprint(nt, b)) continue;
+        found = &b;
+        ++matches;
+    }
+    return matches == 1 ? found : nullptr;
+}
+
+bool join_sites(const Code& code, const Pattern& join, const Pattern& post, ChatSites& out) {
+    const std::vector<uintptr_t> hits = find_all(code.begin, code.size, parse(join.bytes));
     if (hits.size() != 1) return false;
     int count = 0;
-    uintptr_t chat = find_unique(code, size, post, count);
+    uintptr_t chat = find_unique(code.begin, code.size, post, count);
     const Named* tag = find_operand(join, "join_tag");
     if (chat == 0 || tag == nullptr) return false;
     chat += post.offset;
     const uintptr_t call = hits[0] + join.offset;
+    // The call's five bytes and the opcode after them are read, the tag is copied out of the match.
+    if (!code.holds(chat, 1) || !code.holds(call, kCallLength + 1) || !code.holds(hits[0] + tag->value, sizeof out.join_tag)) {
+        return false;
+    }
     const uint8_t call_op = *reinterpret_cast<const uint8_t*>(call);
     const uint8_t after_op = *reinterpret_cast<const uint8_t*>(call + kCallLength);
     if (call_op == 0xe8) {
@@ -126,29 +162,35 @@ uintptr_t Targets::* target_member(std::string_view site) {
 }
 
 bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
+    return find_targets(base, kBuilds, out, error);
+}
+
+bool find_targets(const uint8_t* base, std::span<const Build> builds, Targets& out, std::string& error) {
+    out = Targets{};
     auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
     char buf[160];
-    const Build* build = recognise(nt);
+    size_t matches = 0;
+    const Build* build = recognise(nt, builds, matches);
     if (build == nullptr) {
-        std::snprintf(buf, sizeof buf, "unknown server build (TimeDateStamp %lu, SizeOfImage 0x%lx), not hooking",
-                      nt->FileHeader.TimeDateStamp, nt->OptionalHeader.SizeOfImage);
-        error = buf;
+        if (matches == 0) {
+            std::snprintf(buf, sizeof buf, "unknown server build (TimeDateStamp %lu, SizeOfImage 0x%lx), not hooking",
+                          nt->FileHeader.TimeDateStamp, nt->OptionalHeader.SizeOfImage);
+            error = buf;
+        } else {
+            error = std::format("more than one build in builds.json ({} rows) has the TimeDateStamp and SizeOfImage of this server, not hooking",
+                                matches);
+        }
         return false;
     }
     out.build = build->label;
+    out.matched = build;
     out.mining_layout = build->mining_layout;
-    const IMAGE_SECTION_HEADER* text = nullptr;
-    auto sec = IMAGE_FIRST_SECTION(nt);
-    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
-        if (std::memcmp(sec[i].Name, ".text", 5) == 0) text = &sec[i];
-    }
-    if (text == nullptr) {
+    const Code code = find_code(base, nt);
+    if (code.begin == nullptr) {
         error = "no .text section";
         return false;
     }
-    const uint8_t* code = base + text->VirtualAddress;
-    const size_t size = text->Misc.VirtualSize;
     // Mandatory sites stop the hooking when they are not found exactly once; optional ones leave
     // their feature off and the rest keeps working.
     for (const Pattern& p : build->sigset->patterns) {
@@ -159,10 +201,18 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
             return false;
         }
         int count = 0;
-        const uintptr_t start = find_unique(code, size, p, count);
+        const uintptr_t start = find_unique(code.begin, code.size, p, count);
         out.*member = start == 0 ? 0 : start + p.offset;
         if (start != 0) {
+            if (!code.holds(start + p.offset, 1)) {
+                error = std::format("pattern '{}' puts its hook site outside .text, not hooking", p.site);
+                return false;
+            }
             if (const Named* table = find_operand(p, "entity_table")) {
+                if (!code.holds(start + table->value, sizeof out.entity_table)) {
+                    error = std::format("pattern '{}' reads its entity table outside .text, not hooking", p.site);
+                    return false;
+                }
                 std::memcpy(&out.entity_table, reinterpret_cast<const void*>(start + table->value), sizeof out.entity_table);
             }
         } else if (p.mandatory) {
@@ -170,31 +220,29 @@ bool find_targets(const uint8_t* base, Targets& out, std::string& error) {
             return false;
         }
     }
+    // world::install hooks these whatever the sigset says about them.
+    for (const char* site : kInstalledSites) {
+        uintptr_t Targets::* const member = target_member(site);
+        if (member == nullptr || out.*member == 0) {
+            error = std::format("sigset '{}' does not find '{}', which is always hooked, not hooking", build->sigset->name, site);
+            return false;
+        }
+    }
     return true;
 }
 
-bool find_chat_sites(const uint8_t* base, ChatSites& out) {
+bool find_chat_sites(const uint8_t* base, const Build& build, ChatSites& out) {
     auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    auto sec = IMAGE_FIRST_SECTION(nt);
-    const uint8_t* code = nullptr;
-    size_t size = 0;
-    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
-        if (std::memcmp(sec[i].Name, ".text", 5) == 0) {
-            code = base + sec[i].VirtualAddress;
-            size = sec[i].Misc.VirtualSize;
-        }
+    if (!has_fingerprint(nt, build)) return false;
+    const Code code = find_code(base, nt);
+    const Pattern* join = nullptr;
+    const Pattern* post = nullptr;
+    for (const Pattern& p : build.sigset->patterns) {
+        if (std::strcmp(p.site, kJoinLineSite) == 0) join = &p;
+        if (std::strcmp(p.site, "chat_post") == 0) post = &p;
     }
-    for (const Sigset& set : kSigsets) {
-        const Pattern* join = nullptr;
-        const Pattern* post = nullptr;
-        for (const Pattern& p : set.patterns) {
-            if (std::strcmp(p.site, kJoinLineSite) == 0) join = &p;
-            if (std::strcmp(p.site, "chat_post") == 0) post = &p;
-        }
-        if (join != nullptr && post != nullptr && join_sites(code, size, *join, *post, out)) return true;
-    }
-    return false;
+    return join != nullptr && post != nullptr && join_sites(code, *join, *post, out);
 }
 
 }  // namespace livemap

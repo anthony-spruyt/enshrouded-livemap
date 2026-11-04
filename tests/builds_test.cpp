@@ -1,5 +1,5 @@
-// data/builds.json, through the generated tables, must reproduce what scan.cpp and selftest.cpp
-// hard-coded before the data file existed (tests/builds_snapshot.h). No game bytes involved.
+// The tables generated from data/builds.json reproduce the shipped builds of tests/builds_snapshot.h.
+// No game bytes involved.
 #include <cstdio>
 #include <cstring>
 #include <span>

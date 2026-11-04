@@ -1,5 +1,5 @@
-// The signatures, offsets and expected RVAs scan.cpp and selftest.cpp hard-coded before data/builds.json.
-// The data file has to reproduce them exactly; do not edit these to follow the data.
+// Signatures, offsets and expected RVAs of the shipped builds, kept apart from data/builds.json.
+// builds_test requires the data file to match them; never edit them to follow the data.
 #pragma once
 
 #include <cstddef>

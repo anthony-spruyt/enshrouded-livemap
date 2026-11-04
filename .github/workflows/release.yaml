@@ -1,0 +1,328 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  pull_request:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build, test, package
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONUTF8: "1"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the version
+        id: version
+        shell: python
+        run: |
+          import os, re, sys
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          with open("CMakeLists.txt", encoding="utf-8") as f:
+              match = re.search(r"VERSION (\d+\.\d+\.\d+)", f.read())
+          if not match:
+              fail("no project VERSION found in CMakeLists.txt")
+          version = match.group(1)
+          if os.environ["GITHUB_REF_TYPE"] == "tag" and os.environ["GITHUB_REF_NAME"] != "v" + version:
+              fail(f"tag {os.environ['GITHUB_REF_NAME']} does not match CMakeLists.txt version {version}")
+          print(f"version {version}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"version={version}\n")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write(f"VERSION={version}\n")
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: cmd
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: cmd
+        run: cmake --build build
+
+      - name: Test
+        shell: cmd
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $v = $env:VERSION
+          $stage = 'dist\stage'; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory $stage | Out-Null
+          Copy-Item build\iphlpapi.dll, package\README.txt, LICENSE, THIRD_PARTY_NOTICES.md $stage
+          New-Item -ItemType Directory "$stage\livemap" | Out-Null
+          Copy-Item web\index.html, web\maps.json, web\pois.json, web\pois.json.gz, web\weather.json, web\weather.json.gz, web\shroud.png "$stage\livemap"
+          Copy-Item web\icons, web\tiles, web\ui, web\fonts "$stage\livemap" -Recurse
+          $zip = "dist\EnshroudedLiveMap-$v.zip"; Remove-Item $zip -ErrorAction SilentlyContinue
+          & "$env:SystemRoot\System32\tar.exe" -a -c -f $zip -C $stage iphlpapi.dll livemap README.txt LICENSE THIRD_PARTY_NOTICES.md; if ($LASTEXITCODE) { throw 'tar failed' }
+          Remove-Item $stage -Recurse -Force
+          Write-Output "$zip"; Get-FileHash build\iphlpapi.dll -Algorithm SHA256 | ForEach-Object { 'iphlpapi.dll sha256 ' + $_.Hash.ToLower() }
+
+      - name: Compare the package with upstream 1.7.0
+        shell: python
+        run: |
+          import hashlib, io, os, sys, urllib.request, zipfile
+
+          UPSTREAM_URL = "https://github.com/oggii/enshrouded-livemap/releases/download/v1.7.0/EnshroudedLiveMap-1.7.0.zip"
+          UPSTREAM_SHA256 = "edb1c346b3d245307239de8b2561713c04d2b49170011b98f3e718c760d325b9"
+          DLL = "iphlpapi.dll"
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          def read_files(archive, label):
+              files = {}
+              for name in archive.namelist():
+                  if name.endswith("/"):
+                      continue
+                  if name.startswith("/") or ".." in name.split("/"):
+                      fail(f"{label}: unsafe entry name {name!r}")
+                  if name in files:
+                      fail(f"{label}: duplicate entry {name!r}")
+                  files[name] = archive.read(name)
+              return files
+
+          with urllib.request.urlopen(UPSTREAM_URL, timeout=300) as response:
+              blob = response.read()
+          digest = hashlib.sha256(blob).hexdigest()
+          if digest != UPSTREAM_SHA256:
+              fail(f"upstream 1.7.0 zip sha256 is {digest}, expected {UPSTREAM_SHA256}")
+
+          with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+              upstream = read_files(archive, "upstream")
+          with zipfile.ZipFile(os.path.join("dist", f"EnshroudedLiveMap-{os.environ['VERSION']}.zip")) as archive:
+              built = read_files(archive, "built")
+
+          if set(built) != set(upstream):
+              for name in sorted(set(upstream) - set(built)):
+                  print(f"::error::missing from the built zip: {name}")
+              for name in sorted(set(built) - set(upstream)):
+                  print(f"::error::not in upstream's zip: {name}")
+              fail("the built zip's file list differs from upstream's 1.7.0 zip")
+          if not built[DLL]:
+              fail(f"{DLL} is empty")
+
+          different = [n for n in sorted(built) if n != DLL and built[n] != upstream[n]]
+          for name in different:
+              print(f"::error::differs from upstream's zip: {name}")
+          if different:
+              fail(f"{len(different)} non-DLL files are not byte-identical to upstream's 1.7.0 zip")
+          print(f"file list equals upstream's 1.7.0 zip ({len(built)} files); {len(built) - 1} non-DLL files are byte-identical")
+
+      - name: Check the hook sites against the public server build
+        shell: python
+        run: |
+          import hashlib, io, json, os, pathlib, re, shutil, subprocess, sys, urllib.request, zipfile
+
+          DEPOTDOWNLOADER_URL = "https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-windows-x64.zip"
+          DEPOTDOWNLOADER_SHA256 = "41c9e9f0df54b3ad02e67a11726756e5c73283bd7c2e1b04acfa5ae4c2ed3767"
+          APP_ID = "2278520"
+          DEPOT_ID = "2278521"
+          MANIFEST_ID = "7782830484557676320"
+          BUILD_ID = "26404334"
+          EXE_NAME = "enshrouded_server.exe"
+          EXE_SHA256 = "c5c9fe50c6398d2adedd98923c2d04bf9d9b4af64c1447ac167cdf8f874ff84f"
+          SELFTEST = pathlib.Path("build") / "livemap_selftest.exe"
+          DOWNLOAD_TIMEOUT = 900
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          work = pathlib.Path(os.environ["RUNNER_TEMP"]) / "steam-hook-check"
+          shutil.rmtree(work, ignore_errors=True)
+          work.mkdir(parents=True)
+
+          try:
+              with urllib.request.urlopen(f"https://api.steamcmd.net/v1/info/{APP_ID}", timeout=30) as response:
+                  public = str(json.load(response)["data"][APP_ID]["depots"]["branches"]["public"]["buildid"])
+              if re.fullmatch(r"[0-9]{1,12}", public):
+                  print(f"Current public Steam build id: {public} (this check pins build {BUILD_ID})")
+              else:
+                  print("Current public Steam build id: unreadable")
+          except Exception as exc:
+              print(f"Current public Steam build id: unavailable ({type(exc).__name__})")
+
+          with urllib.request.urlopen(DEPOTDOWNLOADER_URL, timeout=300) as response:
+              blob = response.read()
+          digest = hashlib.sha256(blob).hexdigest()
+          if digest != DEPOTDOWNLOADER_SHA256:
+              fail(f"DepotDownloader zip sha256 is {digest}, expected {DEPOTDOWNLOADER_SHA256}")
+          depotdownloader = work / "DepotDownloader.exe"
+          with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+              depotdownloader.write_bytes(archive.read("DepotDownloader.exe"))
+
+          filelist = work / "filelist.txt"
+          filelist.write_text(EXE_NAME + "\n", encoding="ascii")
+          server_dir = work / "server"
+          exe = server_dir / EXE_NAME
+          command = [str(depotdownloader), "-app", APP_ID, "-depot", DEPOT_ID, "-manifest", MANIFEST_ID,
+                     "-filelist", str(filelist), "-dir", str(server_dir)]
+          reason = None
+          try:
+              completed = subprocess.run(command, timeout=DOWNLOAD_TIMEOUT)
+              if completed.returncode != 0:
+                  reason = f"DepotDownloader exited with {completed.returncode}"
+              elif not exe.is_file():
+                  reason = f"DepotDownloader exited 0 but wrote no {EXE_NAME}"
+          except subprocess.TimeoutExpired:
+              reason = f"DepotDownloader timed out after {DOWNLOAD_TIMEOUT} seconds"
+          except OSError as exc:
+              reason = f"DepotDownloader could not start ({type(exc).__name__})"
+          if reason:
+              if os.environ.get("GITHUB_REF_TYPE") == "tag":
+                  fail(f"The anonymous Steam download of {EXE_NAME} (app {APP_ID}, depot {DEPOT_ID}, manifest {MANIFEST_ID}) failed: {reason}. A release needs the hook check against build {BUILD_ID}.")
+              print(f"::warning title=Hook check skipped::The anonymous Steam download of {EXE_NAME} (app {APP_ID}, depot {DEPOT_ID}, manifest {MANIFEST_ID}) failed: {reason}. The hook sites were NOT checked against build {BUILD_ID}.")
+              sys.exit(0)
+
+          actual = hashlib.sha256(exe.read_bytes()).hexdigest()
+          if actual != EXE_SHA256:
+              fail(f"{EXE_NAME} sha256 is {actual}, expected {EXE_SHA256} (build {BUILD_ID})")
+          if not SELFTEST.is_file():
+              fail(f"{SELFTEST} was not built")
+
+          result = subprocess.run([str(SELFTEST), str(exe)], capture_output=True, text=True, errors="replace", timeout=120)
+          print(result.stdout, end="")
+          print(result.stderr, end="")
+          found = re.findall(r"^\w+\s+rva 0x[0-9a-f]+$", result.stdout, flags=re.M)
+          if result.returncode != 0:
+              fail(f"livemap_selftest exited with {result.returncode}")
+          if f"server build {BUILD_ID}" not in result.stdout:
+              fail(f"livemap_selftest did not report server build {BUILD_ID}")
+          if "OK: all hook sites found" not in result.stdout or len(found) != 8:
+              fail(f"livemap_selftest found {len(found)} of 8 hook sites")
+          print(f"Hook check passed: all 8 hook sites found on server build {BUILD_ID}")
+
+      - name: Upload the zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: EnshroudedLiveMap-${{ steps.version.outputs.version }}
+          path: dist/EnshroudedLiveMap-${{ steps.version.outputs.version }}.zip
+          if-no-files-found: error
+
+      - name: Delete the server executable
+        if: always()
+        shell: python
+        run: |
+          import os, pathlib, shutil
+
+          work = pathlib.Path(os.environ["RUNNER_TEMP"]) / "steam-hook-check"
+          shutil.rmtree(work, ignore_errors=True)
+          print("steam-hook-check directory removed" if not work.exists() else "::warning::steam-hook-check directory could not be removed")
+
+  release:
+    name: Attest and publish
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Download the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: EnshroudedLiveMap-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Write the checksum
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          zip="EnshroudedLiveMap-${VERSION}.zip"
+          test -f "$zip"
+          sha256sum "$zip" > "$zip.sha256"
+          line=$(cat "$zip.sha256")
+          [[ "${line:0:64}" =~ ^[0-9a-f]{64}$ ]]
+          [ "${line:64:2}" = "  " ]
+          [ "${line:66}" = "$zip" ]
+          sha256sum --check "$zip.sha256"
+
+      - name: Find the draft release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          releases=$(gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+            | jq -s --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)]')
+          total=$(jq 'length' <<< "$releases")
+          drafts=$(jq '[.[] | select(.draft)] | length' <<< "$releases")
+          if [ "$total" -eq 0 ]; then
+            echo "::error::No draft release exists for ${TAG}. release-please creates it before the tag."
+            exit 1
+          fi
+          if [ "$drafts" -ne "$total" ]; then
+            echo "::error::The release for ${TAG} is already published and is left unchanged."
+            exit 1
+          fi
+          if [ "$total" -ne 1 ]; then
+            echo "::error::${total} draft releases exist for ${TAG}; expected exactly one."
+            exit 1
+          fi
+          jq -r '.[0].body // ""' <<< "$releases" > "${RUNNER_TEMP}/release-notes.md"
+
+      - name: Upload the files to the draft release
+        working-directory: dist
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "EnshroudedLiveMap-${VERSION}.zip" "EnshroudedLiveMap-${VERSION}.zip.sha256" --clobber
+
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/EnshroudedLiveMap-${{ needs.build.outputs.version }}.zip
+
+      - name: Publish the release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          notes="${RUNNER_TEMP}/release-notes.md"
+          printf '\n\n' >> "$notes"
+          cat >> "$notes" <<EOF
+          Automated build of this fork of oggii/enshrouded-livemap. The Enshrouded server builds this release supports are listed in https://github.com/${GH_REPO}/blob/${TAG}/README.md.
+
+          Verify the download with \`sha256sum --check EnshroudedLiveMap-${VERSION}.zip.sha256\` or \`gh attestation verify EnshroudedLiveMap-${VERSION}.zip --repo ${GH_REPO}\`.
+
+          HD map users: use upstream's 1.7.0 HD map asset.
+          EOF
+          gh release edit "$TAG" --notes-file "$notes" --draft=false

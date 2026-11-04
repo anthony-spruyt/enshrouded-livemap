@@ -126,7 +126,7 @@ void stream_events(SOCKET s) {
 
 // Map images and icons change only with a new release, data files rarely: let browsers keep
 // them. The page itself is always fetched, so an update shows at the next load.
-const char* cache_control(const std::string& rel, const char* type) {
+const char* cache_control(std::string_view rel, const char* type) {
     if (std::strncmp(type, "image/", 6) == 0) return "public, max-age=86400";
     if (rel == "index.html") return "no-store";
     return "public, max-age=600";

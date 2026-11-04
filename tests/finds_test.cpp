@@ -2,7 +2,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <print>
 
 #include "../src/finds.h"
 
@@ -110,7 +109,7 @@ int main() {
     version_moves_on_change();
     json_round_trip();
     ore_like_filter();
-    if (failures == 0) { std::print("finds tests passed\n"); return EXIT_SUCCESS; }
+    if (failures == 0) { std::printf("finds tests passed\n"); return EXIT_SUCCESS; }
     std::printf("%d finds test(s) failed\n", failures);
     return EXIT_FAILURE;
 }

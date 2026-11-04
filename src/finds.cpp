@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string_view>
 
 namespace livemap::finds {
 
@@ -87,7 +88,7 @@ bool read_names(Reader& r, std::vector<std::string>& out) {
     }
 }
 
-bool read_field(Reader& r, const std::string& key, const std::string& f, Deposit& d, Chest& c) {
+bool read_field(Reader& r, std::string_view key, std::string_view f, Deposit& d, Chest& c) {
     if (f == "x") { c.x = r.number(); d.x = c.x; }
     else if (f == "y") { c.y = r.number(); d.y = c.y; }
     else if (f == "z") { c.z = r.number(); d.z = c.z; }
@@ -105,7 +106,7 @@ bool read_field(Reader& r, const std::string& key, const std::string& f, Deposit
     return true;
 }
 
-bool read_entry(Reader& r, const std::string& key, Deposit& d, Chest& c) {
+bool read_entry(Reader& r, std::string_view key, Deposit& d, Chest& c) {
     if (!r.expect('{')) return false;
     if (r.take('}')) return true;
     for (;;) {
@@ -118,7 +119,7 @@ bool read_entry(Reader& r, const std::string& key, Deposit& d, Chest& c) {
     }
 }
 
-bool read_list(Reader& r, const std::string& key, std::vector<Deposit>& ore, std::vector<Chest>& chests) {
+bool read_list(Reader& r, std::string_view key, std::vector<Deposit>& ore, std::vector<Chest>& chests) {
     if (!r.expect('[')) return false;
     if (r.take(']')) return true;
     for (;;) {

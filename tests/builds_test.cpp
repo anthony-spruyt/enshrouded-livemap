@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,7 +30,7 @@ int failures = 0;
 
 const livemap::Named* find(std::span<const livemap::Named> list, const char* name) {
     const auto it = std::ranges::find_if(list, [name](const livemap::Named& n) { return std::strcmp(n.name, name) == 0; });
-    return it == list.end() ? nullptr : &*it;
+    return it == list.end() ? nullptr : std::to_address(it);
 }
 
 void check_sigset(const livemap::Sigset& generated, const std::vector<snapshot::Site>& want) {

@@ -164,7 +164,7 @@ void on_movement(SafetyHookContext& ctx) {
     uint32_t entity = param_entity(ctx.rbx, entity_table().load());
     if (entity == 0) return;
     for (Slot& s : g_slots) {
-        if (s.entity.load() != entity) continue;
+        if (s.entity.load(std::memory_order_relaxed) != entity) continue;
         uintptr_t pos = 0;
         uint64_t x = 0, y = 0, z = 0;
         if (read_ptr(ctx.rsp + 0x58, pos) && read_u64(pos, x) && read_u64(pos + 8, y) && read_u64(pos + 16, z)) {
@@ -231,7 +231,7 @@ void on_mining(SafetyHookContext& ctx) {
     if (name == nullptr || !finds::is_ore_like(name)) return;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load() != entity || s.seen_ms.load() == 0) continue;
+        if (s.entity.load(std::memory_order_relaxed) != entity || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
         std::string player;
         {
             std::lock_guard lock(g_names_mutex);
@@ -279,9 +279,11 @@ bool guess_position(uintptr_t record, double& x, double& y, double& z) {
         if (t == 0 || !read_position(t, x, y, z)) continue;
         uint32_t q[4] = {};
         float f[4] = {};
-        const bool ok = read_u32(t + 0x18, q[0]) && read_u32(t + 0x1c, q[1]) && read_u32(t + 0x20, q[2]) &&
-                        read_u32(t + 0x24, q[3]);
-        if (!ok) continue;
+        if (const bool ok = read_u32(t + 0x18, q[0]) && read_u32(t + 0x1c, q[1]) && read_u32(t + 0x20, q[2]) &&
+                            read_u32(t + 0x24, q[3]);
+            !ok) {
+            continue;
+        }
         std::memcpy(f, q, sizeof f);
         double n = std::sqrt(static_cast<double>(f[0]) * f[0] + static_cast<double>(f[1]) * f[1] +
                              static_cast<double>(f[2]) * f[2] + static_cast<double>(f[3]) * f[3]);
@@ -291,7 +293,7 @@ bool guess_position(uintptr_t record, double& x, double& y, double& z) {
 }
 
 void resolve_types(uintptr_t system, uint16_t offer_index, uintptr_t record) {
-    if (g_types_state.load() != 0) return;
+    if (g_types_state.load(std::memory_order_relaxed) != 0) return;
     uintptr_t owner = 0, world = 0, registry = 0;
     if (!read_ptr(system, owner) || !read_ptr(owner + 0x30, world) || !read_ptr(world, registry)) {
         log("CHEST registry not readable (system %llx)", static_cast<unsigned long long>(system));
@@ -319,7 +321,7 @@ std::string nearest_player(double x, double z, double within) {
     double best_d = within * within;
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (s.entity.load() == 0 || s.seen_ms.load() == 0) continue;
+        if (s.entity.load(std::memory_order_relaxed) == 0 || s.seen_ms.load(std::memory_order_relaxed) == 0) continue;
         double dx = meters(s.x.load(std::memory_order_relaxed)) - x, dz = meters(s.z.load(std::memory_order_relaxed)) - z;
         double d = dx * dx + dz * dz;
         if (d < best_d) { best_d = d; best = i; }
@@ -402,9 +404,7 @@ void on_registry(SafetyHookContext& ctx) {
 }
 
 // The name field is {char* data, u64 length, u64 capacity}, UTF-8 (raw slot dumps 2026-10-22:
-// "OG Vanilla K" = length 12 / capacity 16, a 19-byte name = 19 / 32). Until 1.0.1 the field
-// was first read as inline text, which turned a pointer without a zero byte early on into a
-// garbled name.
+// "OG Vanilla K" = length 12 / capacity 16, a 19-byte name = 19 / 32).
 std::string read_name(uintptr_t field) {
     uintptr_t ptr = 0;
     uint64_t length = 0;
@@ -531,7 +531,10 @@ void refresh_explored() {
     const uint64_t now = GetTickCount64();
     for (int i = 0; i < kSlotCount; ++i) {
         const Slot& s = g_slots[i];
-        if (const uint64_t seen = s.seen_ms.load(); s.entity.load() == 0 || seen == 0 || now - seen > 5000) continue;
+        if (const uint64_t seen = s.seen_ms.load(std::memory_order_relaxed);
+            s.entity.load(std::memory_order_relaxed) == 0 || seen == 0 || now - seen > 5000) {
+            continue;
+        }
         std::string name;
         {
             std::lock_guard lock(g_names_mutex);

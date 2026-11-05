@@ -79,6 +79,16 @@ jobs:
         shell: cmd
         run: ctest --test-dir build --output-on-failure --no-tests=error
 
+      - name: Keep the fault gate for the Wine job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fault-gate
+          path: |
+            build/fault_gate.exe
+            build/fault_gate_mod.dll
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Package
         shell: pwsh
         run: |
@@ -179,3 +189,45 @@ jobs:
           work = pathlib.Path(os.environ["RUNNER_TEMP"]) / "exe-hook-check"
           shutil.rmtree(work, ignore_errors=True)
           print("exe-hook-check directory removed" if not work.exists() else "::warning::exe-hook-check directory could not be removed")
+
+  fault-gate-wine:
+    name: Fault line under Wine
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      FAULT_GATE_EXE: ${{ github.workspace }}/fault-gate/fault_gate.exe
+      FAULT_GATE_RUNNER: /usr/lib/wine/wine64
+      WINEDEBUG: "-all"
+      WINEDLLOVERRIDES: mscoree,mshtml=
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the fault gate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fault-gate
+          path: fault-gate
+
+      - name: Install Wine
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64
+
+      - name: Install the test dependencies
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --only-binary :all: --require-hashes --no-deps -r tools/requirements-test.txt
+
+      - name: Create the Wine prefix
+        run: timeout 120 "$FAULT_GATE_RUNNER" wineboot --init
+
+      - name: Test the fault line
+        run: '"$RUNNER_TEMP/venv/bin/python" -B -m pytest -q -p no:cacheprovider tools/test_fault_gate.py'

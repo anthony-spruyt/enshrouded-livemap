@@ -8,6 +8,7 @@
 
 #include <safetyhook.hpp>
 
+#include "fault_handler.h"
 #include "log.h"
 #include "memory.h"
 #include "scan.h"
@@ -22,8 +23,19 @@ using ChatPostFn = void* (*)(void* out, uintptr_t chat, uint8_t type, const void
                              uint32_t loca2, uint32_t player, uint64_t account, const void* opt);
 constexpr uint8_t kSystemLine = 4;
 
-SafetyHookMid g_join_call;
-SafetyHookMid g_join_after;
+constexpr const char* kSiteJoinCall = "join_call";
+constexpr const char* kSiteJoinAfter = "join_after";
+
+struct JoinHooks {
+    fault::Hook call;
+    fault::Hook after;
+};
+
+JoinHooks& join_hooks() {
+    static JoinHooks hooks;
+    return hooks;
+}
+
 ChatPostFn g_post = nullptr;
 uint32_t g_join_tag = 0;
 std::function<std::string()> g_line;
@@ -38,6 +50,7 @@ struct Pending {
 Pending g_pending;
 
 void on_join_call(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteJoinCall);
     uint32_t tag = 0, handle = 0;
     uint64_t account = 0;
     if (!read_u32(ctx.rsp + 0x20, tag) || tag != g_join_tag || !read_u32(ctx.rsp + 0x30, handle) || handle == 0 ||
@@ -48,6 +61,7 @@ void on_join_call(SafetyHookContext& ctx) {
 }
 
 void on_join_after(SafetyHookContext&) {
+    fault::SiteScope scope(kSiteJoinAfter);
     if (!g_pending.armed) {
         return;
     }
@@ -81,14 +95,14 @@ bool install_announce(const uint8_t* base, const Build& build, std::function<std
     g_line = std::move(line);
     g_post = reinterpret_cast<ChatPostFn>(sites.chat_post);
     g_join_tag = sites.join_tag;
-    auto call = safetyhook::MidHook::create(reinterpret_cast<void*>(sites.join_call), on_join_call);
-    auto after = safetyhook::MidHook::create(reinterpret_cast<void*>(sites.join_after), on_join_after);
+    auto call = fault::Hook::create(kSiteJoinCall, sites.join_call, on_join_call);
+    auto after = fault::Hook::create(kSiteJoinAfter, sites.join_after, on_join_after);
     if (!call || !after) {
         log("announce: could not hook the join line, no chat line");
         return false;
     }
-    g_join_call = std::move(*call);
-    g_join_after = std::move(*after);
+    join_hooks().call = std::move(*call);
+    join_hooks().after = std::move(*after);
     log("hooked %-12s at %llx (map link in the chat when a player joins)%s", "join_line",
         static_cast<unsigned long long>(sites.join_call), sites.shared ? " (shared with another mod)" : "");
     return true;

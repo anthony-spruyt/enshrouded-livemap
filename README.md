@@ -187,9 +187,12 @@ ctest --test-dir build --output-on-failure --no-tests=error
 
 The selftest checks a server exe on disk: `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
 
-Two of the unit tests (tools_paths, tools_hook_check) run the Python tools' tests with pytest. Install it once with
-`python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
+Three of the unit tests (tools_paths, tools_hook_check, tools_data_only) run the Python tools' tests with pytest. Install
+pytest and jsonschema once with `python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so
 supporting another build whose code the existing signatures still match is a data change.
+
+A pull request that changes `data/builds.json` and nothing else runs the `data-only` check, which passes when the file
+validates against the schema. Code pull requests skip it and merge as usual.

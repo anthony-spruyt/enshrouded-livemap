@@ -103,14 +103,15 @@ target_compile_definitions(scan_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICOD
 add_test(NAME scan_synthetic_builds COMMAND scan_test)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-execute_process(COMMAND "${Python3_EXECUTABLE}" -c "import pytest" RESULT_VARIABLE LIVEMAP_PYTEST_STATUS OUTPUT_QUIET ERROR_QUIET)
+execute_process(COMMAND "${Python3_EXECUTABLE}" -c "import pytest, jsonschema" RESULT_VARIABLE LIVEMAP_PYTEST_STATUS OUTPUT_QUIET ERROR_QUIET)
 if(NOT LIVEMAP_PYTEST_STATUS EQUAL 0)
-    message(FATAL_ERROR "pytest is missing from ${Python3_EXECUTABLE}; install it with: "
+    message(FATAL_ERROR "pytest or jsonschema is missing from ${Python3_EXECUTABLE}; install them with: "
         "\"${Python3_EXECUTABLE}\" -m pip install --require-hashes --no-deps -r \"${CMAKE_CURRENT_SOURCE_DIR}/tools/requirements-test.txt\"")
 endif()
-# pytest comes from tools/requirements-test.txt; the cache and bytecode stay out of the source tree.
+# pytest and jsonschema come from tools/requirements-test.txt; the cache and bytecode stay out of the source tree.
 add_test(NAME tools_paths COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_paths.py")
 add_test(NAME tools_hook_check COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hook_check.py")
+add_test(NAME tools_data_only COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_data_only.py")
 
 # A stand-in for the game (the executable) loads the mod side (the DLL) and faults on purpose, so the two are separate
 # images; CI runs the same test under Wine with both files.

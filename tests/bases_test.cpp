@@ -1,5 +1,6 @@
 // Plain assert-based tests for the Flame Altar store (no framework).
 #include <cstdio>
+#include <print>
 #include <string>
 
 #include "../src/bases.h"
@@ -57,12 +58,12 @@ int main() {
 
     const std::string json = s.to_json(t);
     EXPECT(json == "{\"version\":6,\"bases\":[{\"x\":3760.0,\"y\":850.0,\"z\":1422.2,\"size\":[60.0,40.0,60.0],\"abandoned\":true}]}");
-    if (failures) std::printf("json: %s\n", json.c_str());
+    if (failures) std::print("json: {}\n", json);
 
     // The server stops walking (the last altar is gone): the list empties all the same.
     EXPECT(s.count(t + kStaleMs + 1) == 0 && s.version(t + kStaleMs + 1) == 7);
 
-    if (failures) std::printf("%d failure(s)\n", failures);
-    else std::printf("all bases tests passed\n");
+    if (failures) std::print("{} failure(s)\n", failures);
+    else std::print("all bases tests passed\n");
     return failures ? 1 : 0;
 }

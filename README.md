@@ -89,8 +89,9 @@ example a Cloudflare Tunnel to `http://localhost:<Port>`), set
 PublicUrl=https://map.example.com
 ```
 
-The chat and the log then show `https://map.example.com/?key=...`. `DetectPublicAddress=0`
-stops the IP lookup entirely.
+The chat and the log then show `https://map.example.com/?key=...`. `PublicUrl` must start with
+`http://` or `https://`; one without a scheme is ignored, the log says so, and the public IP is
+used instead. `DetectPublicAddress=0` stops the IP lookup entirely.
 
 ### Good to know
 
@@ -105,7 +106,7 @@ stops the IP lookup entirely.
 | --- | --- | --- |
 | `Enabled` | `1` | `0` turns the mod off. |
 | `Port` | `auto` | `auto` = the game's `queryPort` number over TCP; or a fixed number. |
-| `PublicUrl` | empty | Address for the link, e.g. `https://map.example.com`. Empty = public IP. |
+| `PublicUrl` | empty | Address for the link, starting with `http://` or `https://`, e.g. `https://map.example.com`. Empty = public IP. |
 | `DetectPublicAddress` | `1` | `1` = ask api.ipify.org (then icanhazip.com) for the public IP, once an hour. |
 | `AnnounceInChat` | `1` | `1` = the chat shows the map link when a player joins. |
 | `Bind` | `0.0.0.0` | Network interface; `127.0.0.1` = only this machine (behind a proxy). |
@@ -159,9 +160,12 @@ second adds its hook on top of the first one.
 
 ## Build
 
-`build.cmd` (Visual Studio 2022 Build Tools, CMake, Ninja) builds `build\iphlpapi.dll`, runs the
-unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
+`build.cmd` (Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools, CMake, Ninja, Python 3) builds
+`build\iphlpapi.dll`, runs the unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
 `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
+
+One of the unit tests runs the Python tools' tests with pytest. Install it once with
+`python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so

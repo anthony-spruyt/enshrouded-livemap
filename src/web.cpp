@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include "link.h"
@@ -104,23 +105,31 @@ bool accepts_gzip(const std::string& req) {
 
 // Only plain file names and one folder level: letters, digits, '-', '_', '.', '/', no "..".
 bool safe_path(const std::string& p) {
-    if (p.empty() || p.find("..") != std::string::npos || p[0] == '/') return false;
+    if (p.empty() || p.contains("..") || p[0] == '/') return false;
     for (char c : p) {
         if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '/')) return false;
     }
     return true;
 }
 
+constexpr std::string_view kEventStreamHead =
+    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
+    "Connection: keep-alive\r\nX-Accel-Buffering: no\r\n\r\n";
+
 void stream_events(SOCKET s) {
-    const char* head =
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
-        "Connection: keep-alive\r\nX-Accel-Buffering: no\r\n\r\n";
-    if (!send_all(s, head, std::strlen(head))) return;
+    if (!send_all(s, kEventStreamHead.data(), kEventStreamHead.size())) return;
     for (;;) {
-        std::string msg = "data: " + world::snapshot_json() + "\n\n";
-        if (!send_all(s, msg.data(), msg.size())) return;
+        if (std::string msg = "data: " + world::snapshot_json() + "\n\n"; !send_all(s, msg.data(), msg.size())) return;
         Sleep(static_cast<DWORD>(g_config.update_ms));
     }
+}
+
+// Map images and icons change only with a new release, data files rarely: let browsers keep
+// them. The page itself is always fetched, so an update shows at the next load.
+const char* cache_control(std::string_view rel, const char* type) {
+    if (std::strncmp(type, "image/", 6) == 0) return "public, max-age=86400";
+    if (rel == "index.html") return "no-store";
+    return "public, max-age=600";
 }
 
 void handle(SOCKET s) {
@@ -193,12 +202,8 @@ void handle(SOCKET s) {
         send_response(s, "404 Not Found", "text/plain", "not found\n");
         return;
     }
-    // Map images and icons change only with a new release, data files rarely: let browsers keep
-    // them. The page itself is always fetched, so an update shows at the next load.
     const char* type = content_type(rel);
-    const char* cache = std::strncmp(type, "image/", 6) == 0 ? "public, max-age=86400"
-                        : rel == "index.html" ? "no-store" : "public, max-age=600";
-    send_response(s, "200 OK", type, body, cache, encoding);
+    send_response(s, "200 OK", type, body, cache_control(rel, type), encoding);
 }
 
 void serve(SOCKET listener) {

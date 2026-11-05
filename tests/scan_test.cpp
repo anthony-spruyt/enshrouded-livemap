@@ -104,7 +104,7 @@ public:
             patterns_.push_back({s.name, s.hex.c_str(), static_cast<uint32_t>(s.offset), s.mandatory, named_[i]});
         }
         sigset_ = {"synthetic", patterns_};
-        build_ = {row_.label, stamp_ ? *stamp_ : row_.time_date_stamp, row_.size_of_image, &sigset_,
+        build_ = {row_.label, stamp_.value_or(row_.time_date_stamp), row_.size_of_image, &sigset_,
                   row_.patch1 ? livemap::MiningLayout::StackRecord : livemap::MiningLayout::InlineArray, {}, {}};
         return build_;
     }

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 namespace livemap::link {
 
@@ -12,7 +13,10 @@ int query_port(const std::string& server_json);
 // True for a plain IPv4 or IPv6 address as returned by "what is my IP" services.
 bool valid_ip(const std::string& text);
 
-// The link players open. `public_url` (from livemap.ini) wins when set, e.g.
+// True when `url` starts with the scheme http or https (any letter case) followed by "://".
+bool has_scheme(std::string_view url);
+
+// The link players open. `public_url` (from livemap.ini) wins when it has a scheme, e.g.
 // "https://map.example.com"; otherwise http://<ip>:<port>/ (IPv6 in brackets). Empty when
 // neither is known.
 std::string make(const std::string& public_url, const std::string& ip, int port, const std::string& key);

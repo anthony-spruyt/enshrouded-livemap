@@ -1,12 +1,12 @@
 #include "a2s.h"
 
-#include <cstdint>
+#include <cstddef>
 
 namespace livemap::a2s {
 
 namespace {
 
-const std::string kHeader("\xFF\xFF\xFF\xFF", 4);
+const std::string kHeader("\x{FF}\x{FF}\x{FF}\x{FF}", 4);
 
 // Reads a zero-terminated string at `at`; false when the reply ends first.
 bool skip_string(const std::string& r, size_t& at) {
@@ -38,14 +38,15 @@ std::string keywords_of(const std::string& r) {
         if (!skip_string(r, at)) return {};
     at += 2 + 7;
     if (at > r.size() || !skip_string(r, at) || at >= r.size()) return {};
-    const auto flags = static_cast<uint8_t>(r[at++]);
-    if (flags & 0x80) at += 2;
-    if (flags & 0x10) at += 8;
-    if (flags & 0x40) {
+    const auto flags = static_cast<std::byte>(r[at++]);
+    auto has = [flags](std::byte bit) { return (flags & bit) != std::byte{}; };
+    if (has(std::byte{0x80})) at += 2;
+    if (has(std::byte{0x10})) at += 8;
+    if (has(std::byte{0x40})) {
         at += 2;
         if (at > r.size() || !skip_string(r, at)) return {};
     }
-    if (!(flags & 0x20) || at >= r.size()) return {};
+    if (!has(std::byte{0x20}) || at >= r.size()) return {};
     size_t end = r.find('\0', at);
     return end == std::string::npos ? std::string() : r.substr(at, end - at);
 }

@@ -2,18 +2,32 @@
 (uint32, from the templates) sit in the server's memory: every 4-byte aligned hit, then the
 densest clusters (many different ids close together = a per-player "discovered" list or a
 lookup table). Read-only analysis on the host (numpy).
-Usage: ... | python3 idscan_host.py marker-ids.json [--save frames.bin]
+Usage: ... | python3 idscan_host.py marker-ids.json [--save frames.bin] [--root <dir>]
+Every path must be inside the working directory (or a --root).
 """
+import argparse
 import json
+import os
 import struct
 import sys
 from collections import Counter, defaultdict
 
 import numpy as np
 
-ids_by = {int(k): v for k, v in json.load(open(sys.argv[1]))["ids"].items()}
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import add_root_option, checked
+
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("idfile")
+ap.add_argument("--save", metavar="FRAMES")
+add_root_option(ap)
+args = ap.parse_args()
+args.idfile = checked(ap, args.idfile, args.root)
+args.save = checked(ap, args.save, args.root)
+
+ids_by = {int(k): v for k, v in json.load(open(args.idfile))["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
-save = open(sys.argv[3], "wb") if len(sys.argv) > 3 and sys.argv[2] == "--save" else None
+save = open(args.save, "wb") if args.save else None
 inp = sys.stdin.buffer
 hits = []  # (address, id)
 total = 0

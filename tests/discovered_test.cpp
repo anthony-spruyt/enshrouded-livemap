@@ -1,5 +1,6 @@
 // Plain assert-based tests for the discovered-markers store (no framework).
 #include <cstdio>
+#include <print>
 #include <string>
 
 #include "../src/discovered.h"
@@ -38,6 +39,6 @@ int main() {
     EXPECT(!u.from_json("not json"));
     EXPECT(u.players() == 0);
     EXPECT(u.from_json("{\"version\":1,\"players\":{}}"));
-    if (failures == 0) std::printf("discovered: all passed\n");
+    if (failures == 0) std::print("discovered: all passed\n");
     return failures == 0 ? 0 : 1;
 }

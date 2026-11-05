@@ -51,6 +51,7 @@ int main() {
     EXPECT(!link::has_scheme("://map.example.com"));
     EXPECT(!link::has_scheme("http:/map.example.com"));
     EXPECT(!link::has_scheme("map.example.com/?next=http://elsewhere"));
+    EXPECT(link::has_scheme("https://map.example.com/?next=ftp://x"));
     EXPECT(link::make("HTTPS://karte.example.ch/", "203.0.113.5", 15637, "abc") == "HTTPS://karte.example.ch/?key=abc");
 
     EXPECT(link::chat_line("http://203.0.113.5:15637/?key=abc", 15637) == "Live map: 203.0.113.5:15637/abc");

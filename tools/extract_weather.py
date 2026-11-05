@@ -17,7 +17,8 @@ With --game/--textures the file also gets a 256 x 256 grid of the snow factor (f
 height map), so the page can colour snow without a player standing there.
 
 Usage: python tools/extract_weather.py --server <u-clean dir> --out web/weather.json
-           [--game <client dir> --textures <unpack>/UiTextureResource]
+           [--game <client dir> --textures <unpack>/UiTextureResource] [--root <dir>]
+Every path must be inside the working directory (or a --root).
 """
 
 import argparse
@@ -29,6 +30,9 @@ import os
 import sys
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from paths import add_root_option, checked
 
 
 def mask_json(m):
@@ -62,7 +66,6 @@ def sample(m, u, v):
 
 
 def snow_grid(resource, game, textures, n=256):
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import render_map
     from PIL import Image
 
@@ -86,7 +89,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--game")
     ap.add_argument("--textures")
+    add_root_option(ap)
     args = ap.parse_args()
+    args.server = checked(ap, args.server, args.root)
+    args.out = checked(ap, args.out, args.root)
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
     path = glob.glob(os.path.join(args.server, "WeatherSystemResource", "*.json"))[0]
     with open(path, encoding="utf-8") as f:
         r = json.load(f)

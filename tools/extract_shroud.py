@@ -11,7 +11,8 @@ Output: one byte per pixel (PNG mode L), 2048 x 2048, 5 m per pixel, row 0 = nor
 
 Usage:
   python tools/extract_shroud.py --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
-      --textures <unpack folder>/UiTextureResource --out web/shroud.png
+      --textures <unpack folder>/UiTextureResource --out web/shroud.png --root C:/
+Every path must be inside the working directory (or a --root).
 """
 
 import argparse
@@ -23,6 +24,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render_map
+from paths import add_root_option, checked
 
 SIZE = 2048
 
@@ -32,7 +34,11 @@ def main():
     ap.add_argument("--game", required=True)
     ap.add_argument("--textures", required=True)
     ap.add_argument("--out", default="web/shroud.png")
+    add_root_option(ap)
     args = ap.parse_args()
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
+    args.out = checked(ap, args.out, args.root)
     fog = render_map.load(args.game, args.textures)["fog"]
     step = render_map.WORLD // SIZE
     level = np.ascontiguousarray(fog[step // 2 :: step, step // 2 :: step, 1])

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <array>
 #include <string>
 #include <utility>
 
@@ -60,8 +61,9 @@ void on_join_after(SafetyHookContext&) {
     struct {
         uint64_t value;
         uint8_t has;
-        uint8_t pad[7];
+        std::array<uint8_t, 7> pad;
     } opt{};
+    static_assert(sizeof(opt) == 16);
     alignas(8) uint8_t out[16] = {};
     g_post(out, p.chat, kSystemLine, &text, 0, 0, p.handle, p.account, &opt);
     log("announce: \"%s\" after the join of player handle %u%s", line.c_str(), p.handle,

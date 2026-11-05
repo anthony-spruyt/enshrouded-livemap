@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.28)
-project(enshrouded_livemap VERSION 1.7.3 LANGUAGES CXX ASM_MASM) # x-release-please-version
+project(enshrouded_livemap VERSION 1.7.5 LANGUAGES CXX ASM_MASM) # x-release-please-version
+if(MSVC AND MSVC_VERSION LESS 1950)
+    message(FATAL_ERROR "livemap needs Visual Studio 2026 (MSVC 14.50) or newer; found MSVC ${MSVC_VERSION}")
+endif()
 set(LIVEMAP_LOCAL_SUFFIX "" CACHE STRING "Optional local compatibility build identifier")
 
 set(CMAKE_CXX_STANDARD 23)
@@ -94,6 +97,15 @@ add_executable(scan_test tests/scan_test.cpp)
 target_link_libraries(scan_test PRIVATE livemap_core)
 target_compile_definitions(scan_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 add_test(NAME scan_synthetic_builds COMMAND scan_test)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+execute_process(COMMAND "${Python3_EXECUTABLE}" -c "import pytest" RESULT_VARIABLE LIVEMAP_PYTEST_STATUS OUTPUT_QUIET ERROR_QUIET)
+if(NOT LIVEMAP_PYTEST_STATUS EQUAL 0)
+    message(FATAL_ERROR "pytest is missing from ${Python3_EXECUTABLE}; install it with: "
+        "\"${Python3_EXECUTABLE}\" -m pip install --require-hashes --no-deps -r \"${CMAKE_CURRENT_SOURCE_DIR}/tools/requirements-test.txt\"")
+endif()
+# pytest comes from tools/requirements-test.txt; the cache and bytecode stay out of the source tree.
+add_test(NAME tools_paths COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_paths.py")
 
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)

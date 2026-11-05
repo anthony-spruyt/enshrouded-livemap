@@ -1,13 +1,13 @@
 #include "a2s.h"
 
-#include <cstdint>
+#include <cstddef>
 #include <string>
 
 namespace livemap::a2s {
 
 namespace {
 
-constexpr char kHeader[] = "\xFF\xFF\xFF\xFF";
+constexpr char kHeader[] = "\x{FF}\x{FF}\x{FF}\x{FF}";
 
 // Reads a zero-terminated string at `at`; false when the reply ends first.
 bool skip_string(const std::string& r, size_t& at) {
@@ -50,20 +50,21 @@ std::string keywords_of(const std::string& r) {
     if (at > r.size() || !skip_string(r, at) || at >= r.size()) {
         return {};
     }
-    const auto flags = static_cast<uint8_t>(r[at++]);
-    if (flags & 0x80) {
+    const auto flags = static_cast<std::byte>(r[at++]);
+    auto has = [flags](std::byte bit) { return (flags & bit) != std::byte{}; };
+    if (has(std::byte{0x80})) {
         at += 2;
     }
-    if (flags & 0x10) {
+    if (has(std::byte{0x10})) {
         at += 8;
     }
-    if (flags & 0x40) {
+    if (has(std::byte{0x40})) {
         at += 2;
         if (at > r.size() || !skip_string(r, at)) {
             return {};
         }
     }
-    if (!(flags & 0x20) || at >= r.size()) {
+    if (!has(std::byte{0x20}) || at >= r.size()) {
         return {};
     }
     size_t end = r.find('\0', at);

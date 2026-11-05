@@ -2,7 +2,8 @@
 debug names, from the unpacked server data (ItemRegistryResource: itemRefs[i] / dbgNames[i];
 ItemInfo/<guid>_*.json: itemId.value, the 32-bit id the server uses at runtime).
 
-Usage: python tools/extract_items.py --server <unpacked dir> --out src/items_generated.h
+Usage: python tools/extract_items.py --server <unpacked dir> --out src/items_generated.h [--root <dir>]
+Every path must be inside the working directory (or a --root).
 """
 
 import argparse
@@ -10,12 +11,17 @@ import glob
 import json
 import os
 
+from paths import add_root_option, checked
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", required=True)
     ap.add_argument("--out", default="src/items_generated.h")
+    add_root_option(ap)
     a = ap.parse_args()
+    a.server = checked(ap, a.server, a.root)
+    a.out = checked(ap, a.out, a.root)
     with open(glob.glob(os.path.join(a.server, "ItemRegistryResource", "*.json"))[0], encoding="utf-8") as f:
         reg = json.load(f)
     rows = []

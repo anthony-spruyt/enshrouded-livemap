@@ -1,5 +1,6 @@
 // Plain assert-based tests for reading the Flame level from the server's A2S_INFO reply.
 #include <cstdio>
+#include <print>
 #include <string>
 
 #include "../src/a2s.h"
@@ -40,15 +41,12 @@ int main() {
     }
     EXPECT(keywords_of(live.substr(0, 90)).empty());
     // Challenge round trip.
-    const std::string challenge_reply(
-        "\xff\xff\xff\xff"
-        "A\x01\x02\x03\x04",
-        9);
+    const std::string challenge_reply("\x{ff}\x{ff}\x{ff}\x{ff}A\x{01}\x{02}\x{03}\x{04}", 9);
     EXPECT(challenge_of(challenge_reply) == std::string("\x01\x02\x03\x04", 4));
     EXPECT(challenge_of(live).empty());
     EXPECT(info_request(std::string("\x01\x02\x03\x04", 4)).size() == 4 + 1 + 19 + 1 + 4);
     if (failures == 0) {
-        std::printf("a2s: all passed\n");
+        std::print("a2s: all passed\n");
     }
     return failures == 0 ? 0 : 1;
 }

@@ -1,17 +1,35 @@
 """Offline pointer search in a regdump frames file: from each start object, breadth-first over
 pointers (reading `span` bytes per node) until a node holds a pointer into one of the target
-ranges; prints the path as base+offset steps. Usage:
-python3 pathfind.py frames.bin <start hex>[,<start hex>...] <target lo hex>-<hi hex>[,...] [depth] [span hex]"""
+ranges; prints the path as base+offset steps.
+Usage: python3 pathfind.py frames.bin <start hex>[,<start hex>...] <target lo hex>-<hi hex>[,...] [depth] [span hex]
+    [--root <dir>]
+Every path must be inside the working directory (or a --root).
+"""
 
+import argparse
 import bisect
+import os
 import struct
 import sys
 
-path = sys.argv[1]
-starts = [int(s, 16) for s in sys.argv[2].split(",")]
-targets = [tuple(int(x, 16) for x in t.split("-")) for t in sys.argv[3].split(",")]
-depth = int(sys.argv[4]) if len(sys.argv) > 4 else 3
-span = int(sys.argv[5], 16) if len(sys.argv) > 5 else 0x400
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import add_root_option, checked
+
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("frames")
+ap.add_argument("starts")
+ap.add_argument("targets")
+ap.add_argument("depth", nargs="?", type=int, default=3)
+ap.add_argument("span", nargs="?", default="0x400")
+add_root_option(ap)
+args = ap.parse_args()
+args.frames = checked(ap, args.frames, args.root)
+
+path = args.frames
+starts = [int(s, 16) for s in args.starts.split(",")]
+targets = [tuple(int(x, 16) for x in t.split("-")) for t in args.targets.split(",")]
+depth = args.depth
+span = int(args.span, 16)
 
 regions = []
 with open(path, "rb") as f:

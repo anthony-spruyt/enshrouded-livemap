@@ -5,8 +5,10 @@
 // Exit code 0 = the mod would hook this build, 1 = it would stay inactive, 2 = usage/load error.
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <print>
 #include <span>
 #include <string>
@@ -44,13 +46,9 @@ int wmain(int argc, wchar_t** argv) {
     }
     std::printf("server build %s\n", t.build);
     bool ok = true;
-    const auto expected_of = [&](std::span<const livemap::Named> list, std::string_view name) -> const livemap::Named* {
-        for (size_t i = 0; i < list.size(); ++i) {
-            if (name == list[i].name) {
-                return &list[i];
-            }
-        }
-        return nullptr;
+    const auto expected_of = [&](std::span<const livemap::Named> list, std::string_view name) {
+        const auto it = std::ranges::find_if(list, [name](const livemap::Named& n) { return name == n.name; });
+        return it == list.end() ? nullptr : std::to_address(it);
     };
     for (const livemap::Named& e : row->expected) {
         if (std::strcmp(e.name, "param_entity") == 0) {

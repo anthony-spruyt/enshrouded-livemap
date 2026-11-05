@@ -129,7 +129,7 @@ The server has the enum strings and the "ambient_effects" name, but not this sam
   template names.
 - Result: web/pois.json, 3721 points in 28 categories (3556 since 2026-10-22: fast travel
   only from registry fast travel destinations, see MARKER_TYPES in tools/extract_pois.py), rebuilt with
-  `python tools/extract_pois.py --server <u-clean dir> --out web/pois.json`.
+  `python tools/extract_pois.py --server <u-clean dir> --out web/pois.json --root <u-clean dir>`.
 
 ## 10. Icons (2026-10-20)
 

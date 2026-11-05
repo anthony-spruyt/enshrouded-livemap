@@ -52,6 +52,15 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
               f.write(f"VERSION={version}\n")
 
+      - name: Install the test dependencies
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+
+          subprocess.run([sys.executable, "-m", "pip", "install", "--require-hashes", "--no-deps", "-r", "tools/requirements-test.txt"], check=True)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write(f"PYTHON_EXE={pathlib.Path(sys.executable).as_posix()}\n")
+
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
@@ -59,7 +68,7 @@ jobs:
 
       - name: Configure
         shell: cmd
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE=%PYTHON_EXE%
 
       - name: Build
         shell: cmd

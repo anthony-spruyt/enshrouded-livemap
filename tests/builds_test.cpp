@@ -1,7 +1,10 @@
 // The tables generated from data/builds.json reproduce the shipped builds of tests/builds_snapshot.h.
 // No game bytes involved.
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -26,12 +29,8 @@ int failures = 0;
     } while (0)
 
 const livemap::Named* find(std::span<const livemap::Named> list, const char* name) {
-    for (size_t i = 0; i < list.size(); ++i) {
-        if (std::strcmp(list[i].name, name) == 0) {
-            return &list[i];
-        }
-    }
-    return nullptr;
+    const auto it = std::ranges::find_if(list, [name](const livemap::Named& n) { return std::strcmp(n.name, name) == 0; });
+    return it == list.end() ? nullptr : std::to_address(it);
 }
 
 void check_sigset(const livemap::Sigset& generated, const std::vector<snapshot::Site>& want) {
@@ -54,10 +53,11 @@ void check_sigset(const livemap::Sigset& generated, const std::vector<snapshot::
 }
 
 void check_expected(const livemap::Build& build, const snapshot::Row& row) {
-    struct {
+    struct SiteRva {
         const char* site;
         uint32_t rva;
-    } sites[] = {
+    };
+    const auto sites = std::to_array<SiteRva>({
         {"player_table", row.player_table},
         {"movement", row.movement},
         {"daytime", row.daytime},
@@ -67,7 +67,7 @@ void check_expected(const livemap::Build& build, const snapshot::Row& row) {
         {"bases", row.bases},
         {"chat_post", row.chat_post},
         {"param_entity", row.param_entity},
-    };
+    });
     size_t checked = 0;
     for (const auto& s : sites) {
         if (s.rva == 0) {

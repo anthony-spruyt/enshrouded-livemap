@@ -3,14 +3,14 @@
 
 This is a fork of [oggii/enshrouded-livemap](https://github.com/oggii/enshrouded-livemap).
 It exists because upstream only accepts the game builds listed in its source and has no CI, so every Enshrouded server update stops the map until someone patches and rebuilds it.
-`main` is upstream's v1.7.0 plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `docs/COMPAT-*.md`).
+`main` is upstream's latest release plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `docs/COMPAT-*.md`).
 Upstream's later, unreleased work is reverted on `main` until it is reviewed.
 Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
 Compatibility patches are still written by hand.
 
-Release 1.7.1 supports Enshrouded dedicated server build 26404334 (SVN 1285601). The earlier builds listed in `data/builds.json` stay supported.
+The Enshrouded dedicated server builds this fork supports are listed in `data/builds.json`.
 
-HD map users: take the HD asset from upstream's 1.7.0 release. This fork does not build one.
+HD map users: take the HD asset from upstream's latest release. This fork does not build one.
 
 The text below is upstream's.
 
@@ -89,8 +89,9 @@ example a Cloudflare Tunnel to `http://localhost:<Port>`), set
 PublicUrl=https://map.example.com
 ```
 
-The chat and the log then show `https://map.example.com/?key=...`. `DetectPublicAddress=0`
-stops the IP lookup entirely.
+The chat and the log then show `https://map.example.com/?key=...`. `PublicUrl` must start with
+`http://` or `https://`; one without a scheme is ignored, the log says so, and the public IP is
+used instead. `DetectPublicAddress=0` stops the IP lookup entirely.
 
 ### Good to know
 
@@ -105,7 +106,7 @@ stops the IP lookup entirely.
 | --- | --- | --- |
 | `Enabled` | `1` | `0` turns the mod off. |
 | `Port` | `auto` | `auto` = the game's `queryPort` number over TCP; or a fixed number. |
-| `PublicUrl` | empty | Address for the link, e.g. `https://map.example.com`. Empty = public IP. |
+| `PublicUrl` | empty | Address for the link, starting with `http://` or `https://`, e.g. `https://map.example.com`. Empty = public IP. |
 | `DetectPublicAddress` | `1` | `1` = ask api.ipify.org (then icanhazip.com) for the public IP, once an hour. |
 | `AnnounceInChat` | `1` | `1` = the chat shows the map link when a player joins. |
 | `Bind` | `0.0.0.0` | Network interface; `127.0.0.1` = only this machine (behind a proxy). |
@@ -152,8 +153,8 @@ second adds its hook on top of the first one.
 
 ## Build
 
-With the Visual Studio 2022 Build Tools (x64 Native Tools prompt), CMake and Ninja, the three commands CI runs build
-`build\iphlpapi.dll`, run the unit tests and build `build\livemap_selftest.exe`:
+With Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools (x64 Native Tools prompt), CMake, Ninja and Python 3,
+these commands build `build\iphlpapi.dll`, run the unit tests and build `build\livemap_selftest.exe`:
 
 ```bat
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -162,6 +163,9 @@ ctest --test-dir build --output-on-failure --no-tests=error
 ```
 
 The selftest checks a server exe on disk: `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
+
+One of the unit tests runs the Python tools' tests with pytest. Install it once with
+`python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so

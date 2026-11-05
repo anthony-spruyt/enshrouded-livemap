@@ -1,6 +1,8 @@
 """Generate the proxy DLL sources from the real system DLL's export table.
 
-Usage: python tools/gen_proxy.py [C:/Windows/System32/iphlpapi.dll]
+Usage: python tools/gen_proxy.py [<dll>] [--root <dir>]
+(default: C:/Windows/System32/iphlpapi.dll)
+Every path must be inside the working directory (or a --root).
 
 Writes src/proxy.def, src/proxy_stubs.asm and src/proxy_names.inc. Every export of the real
 library gets a stub that jumps through a pointer the DLL fills at load time, so anything in the
@@ -10,14 +12,22 @@ The live map loads as iphlpapi.dll: the server imports it, it is not a KnownDLL,
 Enshrouded server mods already use powrprof.dll (Shared XP) and dinput8.dll (Quest Catch-Up).
 """
 
+import argparse
 import pathlib
 import site
 import sys
 
 sys.path.insert(0, site.getusersitepackages())
 import pefile
+from paths import add_root_option, checked
 
-src = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\Windows\System32\iphlpapi.dll")
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("dll", nargs="?")
+add_root_option(ap)
+args = ap.parse_args()
+args.dll = checked(ap, args.dll, args.root)
+
+src = pathlib.Path(args.dll or r"C:\Windows\System32\iphlpapi.dll")
 out = pathlib.Path(__file__).resolve().parent.parent / "src"
 
 pe = pefile.PE(str(src))

@@ -12,7 +12,9 @@ The picture must cover the world 0..10240 m north up; small misalignments are co
 Usage:
   python tools/enhance_map.py --picture map.png|map.rgba [--rgba-size 2048] \
       --game "C:/Program Files (x86)/Steam/steamapps/common/Enshrouded" \
-      --textures <unpack folder>/UiTextureResource --out web/tiles-hd [--scale 1.002 --offset -1 -1]
+      --textures <unpack folder>/UiTextureResource --out web/tiles-hd [--scale 1.002 --offset -1 -1] \
+      --root C:/
+Every path must be inside the working directory (or a --root).
 """
 
 import argparse
@@ -24,6 +26,7 @@ from PIL import Image, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render_map
+from paths import add_root_option, checked
 
 RELIEF = 1.8  # strength of the added relief: colour *= 1 + RELIEF * highpass / 127
 BLUR = 3.0  # px at 1 m per pixel: the relief the picture already has (5 m per pixel)
@@ -73,7 +76,13 @@ def main():
     ap.add_argument("--out", required=True, help="tile folder")
     ap.add_argument("--preview", help="also save a 1024 px preview JPG")
     ap.add_argument("--format", choices=("jpg", "webp"), default="jpg", help="tile format")
+    add_root_option(ap)
     args = ap.parse_args()
+    args.picture = checked(ap, args.picture, args.root)
+    args.game = checked(ap, args.game, args.root)
+    args.textures = checked(ap, args.textures, args.root)
+    args.out = checked(ap, args.out, args.root)
+    args.preview = checked(ap, args.preview, args.root)
 
     picture = load_picture(args.picture, args.rgba_size)
     detail = render_map.load(args.game, args.textures)["detail"]

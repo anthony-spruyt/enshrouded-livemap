@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <string>
+#include <string_view>
 
 namespace livemap::link {
 
@@ -63,15 +64,21 @@ bool valid_ip(const std::string& t) {
     return parts == 4;
 }
 
+bool has_scheme(std::string_view url) {
+    const size_t at = url.find("://");
+    if (at == std::string_view::npos) {
+        return false;
+    }
+    const std::string scheme(url.substr(0, at));
+    return key_equal(scheme, "http") || key_equal(scheme, "https");
+}
+
 std::string make(const std::string& public_url, const std::string& ip, int port, const std::string& key) {
     std::string base;
-    if (!public_url.empty()) {
+    if (has_scheme(public_url)) {
         base = public_url;
         while (!base.empty() && base.back() == '/') {
             base.pop_back();
-        }
-        if (base.find("://") == std::string::npos) {
-            base = "http://" + base;
         }
     } else if (valid_ip(ip) && port > 0) {
         base = "http://" + (ip.find(':') != std::string::npos ? "[" + ip + "]" : ip) + ":" + std::to_string(port);

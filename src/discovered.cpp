@@ -148,8 +148,7 @@ bool Store::from_json(const std::string& t) {
         }
         const std::string body = t.substr(i, end - i);
         Player p;
-        size_t at = body.find("\"at\":");
-        if (at != std::string::npos) {
+        if (const size_t at = body.find("\"at\":"); at != std::string::npos) {
             p.at = std::strtoll(body.c_str() + at + 5, nullptr, 10);
         }
         size_t k = body.find('[');

@@ -1,13 +1,30 @@
 """Hex view of a saved regdump frames file around an address, as uint32 rows, with known ids
-marked. Usage: python3 framedump.py frames.bin marker-ids.json <addr hex> [before] [after]"""
+marked.
+Usage: python3 framedump.py frames.bin marker-ids.json <addr hex> [before] [after] [--root <dir>]
+Every path must be inside the working directory (or a --root).
+"""
 
+import argparse
 import json
+import os
 import struct
 import sys
 
-path, idfile, addr = sys.argv[1], sys.argv[2], int(sys.argv[3], 16)
-before = int(sys.argv[4], 0) if len(sys.argv) > 4 else 0x100
-after = int(sys.argv[5], 0) if len(sys.argv) > 5 else 0x400
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import add_root_option, checked
+
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("frames")
+ap.add_argument("idfile")
+ap.add_argument("addr")
+ap.add_argument("before", nargs="?", default="0x100")
+ap.add_argument("after", nargs="?", default="0x400")
+add_root_option(ap)
+args = ap.parse_args()
+args.frames = checked(ap, args.frames, args.root)
+args.idfile = checked(ap, args.idfile, args.root)
+path, idfile, addr = args.frames, args.idfile, int(args.addr, 16)
+before, after = int(args.before, 0), int(args.after, 0)
 with open(idfile) as f:
     ids = {int(k): v for k, v in json.load(f)["ids"].items()}
 with open(path, "rb") as f:

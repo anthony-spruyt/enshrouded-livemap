@@ -1,6 +1,7 @@
 // Plain assert-based tests for the explored-area store (no framework).
 #include <cmath>
 #include <cstdio>
+#include <print>
 #include <string>
 #include <vector>
 
@@ -61,7 +62,7 @@ int main() {
     EXPECT(!u.from_json("{\"cells\":256,\"players\":{}}"));
     EXPECT(!u.from_json("garbage"));
     if (failures == 0) {
-        std::printf("explored: all passed (one reveal = %d cells)\n", cells);
+        std::print("explored: all passed (one reveal = {} cells)\n", cells);
     }
     return failures == 0 ? 0 : 1;
 }

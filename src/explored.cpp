@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <format>
 #include <map>
 #include <string>
 #include <utility>
@@ -114,8 +115,7 @@ bool Store::reveal(const std::string& name, double x, double z) {
             if (col < 0 || col >= kCells) {
                 continue;
             }
-            const double mx = (col + 0.5) * kCellMetres - x;
-            if (mx * mx + mz * mz > kRadiusMetres * kRadiusMetres) {
+            if (const double mx = (col + 0.5) * kCellMetres - x; mx * mx + mz * mz > kRadiusMetres * kRadiusMetres) {
                 continue;
             }
             const size_t bit = static_cast<size_t>(row) * kCells + col;
@@ -163,7 +163,7 @@ std::string Store::to_json() {
 
 bool Store::from_json(const std::string& t) {
     size_t i = t.find("\"players\"");
-    if (i == std::string::npos || t.find("\"cells\":" + std::to_string(kCells)) == std::string::npos) {
+    if (i == std::string::npos || !t.contains(std::format("\"cells\":{}", kCells))) {
         return false;
     }
     i = t.find('{', i);

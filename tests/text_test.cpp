@@ -1,5 +1,6 @@
 // Plain assert-based tests for cleaning names from game memory (no framework).
 #include <cstdio>
+#include <print>
 #include <string>
 
 #include "../src/text.h"
@@ -27,7 +28,7 @@ int main() {
                       "b") ==
            "a\xF0\x9F\x94\xA5"
            "b");                 // a🔥b
-    // The bytes of a pointer read as text (the bug of 1.0.1): each invalid byte -> U+FFFD.
+    // The bytes of a pointer read as text: each invalid byte -> U+FFFD.
     EXPECT(clean_utf8("\xE0\xF0\x84G\xB5u") == fffd + fffd + fffd + "G" + fffd + "u");
     // Cut-off sequence, overlong form, UTF-16 surrogate, beyond U+10FFFF.
     EXPECT(clean_utf8("x\xC3") == "x" + fffd);
@@ -40,9 +41,9 @@ int main() {
     EXPECT(clean_utf8("") == "");
 
     if (failures) {
-        std::printf("%d failure(s)\n", failures);
+        std::print("{} failure(s)\n", failures);
     } else {
-        std::printf("all text tests passed\n");
+        std::print("all text tests passed\n");
     }
     return failures ? 1 : 0;
 }

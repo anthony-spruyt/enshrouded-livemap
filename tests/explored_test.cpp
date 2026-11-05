@@ -58,7 +58,7 @@ int main() {
     check(t.players() == 2);
     check(t.explored("A", 5000, 5000) && t.explored("Bro \"Two\"", 2000, 3000) && !t.explored("A", 2000, 3000));
     Store u;
-    check(!u.from_json("{\"cells\":256,\"players\":{}}"));
+    check(!u.from_json(R"({"cells":256,"players":{}})"));
     check(!u.from_json("garbage"));
     if (failures == 0) {
         std::print("explored: all passed (one reveal = {} cells)\n", cells);

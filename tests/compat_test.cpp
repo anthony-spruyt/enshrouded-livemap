@@ -32,7 +32,7 @@ void check(const wchar_t* path, const char* build) {
     mutable_nt->FileHeader.TimeDateStamp = 0;
     livemap::Targets rejected;
     assert(!livemap::find_targets(copy.data(), rejected, error));
-    assert(error.find("unknown server build") != std::string::npos);
+    assert(error.contains("unknown server build"));
     mutable_nt->FileHeader.TimeDateStamp = nt->FileHeader.TimeDateStamp;
     mutable_nt->OptionalHeader.SizeOfImage += 0x1000;
     assert(!livemap::find_targets(copy.data(), rejected, error));
@@ -52,7 +52,7 @@ void check(const wchar_t* path, const char* build) {
         size_t start = site.hook - origin - site.delta;
         flip_low_bit(copy[start]);
         assert(!livemap::find_targets(copy.data(), rejected, error));
-        assert(error.find(site.name) != std::string::npos);
+        assert(error.contains(site.name));
         flip_low_bit(copy[start]);
     }
     if (std::strcmp(build, "26404334") == 0) {
@@ -62,7 +62,7 @@ void check(const wchar_t* path, const char* build) {
         size_t accessor = targets.param_entity - origin;
         flip_low_bit(copy[accessor]);
         assert(!livemap::find_targets(copy.data(), rejected, error));
-        assert(error.find("param_entity") != std::string::npos);
+        assert(error.contains("param_entity"));
         flip_low_bit(copy[accessor]);
     }
     const auto sections = IMAGE_FIRST_SECTION(mutable_nt);
@@ -76,7 +76,7 @@ void check(const wchar_t* path, const char* build) {
     auto duplicate = copy;
     std::memcpy(duplicate.data() + text + 128, copy.data() + table, 27);
     assert(!livemap::find_targets(duplicate.data(), rejected, error));
-    assert(error.find("matched 2 times") != std::string::npos);
+    assert(error.contains("matched 2 times"));
     size_t mining = targets.mining - reinterpret_cast<uintptr_t>(image) - (patch1 ? 2 : 0x16);
     flip_low_bit(copy[mining]);
     livemap::Targets optional;

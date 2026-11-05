@@ -22,7 +22,7 @@ int main() {
     check(link::query_port("{\n\t\"name\": \"x\",\n\t\"queryPort\": 15637,\n\t\"slotCount\": 2\n}") == 15637);
     check(link::query_port("{\"queryPort\":15699}") == 15699);
     check(link::query_port("{\"gamePort\": 15636}") == 0);
-    check(link::query_port("{\"queryPort\": \"x\"}") == 0);
+    check(link::query_port(R"({"queryPort": "x"})") == 0);
     check(link::query_port("{\"queryPort\": 70000}") == 0);
 
     check(link::valid_ip("203.0.113.5"));
@@ -33,14 +33,14 @@ int main() {
     check(!link::valid_ip(""));
     check(!link::valid_ip("1::2::3"));
 
-    check(link::make("", "203.0.113.5", 15637, "abc") == "http://203.0.113.5:15637/?key=abc");
-    check(link::make("", "2001:db8::1", 15637, "abc") == "http://[2001:db8::1]:15637/?key=abc");
+    check(link::make("", "127.0.0.1", 15637, "abc") == "http://127.0.0.1:15637/?key=abc");
+    check(link::make("", "::1", 15637, "abc") == "http://[::1]:15637/?key=abc");
     check(link::make("https://karte.example.ch/", "203.0.113.5", 15637, "abc") == "https://karte.example.ch/?key=abc");
     check(link::make("http://map.example.com:8080", "", 0, "k") == "http://map.example.com:8080/?key=k");
     check(link::make("", "", 15637, "abc").empty());
-    check(link::make("map.example.com:8080", "203.0.113.5", 15637, "k") == "http://203.0.113.5:15637/?key=k");
+    check(link::make("map.example.com:8080", "127.0.0.1", 15637, "k") == "http://127.0.0.1:15637/?key=k");
     check(link::make("map.example.com", "", 0, "k").empty());
-    check(link::make("ftp://map.example.com", "203.0.113.5", 15637, "k") == "http://203.0.113.5:15637/?key=k");
+    check(link::make("ftp://map.example.com", "127.0.0.1", 15637, "k") == "http://127.0.0.1:15637/?key=k");
 
     check(link::has_scheme("http://map.example.com"));
     check(link::has_scheme("https://map.example.com"));
@@ -59,10 +59,10 @@ int main() {
     check(link::has_scheme("https://map.example.com/?next=ftp://x"));
     check(link::make("HTTPS://karte.example.ch/", "203.0.113.5", 15637, "abc") == "HTTPS://karte.example.ch/?key=abc");
 
-    check(link::chat_line("http://203.0.113.5:15637/?key=abc", 15637) == "Live map: 203.0.113.5:15637/abc");
+    check(link::chat_line("http://127.0.0.1:15637/?key=abc", 15637) == "Live map: 127.0.0.1:15637/abc");
     check(link::chat_line("http://map.example.com:8080/?key=k", 8080) == "Live map: map.example.com:8080/k");
     check(link::short_form("https://karte.example.ch/?key=ourmap") == "karte.example.ch/ourmap");
-    check(link::short_form("http://[2001:db8::1]:15637/?key=x1y2") == "[2001:db8::1]:15637/x1y2");
+    check(link::short_form("http://[::1]:15637/?key=x1y2") == "[::1]:15637/x1y2");
 
     check(link::key_ok("ourmap"));
     check(link::key_ok("Embervale-33_map"));
@@ -73,7 +73,7 @@ int main() {
     check(!link::key_ok("State"));          // a route of the server
     check(link::key_equal("OurMap", "ourmap"));
     check(!link::key_equal("ourmap", "ourmaps"));
-    check(link::chat_line("", 15637).find("port 15637") != std::string::npos);
+    check(link::chat_line("", 15637).contains("port 15637"));
 
     if (failures == 0) {
         std::printf("link tests passed\n");

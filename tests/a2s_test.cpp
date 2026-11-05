@@ -41,9 +41,9 @@ int main() {
     check(keywords_of(live.substr(0, 90)).empty());
     // Challenge round trip.
     const std::string challenge_reply("\x{ff}\x{ff}\x{ff}\x{ff}A\x{01}\x{02}\x{03}\x{04}", 9);
-    check(challenge_of(challenge_reply) == std::string("\x01\x02\x03\x04", 4));
+    check(challenge_of(challenge_reply) == std::string("\x{01}\x{02}\x{03}\x{04}", 4));
     check(challenge_of(live).empty());
-    check(info_request(std::string("\x01\x02\x03\x04", 4)).size() == 4 + 1 + 19 + 1 + 4);
+    check(info_request(std::string("\x{01}\x{02}\x{03}\x{04}", 4)).size() == 4 + 1 + 19 + 1 + 4);
     if (failures == 0) {
         std::print("a2s: all passed\n");
     }

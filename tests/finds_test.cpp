@@ -45,10 +45,10 @@ static void finders_are_deduplicated_and_position_averages() {
     s.record_ore(102, 50, 200, "", 10, "A", 2);
     s.record_ore(104, 50, 200, "", 10, "B", 3);
     std::string j = s.to_json();
-    check(j.find("\"hits\":3") != std::string::npos);
-    check(j.find("\"by\":[\"A\",\"B\"]") != std::string::npos);
-    check(j.find("\"x\":102.0") != std::string::npos);
-    check(j.find("\"sort\":null") != std::string::npos);
+    check(j.contains("\"hits\":3"));
+    check(j.contains(R"("by":["A","B"])"));
+    check(j.contains("\"x\":102.0"));
+    check(j.contains("\"sort\":null"));
 }
 
 static void chest_is_recorded_once() {
@@ -76,16 +76,16 @@ static void json_round_trip() {
     s.record_chest(30, 5, 40, -1, "C", 1792530003, 1);
     s.record_chest(60, 5, 40, -1, "C", 1792530004, 0);
     std::string j = s.to_json();
-    check(j.find("\"rl\":null") != std::string::npos);
-    check(j.find("\"rl\":true") != std::string::npos);
-    check(j.find("\"rl\":false") != std::string::npos);
+    check(j.contains("\"rl\":null"));
+    check(j.contains("\"rl\":true"));
+    check(j.contains("\"rl\":false"));
     Store t;
     check(t.from_json(j));
     check(t.deposits() == 2);
     check(t.chests() == 3);
     check(t.version() == s.version());
     check(t.to_json() == j);
-    check(!t.from_json("{\"ore\":[{\"x\":1,"));  // truncated
+    check(!t.from_json(R"({"ore":[{"x":1,)"));  // truncated
     check(t.from_json("{}"));
     check(t.deposits() == 0);
 }

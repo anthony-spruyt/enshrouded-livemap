@@ -30,7 +30,7 @@ static Base at(double x, double z) {
 int main() {
     Store s;
     uint64_t t = 1000;
-    check(s.count(t) == 0 && s.to_json(t) == "{\"version\":0,\"bases\":[]}");
+    check(s.count(t) == 0 && s.to_json(t) == R"({"version":0,"bases":[]})");
 
     // The system walks in chunks (8 + 2 altars per tick): every tick sees every altar once.
     s.see(1, 0, at(3753.25, 1422.25), t);
@@ -63,7 +63,7 @@ int main() {
     check(s.version(t) == 6);
 
     const std::string json = s.to_json(t);
-    check(json == "{\"version\":6,\"bases\":[{\"x\":3760.0,\"y\":850.0,\"z\":1422.2,\"size\":[60.0,40.0,60.0],\"abandoned\":true}]}");
+    check(json == R"({"version":6,"bases":[{"x":3760.0,"y":850.0,"z":1422.2,"size":[60.0,40.0,60.0],"abandoned":true}]})");
     if (failures) {
         std::print("json: {}\n", json);
     }

@@ -232,7 +232,7 @@ void check_rejections(const snapshot::Row& row) {
         image.fingerprint(0);
         check(!livemap::find_targets(image.base(), t, error),
               std::format("{}: unknown fingerprint accepted", row.label));
-        check(error.find("unknown server build") != std::string::npos, std::format("{}: {}", row.label, error));
+        check(error.contains("unknown server build"), std::format("{}: {}", row.label, error));
     }
     {
         Image image(row);
@@ -240,7 +240,7 @@ void check_rejections(const snapshot::Row& row) {
         image.clear(expected_rva(row, "registry"));
         check(!livemap::find_targets(image.base(), t, error),
               std::format("{}: broken registry signature accepted", row.label));
-        check(error.find("registry") != std::string::npos, std::format("{}: {}", row.label, error));
+        check(error.contains("registry"), std::format("{}: {}", row.label, error));
     }
     for (const snapshot::Site& site : row.patch1 ? snapshot::patch1_sites() : snapshot::launch_sites()) {
         if (site.name != std::string("player_table") && site.name != std::string("chest")) {
@@ -253,7 +253,7 @@ void check_rejections(const snapshot::Row& row) {
         check(livemap::find_targets(image.base(), t, error) != required,
               std::format("{}: {} planted twice", row.label, site.name));
         if (required) {
-            check(error.find("matched 2 times") != std::string::npos, std::format("{}: {}", row.label, error));
+            check(error.contains("matched 2 times"), std::format("{}: {}", row.label, error));
         } else {
             check(t.chest == 0 && t.player_table != 0,
                   std::format("{}: a duplicated optional site was hooked", row.label));
@@ -289,7 +289,7 @@ void check_rejections(const snapshot::Row& row) {
         livemap::ChatSites chat;
         check(!livemap::find_targets(image.base(), t, error),
               std::format("{}: image without .text accepted", row.label));
-        check(error.find("no .text section") != std::string::npos, std::format("{}: {}", row.label, error));
+        check(error.contains("no .text section"), std::format("{}: {}", row.label, error));
         check(!livemap::find_chat_sites(image.base(), shipped(row), chat),
               std::format("{}: join line found without .text", row.label));
     }
@@ -316,7 +316,7 @@ void check_installed_sites_are_required(const snapshot::Row& row) {
             plant_build(image, row, true, false);
             check(!livemap::find_targets(image.base(), only(table.build()), t, error),
                   std::format("{}: sigset without {} accepted", row.label, name));
-            check(error.find(name) != std::string::npos, std::format("{}: {}", row.label, error));
+            check(error.contains(name), std::format("{}: {}", row.label, error));
         }
         {
             Table table(row);
@@ -326,7 +326,7 @@ void check_installed_sites_are_required(const snapshot::Row& row) {
             image.clear(expected_rva(row, name) - table.site(name).offset);
             check(!livemap::find_targets(image.base(), only(table.build()), t, error),
                   std::format("{}: optional {} accepted", row.label, name));
-            check(error.find(name) != std::string::npos, std::format("{}: {}", row.label, error));
+            check(error.contains(name), std::format("{}: {}", row.label, error));
         }
     }
 }
@@ -341,7 +341,7 @@ void check_ambiguous_fingerprint(const snapshot::Row& row) {
     std::string error;
     check(!livemap::find_targets(image.base(), both, t, error),
           std::format("{}: two rows with one fingerprint accepted", row.label));
-    check(error.find("more than one") != std::string::npos, std::format("{}: {}", row.label, error));
+    check(error.contains("more than one"), std::format("{}: {}", row.label, error));
 }
 
 // The join line is searched with the sigset of the build that was recognised, not with every sigset.
@@ -380,7 +380,7 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
             check(ok == inside,
                   std::format("{}: {} hook site {} .text: {}", row.label, name, inside ? "inside" : "past the end of", error));
             if (!inside) {
-                check(error.find(name) != std::string::npos, std::format("{}: {}", row.label, error));
+                check(error.contains(name), std::format("{}: {}", row.label, error));
             }
         }
     }
@@ -396,7 +396,7 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
         check(ok == inside,
               std::format("{}: operand {} .text: {}", row.label, inside ? "ending on the last byte of" : "read past", error));
         if (!inside) {
-            check(error.find("param_entity") != std::string::npos, std::format("{}: {}", row.label, error));
+            check(error.contains("param_entity"), std::format("{}: {}", row.label, error));
         }
     }
 }
@@ -519,7 +519,7 @@ int main() {
             std::string error;
             check(!livemap::find_targets(image.base(), t, error),
                   std::format("{}: patch1 build without the entity id accessor", row.label));
-            check(error.find("param_entity") != std::string::npos, std::format("{}: {}", row.label, error));
+            check(error.contains("param_entity"), std::format("{}: {}", row.label, error));
         }
     }
     if (failures == 0) {

@@ -25,22 +25,22 @@ int main() {
     check(s.version() > v);
     check(s.update("Bro \"Two\"", {1}, 400));
     std::string json = s.to_json();
-    check(json.find("\"OG Vanilla K\":{\"online\":true,\"at\":300,\"keys\":[3,7,9,2101964388]}") != std::string::npos);
-    check(json.find("\"Bro \\\"Two\\\"\"") != std::string::npos);
+    check(json.contains(R"("OG Vanilla K":{"online":true,"at":300,"keys":[3,7,9,2101964388]})"));
+    check(json.contains(R"("Bro \"Two\"")"));
     // Logging out keeps the set, only the flag changes.
     s.set_online({"OG Vanilla K"});
-    check(s.to_json().find("\"Bro \\\"Two\\\"\":{\"online\":false,\"at\":400,\"keys\":[1]}") != std::string::npos);
+    check(s.to_json().contains(R"("Bro \"Two\"":{"online":false,"at":400,"keys":[1]})"));
     // Round trip through the file format; loaded players count as offline until seen again.
     Store t;
     check(t.from_json(s.to_json()));
     check(t.players() == 2);
     std::string back = t.to_json();
-    check(back.find("\"OG Vanilla K\":{\"online\":false,\"at\":300,\"keys\":[3,7,9,2101964388]}") != std::string::npos);
-    check(back.find("\"Bro \\\"Two\\\"\":{\"online\":false,\"at\":400,\"keys\":[1]}") != std::string::npos);
+    check(back.contains(R"("OG Vanilla K":{"online":false,"at":300,"keys":[3,7,9,2101964388]})"));
+    check(back.contains(R"("Bro \"Two\"":{"online":false,"at":400,"keys":[1]})"));
     Store u;
     check(!u.from_json("not json"));
     check(u.players() == 0);
-    check(u.from_json("{\"version\":1,\"players\":{}}"));
+    check(u.from_json(R"({"version":1,"players":{}})"));
     if (failures == 0) {
         std::print("discovered: all passed\n");
     }

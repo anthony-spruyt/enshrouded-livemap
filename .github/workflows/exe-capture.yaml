@@ -33,7 +33,6 @@ jobs:
     env:
       BUILD_ID: ${{ inputs.build_id }}
       MANIFEST_GID: ${{ inputs.manifest_gid }}
-      STEAM_API_HOST: api.steamcmd.net
       IMAGE: ghcr.io/anthony-spruyt/enshrouded-server-exe
       LABEL_PREFIX: io.github.anthony-spruyt.enshrouded.
       APP_ID: "2278520"
@@ -59,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           info="${RUNNER_TEMP}/steam-info.json"
-          curl -fsS --retry 3 --max-time 30 -o "$info" "https://${STEAM_API_HOST}/v1/info/${APP_ID}" \
+          curl -fsS --retry 3 --max-time 30 -o "$info" "https://api.steamcmd.net/v1/info/${APP_ID}" \
             || { echo "::error::The Steam info API is unreachable, so build ${BUILD_ID} cannot be confirmed as the public build."; exit 1; }
           jq -e '.status == "success"' "$info" > /dev/null \
             || { echo "::error::The Steam info API did not report success."; exit 1; }
@@ -76,11 +75,11 @@ jobs:
           set -euo pipefail
           tools="${RUNNER_TEMP}/tools"
           mkdir -p "$tools"
-          curl -fsSL --retry 3 -o "${tools}/dd.zip" "$DEPOTDOWNLOADER_URL"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 -o "${tools}/dd.zip" "$DEPOTDOWNLOADER_URL"
           echo "${DEPOTDOWNLOADER_SHA256}  ${tools}/dd.zip" | sha256sum --check --status \
             || { echo "::error::The DepotDownloader zip does not match its pinned sha256."; exit 1; }
           unzip -q -o "${tools}/dd.zip" DepotDownloader -d "$tools"
-          chmod +x "${tools}/DepotDownloader"
+          chmod u+x "${tools}/DepotDownloader"
 
       - name: Download only the server exe
         id: download
@@ -127,16 +126,15 @@ jobs:
           MANIFEST_ACCEPT: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json
         run: |
           set -euo pipefail
-          registry="${IMAGE%%/*}"
           path="${IMAGE#*/}"
           headers="${RUNNER_TEMP}/store-headers.txt"
           token=$(printf 'user = "%s:%s"\n' "$GITHUB_ACTOR" "$GH_TOKEN" \
-            | curl -fsS --retry 3 --max-time 30 --config - "https://${registry}/token?service=${registry}&scope=repository:${path}:pull" \
+            | curl -fsS --retry 3 --max-time 30 --config - "https://ghcr.io/token?service=ghcr.io&scope=repository:${path}:pull" \
             | jq -er '.token')
           # Only a 404 means the tag is free; any other failure must not read as absence
           status=$(printf 'header = "Authorization: Bearer %s"\nheader = "Accept: %s"\n' "$token" "$MANIFEST_ACCEPT" \
             | curl -sS --retry 3 --max-time 30 --head --config - --dump-header "$headers" --output /dev/null --write-out '%{http_code}' \
-              "https://${registry}/v2/${path}/manifests/${BUILD_ID}")
+              "https://ghcr.io/v2/${path}/manifests/${BUILD_ID}")
           case "$status" in
             404)
               echo "${IMAGE}:${BUILD_ID} is not in the store yet"
@@ -153,6 +151,7 @@ jobs:
               fi
               echo "${IMAGE}:${BUILD_ID} already exists as ${digest} with the same exe-sha256; nothing to push"
               echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "digest=${digest}" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "::error::The registry answered ${status} for ${IMAGE}:${BUILD_ID}, so the tag's state is unknown."
@@ -191,14 +190,13 @@ jobs:
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Pull the image back and check the exe
-        if: steps.store.outputs.exists != 'true'
         env:
-          PUSHED_DIGEST: ${{ steps.push.outputs.digest }}
+          PUSHED_DIGEST: ${{ steps.push.outputs.digest || steps.store.outputs.digest }}
           EXE_SHA256: ${{ steps.download.outputs.sha256 }}
         run: |
           set -euo pipefail
-          local_id=$(docker image inspect --format '{{.Id}}' "${IMAGE}:${BUILD_ID}")
-          docker image rm --force "$local_id" > /dev/null
+          docker image ls --quiet --no-trunc "$IMAGE" | sort -u | xargs -r docker image rm --force > /dev/null
+          docker builder prune --all --force > /dev/null
           docker pull --quiet "${IMAGE}@${PUSHED_DIGEST}" > /dev/null
           pulled=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}@${PUSHED_DIGEST}" | grep -F "${IMAGE}@" | head -n 1 | cut -d '@' -f 2)
           echo "pushed digest ${PUSHED_DIGEST}, pulled digest ${pulled}"
@@ -236,4 +234,5 @@ jobs:
         if: always()
         run: |
           rm -rf "${RUNNER_TEMP}/steam" "${RUNNER_TEMP}/ctx" "${RUNNER_TEMP}/img"
-          docker image ls --quiet --no-trunc "$IMAGE" | sort -u | xargs -r docker image rm --force > /dev/null 2>&1 || true
+          docker image ls --quiet --no-trunc "$IMAGE" | sort -u | xargs -r docker image rm --force > /dev/null || echo "::warning::The exe image could not be removed from the runner."
+          docker builder prune --all --force > /dev/null || echo "::warning::The build cache could not be pruned on the runner."

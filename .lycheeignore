@@ -28,3 +28,9 @@ https://json\.schemastore\.org/.*
 
 # Trivy docs site fails the TLS handshake (unrecognized name) intermittently
 https://trivy\.dev/.*
+
+# URL built at runtime from APP_ID; the hook check handles the API being down
+https://api\.steamcmd\.net/v1/info/(\{|%7B)APP_ID(\}|%7D)
+
+# Regex in release.yaml's upload URL check, not a link
+^https://uploads/$

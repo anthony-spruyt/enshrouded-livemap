@@ -28,6 +28,7 @@ COUNTS_AS_CODE = "data_only=false\nboot_test=true\n"
 GIT = ("git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false")
 README = "README.md"
 BASE_FILES = {README: "x\n", DATA: "x\n", CODE: "x\n"}
+PR_BRANCH = "topic"
 
 
 def git(repo, *args):
@@ -66,14 +67,14 @@ def touch(*names):
 def make_merge(tmp_path, head, base=None, files=None):
     """The merge commit GitHub checks out for a pull request: the base branch first, the head second."""
     repo = init_repo(tmp_path, BASE_FILES if files is None else files)
-    git(repo, "switch", "-q", "-c", "head")
+    git(repo, "switch", "-q", "-c", PR_BRANCH)
     head(repo)
     commit_all(repo, "head")
     git(repo, "switch", "-q", "main")
     if base is not None:
         base(repo)
         commit_all(repo, "base moved")
-    git(repo, "merge", "-q", "--no-ff", "-m", "merge", "head")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge", PR_BRANCH)
     return repo
 
 
@@ -138,6 +139,14 @@ def test_the_boot_test_runs_for_data_and_source_and_for_what_builds_or_runs_it(p
 
 def paths_of(changes):
     return [change.path for change in changes]
+
+
+def test_a_branch_made_for_a_test_cannot_resolve_to_a_file_of_the_git_directory(tmp_path):
+    repo = make_merge(tmp_path, touch(DATA))
+    in_git_directory = {entry.name.lower() for entry in (repo / ".git").iterdir()}
+    branches = [entry.name for entry in (repo / ".git" / "refs" / "heads").iterdir()]
+    assert len(branches) == 2
+    assert not [name for name in branches if name.lower() in in_git_directory]
 
 
 def test_changed_files_lists_what_the_pull_request_changes_against_its_base(tmp_path):

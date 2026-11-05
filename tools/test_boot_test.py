@@ -72,8 +72,9 @@ def test_a_row_without_a_depot_or_manifest_cannot_be_the_target():
 
 
 def test_no_row_with_a_download_is_an_error():
+    builds = builds_of(row("a", ["1"], depot=None))
     with pytest.raises(BootTestError, match="depot"):
-        boot_test.pick_target(builds_of(row("a", ["1"], depot=None)))
+        boot_test.pick_target(builds)
 
 
 def test_the_shipped_builds_have_a_target():
@@ -389,15 +390,17 @@ def test_wait_running_returns_the_server_pid_once_it_is_running():
 
 def test_wait_running_gives_up_after_the_timeout():
     clock = FakeClock()
+    docker = FakeDocker(clock, up_after=10_000)
     with pytest.raises(BootTestError, match="STARTING"):
-        wait_up(FakeDocker(clock, up_after=10_000), clock, timeout=100)
+        wait_up(docker, clock, timeout=100)
     assert 100 <= clock.now() < 130
 
 
 def test_wait_running_stops_at_once_when_the_container_has_exited():
     clock = FakeClock()
+    docker = FakeDocker(clock, up_after=10_000, dies_after=0)
     with pytest.raises(BootTestError, match="exited"):
-        wait_up(FakeDocker(clock, up_after=10_000, dies_after=0), clock)
+        wait_up(docker, clock)
     assert clock.now() == 0
 
 
@@ -434,22 +437,25 @@ def test_hold_running_lasts_the_whole_time():
 
 def test_hold_running_fails_when_the_container_exits():
     clock = FakeClock()
+    docker = FakeDocker(clock, up_after=0, dies_after=250)
     with pytest.raises(BootTestError, match="exited"):
-        hold(FakeDocker(clock, up_after=0, dies_after=250), clock)
+        hold(docker, clock)
     assert clock.now() < 400
 
 
 def test_hold_running_fails_when_the_server_restarts_under_its_supervisor():
     clock = FakeClock()
+    docker = FakeDocker(clock, up_after=0, restarts_after=250)
     with pytest.raises(BootTestError, match="restart"):
-        hold(FakeDocker(clock, up_after=0, restarts_after=250), clock)
+        hold(docker, clock)
     assert clock.now() < 400
 
 
 def test_hold_running_fails_when_the_server_is_no_longer_running():
     clock = FakeClock()
+    docker = FakeDocker(clock, up_after=1_000)
     with pytest.raises(BootTestError, match="STARTING"):
-        hold(FakeDocker(clock, up_after=1_000), clock)
+        hold(docker, clock)
 
 
 def reads(*states):
@@ -477,8 +483,9 @@ def test_wait_fresh_waits_for_the_clock_to_be_seen():
 
 def test_wait_fresh_fails_when_the_clock_never_moves():
     clock = FakeClock()
+    fetch = reads(at(1))
     with pytest.raises(BootTestError, match="stands still"):
-        boot_test.wait_fresh(reads(at(1)), clock, 30)
+        boot_test.wait_fresh(fetch, clock, 30)
     assert clock.now() >= 30
 
 
@@ -486,8 +493,9 @@ def test_wait_fresh_reports_a_map_that_does_not_answer():
     def refuse():
         raise BootTestError("the map did not answer (URLError)")
 
+    clock = FakeClock()
     with pytest.raises(BootTestError, match="did not answer"):
-        boot_test.wait_fresh(refuse, FakeClock(), 20)
+        boot_test.wait_fresh(refuse, clock, 20)
 
 
 def test_check_hooks_passes_when_all_are_logged():
@@ -852,19 +860,22 @@ def write_exe(directory, data=b"synthetic server bytes"):
 def test_the_downloaded_exe_must_match_the_digest_of_the_target(tmp_path):
     digest = write_exe(tmp_path)
     boot_test.verify_exe(row("a", ["1"], exe_sha256=digest), tmp_path)
+    wrong = row("a", ["1"], exe_sha256="0" * 64)
     with pytest.raises(BootTestError, match="does not match"):
-        boot_test.verify_exe(row("a", ["1"], exe_sha256="0" * 64), tmp_path)
+        boot_test.verify_exe(wrong, tmp_path)
 
 
 def test_a_target_without_a_recorded_digest_cannot_be_verified(tmp_path):
     write_exe(tmp_path)
+    undigested = row("a", ["1"], exe_sha256=None)
     with pytest.raises(BootTestError, match="no exe_sha256"):
-        boot_test.verify_exe(row("a", ["1"], exe_sha256=None), tmp_path)
+        boot_test.verify_exe(undigested, tmp_path)
 
 
 def test_a_download_without_the_exe_is_an_error(tmp_path):
+    target = row("a", ["1"])
     with pytest.raises(BootTestError, match="not found"):
-        boot_test.verify_exe(row("a", ["1"]), tmp_path)
+        boot_test.verify_exe(target, tmp_path)
 
 
 def test_the_download_ids_are_digits_only_so_they_are_safe_in_a_command():
@@ -967,8 +978,9 @@ def test_starting_a_container_may_take_the_longer_time_a_pull_needs():
 
 
 def test_the_docker_wrapper_reports_a_command_that_cannot_run(tmp_path):
+    docker = boot_test.Docker((str(tmp_path / "no-such-docker"),))
     with pytest.raises(BootTestError, match="could not run"):
-        boot_test.Docker((str(tmp_path / "no-such-docker"),))("ps")
+        docker("ps")
 
 
 BOOT_JOB = "boot-test"

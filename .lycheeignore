@@ -29,9 +29,6 @@ https://json\.schemastore\.org/.*
 # Trivy docs site fails the TLS handshake (unrecognized name) intermittently
 https://trivy\.dev/.*
 
-# URL built at runtime from APP_ID; the hook check handles the API being down
-https://api\.steamcmd\.net/v1/info/(\{|%7B)APP_ID(\}|%7D)
-
 # exe-capture.yaml's Steam info URL, built at runtime from APP_ID
 https://api\.steamcmd\.net/v1/info/\$(\{|%7B)APP_ID(\}|%7D)
 

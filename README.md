@@ -164,7 +164,7 @@ ctest --test-dir build --output-on-failure --no-tests=error
 
 The selftest checks a server exe on disk: `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
 
-One of the unit tests runs the Python tools' tests with pytest. Install it once with
+Two of the unit tests (tools_paths, tools_hook_check) run the Python tools' tests with pytest. Install it once with
 `python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in

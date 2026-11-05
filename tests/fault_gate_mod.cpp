@@ -162,8 +162,7 @@ int handled_probe() {
 }
 
 int handled_probe_on_a_guard_page() {
-    const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD);
-    if (page == nullptr || !probe_gives_up(std::bit_cast<uintptr_t>(page))) {
+    if (const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD); page == nullptr || !probe_gives_up(std::bit_cast<uintptr_t>(page))) {
         return kHookFailed;
     }
     livemap::log("gate: the probe handled a guard page");

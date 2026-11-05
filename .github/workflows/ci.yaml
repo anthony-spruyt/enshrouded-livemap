@@ -25,6 +25,7 @@ jobs:
       - "lint"
     permissions:
       contents: "read"
+      packages: "read"
     uses: "./.github/workflows/ci-repo.yaml"
     secrets: "inherit"
   image:

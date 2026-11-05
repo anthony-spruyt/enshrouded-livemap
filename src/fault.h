@@ -73,7 +73,8 @@ bool is_fault_code(uint32_t code);
 constexpr bool is_bad_read(uint32_t code) {
     constexpr uint32_t kAccessViolation = 0xC0000005;
     constexpr uint32_t kInPageError = 0xC0000006;
-    return code == kAccessViolation || code == kInPageError;
+    constexpr uint32_t kGuardPage = 0x80000001;
+    return code == kAccessViolation || code == kInPageError || code == kGuardPage;
 }
 
 // `active_site` is the hook whose callback this thread is running, or nullptr. Game code counts only under one.

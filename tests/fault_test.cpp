@@ -15,7 +15,7 @@ using livemap::fault::kNoSlot;
 using livemap::fault::Layout;
 using livemap::fault::Stamp;
 using livemap::fault::Verdict;
-using livemap::fault::Where;
+using enum livemap::fault::Where;
 
 namespace {
 
@@ -67,28 +67,28 @@ std::string line(const Stamp& at, uint32_t code, const Verdict& verdict) {
 
 void test_format() {
     const Stamp at{2026, 11, 5, 7, 8, 9, 42};
-    check(line(at, kAccessViolation, {Where::Module, 0x1a2b3, "movement"}) ==
+    check(line(at, kAccessViolation, {Module, 0x1a2b3, "movement"}) ==
           "2026-11-05 07:08:09.042 [livemap] FAULT code=0xC0000005 at=livemap+0x0001A2B3 site=movement\r\n");
-    check(line(at, kStackOverflow, {Where::Trampoline, 0x40, "chest"}) ==
+    check(line(at, kStackOverflow, {Trampoline, 0x40, "chest"}) ==
           "2026-11-05 07:08:09.042 [livemap] FAULT code=0xC00000FD at=trampoline+0x00000040 site=chest\r\n");
-    check(line(at, kAccessViolation, {Where::Game, 0x1f2e3d, "chest"}) ==
+    check(line(at, kAccessViolation, {Game, 0x1f2e3d, "chest"}) ==
           "2026-11-05 07:08:09.042 [livemap] FAULT code=0xC0000005 at=game+0x001F2E3D site=chest\r\n");
-    check(line(at, kAccessViolation, {Where::Module, 0, nullptr}) ==
+    check(line(at, kAccessViolation, {Module, 0, nullptr}) ==
           "2026-11-05 07:08:09.042 [livemap] FAULT code=0xC0000005 at=livemap+0x00000000 site=none\r\n");
-    check(line(at, kAccessViolation, {Where::Module, 0, ""}) ==
+    check(line(at, kAccessViolation, {Module, 0, ""}) ==
           "2026-11-05 07:08:09.042 [livemap] FAULT code=0xC0000005 at=livemap+0x00000000 site=none\r\n");
 }
 
 void test_format_bounds() {
     const Stamp at{2026, 11, 5, 7, 8, 9, 42};
-    const Verdict verdict{Where::Module, 1, "movement"};
+    const Verdict verdict{Module, 1, "movement"};
     std::array<char, 160> buf{};
     const size_t full = format_line(buf.data(), buf.size(), at, kAccessViolation, verdict);
     check(full > 0);
     check(format_line(buf.data(), full - 1, at, kAccessViolation, verdict) == 0);
     check(format_line(buf.data(), full, at, kAccessViolation, verdict) == full);
     const std::string longest(200, 'x');
-    const std::string cut = line(at, kAccessViolation, {Where::Module, 1, longest.c_str()});
+    const std::string cut = line(at, kAccessViolation, {Module, 1, longest.c_str()});
     check(!cut.empty() && cut.size() < buf.size());
     check(cut.ends_with("x\r\n"));
 }
@@ -112,7 +112,7 @@ void test_bad_read_codes() {
     check(is_bad_read(kAccessViolation));
     check(is_bad_read(kInPageError));
     check(!is_bad_read(kStackOverflow));
-    check(!is_bad_read(kGuardPage));
+    check(is_bad_read(kGuardPage));
     check(!is_bad_read(kCppException));
     check(!is_bad_read(0xC000001D));
     check(!is_bad_read(0));
@@ -122,69 +122,69 @@ void test_classify_module() {
     Layout layout;
     fill_layout(layout);
     Verdict v = classify(layout, kModule + 0x2345, kAccessViolation, nullptr);
-    check(v.where == Where::Module && v.offset == 0x2345 && v.site == nullptr);
+    check(v.where == Module && v.offset == 0x2345 && v.site == nullptr);
     v = classify(layout, kModule + 0x2345, kAccessViolation, kActive);
-    check(v.where == Where::Module && std::strcmp(v.site, "chest") == 0);
+    check(v.where == Module && std::strcmp(v.site, "chest") == 0);
     v = classify(layout, kModule, kAccessViolation, nullptr);
-    check(v.where == Where::Module && v.offset == 0);
+    check(v.where == Module && v.offset == 0);
     v = classify(layout, kModuleEnd - 1, kAccessViolation, nullptr);
-    check(v.where == Where::Module);
-    check(classify(layout, kModuleEnd, kAccessViolation, nullptr).where == Where::Outside);
-    check(classify(layout, kModule - 1, kAccessViolation, nullptr).where == Where::Outside);
+    check(v.where == Module);
+    check(classify(layout, kModuleEnd, kAccessViolation, nullptr).where == Outside);
+    check(classify(layout, kModule - 1, kAccessViolation, nullptr).where == Outside);
 }
 
 void test_classify_trampoline() {
     Layout layout;
     fill_layout(layout);
     Verdict v = classify(layout, kRegionA + 0x30, kAccessViolation, nullptr);
-    check(v.where == Where::Trampoline && v.offset == 0x30 && std::strcmp(v.site, "movement") == 0);
+    check(v.where == Trampoline && v.offset == 0x30 && std::strcmp(v.site, "movement") == 0);
     v = classify(layout, kRegionB + kRegionSize - 1, kAccessViolation, kActive);
-    check(v.where == Where::Trampoline && std::strcmp(v.site, "chest") == 0);
-    check(classify(layout, kRegionB + kRegionSize, kAccessViolation, nullptr).where == Where::Outside);
-    check(classify(layout, kRegionA - 1, kAccessViolation, nullptr).where == Where::Outside);
+    check(v.where == Trampoline && std::strcmp(v.site, "chest") == 0);
+    check(classify(layout, kRegionB + kRegionSize, kAccessViolation, nullptr).where == Outside);
+    check(classify(layout, kRegionA - 1, kAccessViolation, nullptr).where == Outside);
 }
 
 void test_classify_game() {
     Layout layout;
     fill_layout(layout);
     Verdict v = classify(layout, kGame + 0x2345, kAccessViolation, kActive);
-    check(v.where == Where::Game && v.offset == 0x2345 && std::strcmp(v.site, "chest") == 0);
+    check(v.where == Game && v.offset == 0x2345 && std::strcmp(v.site, "chest") == 0);
     v = classify(layout, kGame, kAccessViolation, kActive);
-    check(v.where == Where::Game && v.offset == 0);
-    check(classify(layout, kGameEnd - 1, kAccessViolation, kActive).where == Where::Game);
-    check(classify(layout, kGameEnd, kAccessViolation, kActive).where == Where::Outside);
-    check(classify(layout, kGame - 1, kAccessViolation, kActive).where == Where::Outside);
-    check(classify(layout, kGame + 0x2345, kAccessViolation, nullptr).where == Where::Outside);
-    check(classify(layout, kGame + 0x2345, kCppException, kActive).where == Where::Outside);
-    check(classify(layout, kGame + 0x2345, kBreakpoint, kActive).where == Where::Outside);
+    check(v.where == Game && v.offset == 0);
+    check(classify(layout, kGameEnd - 1, kAccessViolation, kActive).where == Game);
+    check(classify(layout, kGameEnd, kAccessViolation, kActive).where == Outside);
+    check(classify(layout, kGame - 1, kAccessViolation, kActive).where == Outside);
+    check(classify(layout, kGame + 0x2345, kAccessViolation, nullptr).where == Outside);
+    check(classify(layout, kGame + 0x2345, kCppException, kActive).where == Outside);
+    check(classify(layout, kGame + 0x2345, kBreakpoint, kActive).where == Outside);
     Layout unknown;
     fill_layout(unknown);
     unknown.game = {};
-    check(classify(unknown, kGame + 0x2345, kAccessViolation, kActive).where == Where::Outside);
+    check(classify(unknown, kGame + 0x2345, kAccessViolation, kActive).where == Outside);
 }
 
 void test_classify_ignores() {
     Layout layout;
     fill_layout(layout);
-    check(classify(layout, 0x7ff600001000, kAccessViolation, nullptr).where == Where::Outside);
-    check(classify(layout, 0x7ff600001000, kAccessViolation, kActive).where == Where::Outside);
-    check(classify(layout, kModule + 0x2345, kCppException, nullptr).where == Where::Outside);
-    check(classify(layout, kRegionA + 4, kGuardPage, nullptr).where == Where::Outside);
-    check(classify(layout, kModule + 0x2345, kBreakpoint, nullptr).where == Where::Outside);
+    check(classify(layout, 0x7ff600001000, kAccessViolation, nullptr).where == Outside);
+    check(classify(layout, 0x7ff600001000, kAccessViolation, kActive).where == Outside);
+    check(classify(layout, kModule + 0x2345, kCppException, nullptr).where == Outside);
+    check(classify(layout, kRegionA + 4, kGuardPage, nullptr).where == Outside);
+    check(classify(layout, kModule + 0x2345, kBreakpoint, nullptr).where == Outside);
 }
 
 void test_classify_probes() {
     Layout layout;
     fill_layout(layout);
-    check(classify(layout, kProbes, kAccessViolation, nullptr).where == Where::Outside);
-    check(classify(layout, kProbesEnd - 1, kInPageError, kActive).where == Where::Outside);
-    check(classify(layout, kProbes - 1, kAccessViolation, nullptr).where == Where::Module);
-    check(classify(layout, kProbesEnd, kAccessViolation, nullptr).where == Where::Module);
-    check(classify(layout, kProbes + 4, kStackOverflow, nullptr).where == Where::Module);
+    check(classify(layout, kProbes, kAccessViolation, nullptr).where == Outside);
+    check(classify(layout, kProbesEnd - 1, kInPageError, kActive).where == Outside);
+    check(classify(layout, kProbes - 1, kAccessViolation, nullptr).where == Module);
+    check(classify(layout, kProbesEnd, kAccessViolation, nullptr).where == Module);
+    check(classify(layout, kProbes + 4, kStackOverflow, nullptr).where == Module);
     Layout none;
     fill_layout(none);
     none.probes = {};
-    check(classify(none, kProbes, kAccessViolation, nullptr).where == Where::Module);
+    check(classify(none, kProbes, kAccessViolation, nullptr).where == Module);
 }
 
 void test_region_table() {

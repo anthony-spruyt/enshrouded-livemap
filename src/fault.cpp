@@ -69,10 +69,11 @@ private:
 };
 
 const char* place_of(Where where) {
+    using enum Where;
     switch (where) {
-        case Where::Trampoline:
+        case Trampoline:
             return "trampoline";
-        case Where::Game:
+        case Game:
             return "game";
         default:
             return "livemap";
@@ -114,6 +115,7 @@ const Region* RegionTable::find(uintptr_t address) const {
 }
 
 Verdict classify(const Layout& layout, uintptr_t address, uint32_t code, const char* active_site) {
+    using enum Where;
     if (!is_fault_code(code)) {
         return {};
     }
@@ -121,13 +123,13 @@ Verdict classify(const Layout& layout, uintptr_t address, uint32_t code, const c
         return {};
     }
     if (contains(layout.module, address)) {
-        return {Where::Module, static_cast<uint32_t>(address - layout.module.begin), active_site};
+        return {Module, static_cast<uint32_t>(address - layout.module.begin), active_site};
     }
     if (const Region* region = layout.regions.find(address)) {
-        return {Where::Trampoline, static_cast<uint32_t>(address - region->range.begin), region->site};
+        return {Trampoline, static_cast<uint32_t>(address - region->range.begin), region->site};
     }
     if (active_site != nullptr && contains(layout.game, address)) {
-        return {Where::Game, static_cast<uint32_t>(address - layout.game.begin), active_site};
+        return {Game, static_cast<uint32_t>(address - layout.game.begin), active_site};
     }
     return {};
 }

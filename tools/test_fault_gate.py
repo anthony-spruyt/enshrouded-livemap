@@ -28,7 +28,7 @@ AT_TRAMPOLINE = "trampoline"
 AT_GAME = "game"
 CALLBACK, TRAMPOLINE, TWICE = "callback", "trampoline", "twice"
 GAME, UNHOOKED = "game", "unhooked"
-PROBE, PROBE_THEN_FAULT = "probe", "probe_then_fault"
+PROBE, PROBE_THEN_FAULT, GUARD_PAGE = "probe", "probe_then_fault", "guard_page"
 FAULT_LINE = re.compile(
     r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[livemap\] FAULT code=0x[0-9A-F]{8}"
     rf" at=(?P<where>{AT_MODULE}|{AT_TRAMPOLINE}|{AT_GAME})\+0x[0-9A-F]{{8}} site=(?P<site>\S+)"
@@ -41,6 +41,10 @@ FAULTS = [
     (PROBE_THEN_FAULT, AT_MODULE, SITE_CALLBACK),
 ]
 DEATHS = [CALLBACK, TRAMPOLINE, TWICE, GAME, UNHOOKED, PROBE_THEN_FAULT]
+HANDLED = [
+    (PROBE, "gate: the probe handled its own bad read"),
+    (GUARD_PAGE, "gate: the probe handled a guard page"),
+]
 
 
 class Run(NamedTuple):
@@ -73,11 +77,12 @@ def test_a_fault_in_the_game_outside_a_hook_callback_writes_no_fault_line(tmp_pa
     assert run_gate(tmp_path, UNHOOKED).faults() == []
 
 
-def test_a_bad_read_the_map_handles_itself_writes_no_fault_line(tmp_path):
-    run = run_gate(tmp_path, PROBE)
+@pytest.mark.parametrize(("mode", "done"), HANDLED)
+def test_a_bad_read_the_map_handles_itself_writes_no_fault_line(tmp_path, mode, done):
+    run = run_gate(tmp_path, mode)
 
     assert run.exit_code == 0
-    assert run.lines[-1].endswith("gate: the probe handled its own bad read")
+    assert run.lines[-1].endswith(done)
     assert run.faults() == []
 
 

@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -42,10 +43,14 @@ Gate& gate() {
 
 using Standin = void (*)(const int*);
 
+std::byte* allocate_page(DWORD protection) {
+    return static_cast<std::byte*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, protection));
+}
+
 uintptr_t standin(std::span<const uint8_t> code) {
-    auto* page = static_cast<uint8_t*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    auto* page = allocate_page(PAGE_EXECUTE_READWRITE);
     if (page != nullptr) {
-        std::ranges::copy(code, page);
+        std::ranges::copy(std::as_bytes(code), page);
     }
     return std::bit_cast<uintptr_t>(page);
 }
@@ -143,12 +148,25 @@ int fault_in_the_game_alone() {
     return kSurvived;
 }
 
-int handled_probe() {
+bool probe_gives_up(uintptr_t address) {
     uint64_t value = 0;
-    if (livemap::read_u64(0, value)) {
+    return !livemap::read_u64(address, value);
+}
+
+int handled_probe() {
+    if (!probe_gives_up(0)) {
         return kHookFailed;
     }
     livemap::log("gate: the probe handled its own bad read");
+    return 0;
+}
+
+int handled_probe_on_a_guard_page() {
+    const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD);
+    if (page == nullptr || !probe_gives_up(std::bit_cast<uintptr_t>(page))) {
+        return kHookFailed;
+    }
+    livemap::log("gate: the probe handled a guard page");
     return 0;
 }
 
@@ -175,6 +193,9 @@ int run(std::string_view mode) {
     }
     if (mode == "probe") {
         return handled_probe();
+    }
+    if (mode == "guard_page") {
+        return handled_probe_on_a_guard_page();
     }
     if (mode == "probe_then_fault") {
         return handled_probe_then_fault();

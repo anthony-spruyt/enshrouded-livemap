@@ -187,7 +187,7 @@ ctest --test-dir build --output-on-failure --no-tests=error
 
 The selftest checks a server exe on disk: `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
 
-Three of the unit tests (tools_paths, tools_hook_check, tools_data_only) run the Python tools' tests with pytest. Install
+Four of the unit tests (tools_paths, tools_hook_check, tools_data_only, tools_boot_test) run the Python tools' tests with pytest. Install
 pytest and jsonschema once with `python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.
 
 The supported server builds, their hook signatures and the RVAs the selftest expects live in
@@ -196,3 +196,9 @@ supporting another build whose code the existing signatures still match is a dat
 
 A pull request that changes `data/builds.json` and nothing else runs the `data-only` check, which passes when the file
 validates against the schema. Code pull requests skip it and merge as usual.
+
+A pull request that changes `data/`, `src/` or the boot test itself also runs the `boot-test` job. It downloads the newest
+build in `data/builds.json` that lists a Steam depot and manifest, starts it in the `mornedhels/enshrouded-server` image
+first without the DLL and then with the built one, and passes when the server reaches RUNNING, `livemap.log` lists every
+mandatory hook, the map serves fresh data, and the server runs for 10 minutes without a crash or exit. The game files stay
+on the runner and are never uploaded or cached; `tools/boot_test.py` holds the checks.

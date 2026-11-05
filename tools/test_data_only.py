@@ -15,10 +15,13 @@ ENCODING = "utf-8"
 DATA = data_only.DATA_FILE
 SCHEMA = data_only.SCHEMA_FILE
 CODE = "src/main.cpp"
+BOOT_TEST_TOOL = "tools/boot_test.py"
+CI_WORKFLOW = ".github/workflows/ci-repo.yaml"
 CLASSIFY = "classify"
 VALIDATE = "validate"
 GIT = ("git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false")
-BASE_FILES = {"README.md": "x\n", DATA: "x\n", CODE: "x\n"}
+README = "README.md"
+BASE_FILES = {README: "x\n", DATA: "x\n", CODE: "x\n"}
 
 
 def git(repo, *args):
@@ -95,8 +98,27 @@ def test_only_a_change_to_builds_json_alone_is_data_only(paths, expected):
     assert data_only.is_data_only(paths) is expected
 
 
+@pytest.mark.parametrize(
+    ("paths", "expected"),
+    [
+        ([DATA], True),
+        ([SCHEMA], True),
+        ([CODE], True),
+        (["src/deep/er.h"], True),
+        ([BOOT_TEST_TOOL], True),
+        ([CI_WORKFLOW], True),
+        ([README, "web/index.html", "tools/render_map.py"], False),
+        (["source/main.cpp", "database/x.json", "Data/builds.json"], False),
+        ([], False),
+        ([README, CODE], True),
+    ],
+)
+def test_the_boot_test_runs_for_data_and_source_and_for_its_own_files(paths, expected):
+    assert data_only.needs_boot_test(paths) is expected
+
+
 def test_changed_paths_lists_what_the_pull_request_changes_against_its_base(tmp_path):
-    repo = make_merge(tmp_path, touch(DATA, CODE), base=touch("README.md"))
+    repo = make_merge(tmp_path, touch(DATA, CODE), base=touch(README))
     assert sorted(data_only.changed_paths(repo)) == [DATA, CODE]
 
 
@@ -214,13 +236,18 @@ def run_main(args, repo, tmp_path, monkeypatch):
 
 def test_classify_reports_true_for_a_data_only_change(tmp_path, monkeypatch, capsys):
     repo = make_merge(tmp_path, touch(DATA))
-    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, "data_only=true\n")
+    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, "data_only=true\nboot_test=true\n")
     assert "data_only=true" in capsys.readouterr().out
 
 
 def test_classify_reports_false_for_a_code_change_and_still_succeeds(tmp_path, monkeypatch):
     repo = make_merge(tmp_path, touch(DATA, CODE))
-    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, "data_only=false\n")
+    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, "data_only=false\nboot_test=true\n")
+
+
+def test_classify_reports_no_boot_test_for_a_change_outside_data_and_source(tmp_path, monkeypatch):
+    repo = make_merge(tmp_path, touch(README))
+    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, "data_only=false\nboot_test=false\n")
 
 
 def test_classify_fails_when_it_cannot_tell(tmp_path, monkeypatch, capsys):
@@ -276,3 +303,4 @@ def test_the_classifier_job_reads_the_merge_commit_and_exposes_its_answer():
     assert "\n          ref:" not in block
     assert "id: classify\n" in block
     assert "data_only: ${{ steps.classify.outputs.data_only }}\n" in block
+    assert "boot_test: ${{ steps.classify.outputs.boot_test }}\n" in block

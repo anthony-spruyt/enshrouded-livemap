@@ -1,8 +1,8 @@
-"""Decides whether a pull request changes only data/builds.json, and checks that file against its schema.
+"""Sorts a pull request by the files it changes, and checks data/builds.json against its schema.
 
 Run it from the repository root: `classify` needs the pull request's merge commit checked out with its two parents
-and writes data_only=true|false to $GITHUB_OUTPUT; `validate` needs jsonschema (tools/requirements-test.txt).
-ctest runs test_data_only.py.
+and writes data_only=true|false (only data/builds.json changed) and boot_test=true|false (the boot test must run)
+to $GITHUB_OUTPUT; `validate` needs jsonschema (tools/requirements-test.txt). ctest runs test_data_only.py.
 """
 
 import json
@@ -13,6 +13,8 @@ from pathlib import Path
 
 DATA_FILE = "data/builds.json"
 SCHEMA_FILE = "data/builds.schema.json"
+BOOT_TEST_DIRS = ("data/", "src/")
+BOOT_TEST_FILES = ("tools/boot_test.py", ".github/workflows/ci-repo.yaml")
 USAGE = "usage: data_only.py classify|validate"
 
 
@@ -22,6 +24,17 @@ class DataOnlyError(Exception):
 
 def is_data_only(paths):
     return list(paths) == [DATA_FILE]
+
+
+def needs_boot_test(paths):
+    return any(path.startswith(BOOT_TEST_DIRS) or path in BOOT_TEST_FILES for path in paths)
+
+
+def github_output(lines):
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a", encoding="utf-8") as handle:
+            handle.write("".join(line + "\n" for line in lines))
 
 
 def _git(root, *args):
@@ -78,12 +91,13 @@ def annotation(message):
 
 
 def _classify(root):
-    flag = f"data_only={'true' if is_data_only(changed_paths(root)) else 'false'}"
-    print(flag)
-    output = os.environ.get("GITHUB_OUTPUT")
-    if output:
-        with open(output, "a", encoding="utf-8") as handle:
-            handle.write(flag + "\n")
+    paths = changed_paths(root)
+    flags = [
+        f"data_only={'true' if is_data_only(paths) else 'false'}",
+        f"boot_test={'true' if needs_boot_test(paths) else 'false'}",
+    ]
+    print(*flags, sep="\n")
+    github_output(flags)
     return 0
 
 

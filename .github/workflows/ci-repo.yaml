@@ -22,6 +22,7 @@ jobs:
       contents: read
     outputs:
       data_only: ${{ steps.classify.outputs.data_only }}
+      boot_test: ${{ steps.classify.outputs.boot_test }}
     steps:
       - name: Check out the merge commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -272,3 +273,82 @@ jobs:
 
       - name: Test the fault line
         run: '"$RUNNER_TEMP/venv/bin/python" -B -m pytest -q -p no:cacheprovider tools/test_fault_gate.py'
+
+  boot-test:
+    name: Boot the server with the DLL
+    needs: [build, changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.boot_test == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=docker depName=mornedhels/enshrouded-server
+      BOOT_TEST_IMAGE: "mornedhels/enshrouded-server:1.8.1-wine@sha256:002a8ac3387eddc5151b18ab5e7c02f9382f8e941dcfc75e56fa5134bd18f283"
+      APP_ID: "2278520"
+      DEPOTDOWNLOADER_URL: https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip
+      DEPOTDOWNLOADER_SHA256: a999dec66b4850fc961bd50366696d23c2d0fad7b18790e6a5647b2f19097a53
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pick the target build
+        id: target
+        run: |
+          set -euo pipefail
+          echo "WORK=${RUNNER_TEMP}/boot" >> "$GITHUB_ENV"
+          python3 -B tools/boot_test.py target
+
+      - name: Download the built DLL
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: EnshroudedLiveMap-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Unpack the DLL
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${WORK}/package"
+          unzip -q "dist/EnshroudedLiveMap-${VERSION}.zip" iphlpapi.dll 'livemap/*' -d "${WORK}/package"
+
+      - name: Fetch DepotDownloader
+        run: |
+          set -euo pipefail
+          mkdir -p "${WORK}/tools"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 -o "${WORK}/tools/dd.zip" "$DEPOTDOWNLOADER_URL"
+          echo "${DEPOTDOWNLOADER_SHA256}  ${WORK}/tools/dd.zip" | sha256sum --check --status \
+            || { echo "::error::The DepotDownloader zip does not match its pinned sha256."; exit 1; }
+          unzip -q -o "${WORK}/tools/dd.zip" DepotDownloader -d "${WORK}/tools"
+          chmod u+x "${WORK}/tools/DepotDownloader"
+
+      - name: Download the server depot
+        env:
+          DEPOT_ID: ${{ steps.target.outputs.depot }}
+          MANIFEST_GID: ${{ steps.target.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          server="${WORK}/enshrouded/server"
+          log="${WORK}/depotdownloader.log"
+          mkdir -p "$server"
+          timeout 1500 "${WORK}/tools/DepotDownloader" -app "$APP_ID" -depot "$DEPOT_ID" -manifest "$MANIFEST_GID" -dir "$server" > "$log" 2>&1 \
+            || { echo "::error::The anonymous Steam download of depot ${DEPOT_ID} manifest ${MANIFEST_GID} failed."; exit 1; }
+          timeout 600 "${WORK}/tools/DepotDownloader" -app 1007 -depot 1004 -dir "$server" >> "$log" 2>&1 \
+            || { echo "::error::The anonymous Steam download of the Steamworks redistributables failed."; exit 1; }
+          echo "downloaded $(du -sh "$server" | cut -f1)"
+
+      - name: Check the download is the recorded build
+        run: python3 -B tools/boot_test.py verify-exe "${WORK}/enshrouded/server"
+
+      - name: Boot the server without and with the DLL
+        run: python3 -B tools/boot_test.py run "$WORK" "${WORK}/package"
+
+      - name: Remove the containers and the game files
+        if: always()
+        run: |
+          docker rm -f boot-test-baseline boot-test-livemap > /dev/null 2>&1 || true
+          if [[ -n "${WORK:-}" ]]; then rm -rf "$WORK"; fi
+          echo "boot test containers and work directory removed"

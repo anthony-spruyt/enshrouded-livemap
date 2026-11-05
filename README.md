@@ -117,6 +117,28 @@ used instead. `DetectPublicAddress=0` stops the IP lookup entirely.
 | `Discovered` | `1` | Which places each player discovered and where they have been (filter and fog of war). |
 | `Log`, `LogDiagnostics` | `1` | Log file and periodic diagnostics. |
 
+## The log
+
+`livemap.log` is next to the server exe and is written while `Log` is `1`. Each line starts with a
+UTC timestamp and ends in CRLF.
+
+When the process hits a fault in the mod's own code or in the memory of one of its hooks, the mod
+writes one line first, at most once per run, and does not stop the fault: the process ends the
+normal way.
+
+```text
+2000-01-02 03:04:05.678 [livemap] FAULT code=0xC0000005 at=livemap+0x000014A8 site=movement
+```
+
+| Field | Meaning |
+| --- | --- |
+| `code` | The exception code: `0x` and 8 upper-case hex digits. |
+| `at` | `livemap+0x...` is the offset from the start of `iphlpapi.dll`, 8 upper-case hex digits. `trampoline+0x...` is the offset into the memory holding one hook's stub and moved game instructions; the same hex form. |
+| `site` | The name of the hook whose callback or trampoline was running, or `none` when the fault is in the mod but in no hook (the names are in `src/world.cpp` and `src/announce.cpp`). |
+
+The line tells a crash in the mod from a crash in the game. A bad read that the mod handles itself
+is not a fault and writes no line.
+
 ## The map
 
 The map is drawn from the game's own map data (the textures the in-game map is made of): height,

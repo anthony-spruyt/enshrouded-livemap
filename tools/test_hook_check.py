@@ -1,6 +1,7 @@
 """Tests for hook_check.py with a fake registry and synthetic images; ctest runs them with pytest."""
 
 import base64
+import errno
 import gzip
 import hashlib
 import http.client
@@ -27,6 +28,7 @@ TAG = "1234567"
 EXE = b"MZ synthetic server exe"
 EXE_SHA256 = hashlib.sha256(EXE).hexdigest()
 SIGNED_HOST = "localhost"
+UNUSED_DIR = Path("unused")
 
 
 def digest_of(data):
@@ -161,15 +163,16 @@ def test_login_sends_basic_credentials_and_manifest_uses_the_bearer_token():
 def test_login_refused_names_the_status_and_not_the_secret():
     fake = FakeRegistry()
     fake.script("/token", Reply(403))
+    registry = Registry(fake, sleep=lambda seconds: None)
     with pytest.raises(HookCheckError, match="403") as caught:
-        Registry(fake, sleep=lambda seconds: None).login(ACTOR, SECRET)
+        registry.login(ACTOR, SECRET)
     assert SECRET not in str(caught.value)
 
 
 def test_404_on_a_manifest_says_the_store_has_no_exe_for_the_build():
     _, registry = make_registry()
     with pytest.raises(HookCheckError, match=f"no exe for build {TAG}"):
-        hook_check.pull_exe(registry, TAG, EXE_SHA256, Path("unused"))
+        hook_check.pull_exe(registry, TAG, EXE_SHA256, UNUSED_DIR)
 
 
 @pytest.mark.parametrize("status", [401, 403, 429, 500, 502, 503])
@@ -177,7 +180,7 @@ def test_other_statuses_are_registry_failures_not_absence(status):
     fake, registry = make_registry(Image())
     fake.script("/manifests/", Reply(status))
     with pytest.raises(HookCheckError, match=f"answered {status}") as caught:
-        hook_check.pull_exe(registry, TAG, EXE_SHA256, Path("unused"))
+        hook_check.pull_exe(registry, TAG, EXE_SHA256, UNUSED_DIR)
     assert "no exe" not in str(caught.value)
 
 
@@ -185,7 +188,7 @@ def test_a_201_is_not_a_200():
     fake, registry = make_registry(Image())
     fake.script("/manifests/", Reply(201, body=b"{}"))
     with pytest.raises(HookCheckError, match="answered 201"):
-        hook_check.pull_exe(registry, TAG, EXE_SHA256, Path("unused"))
+        hook_check.pull_exe(registry, TAG, EXE_SHA256, UNUSED_DIR)
 
 
 def descriptor_of(image, which="layer"):
@@ -221,8 +224,9 @@ def test_redirect_that_is_not_https_is_refused(location, tmp_path):
     image = Image()
     fake, registry = make_registry(image)
     fake.script("/blobs/", Reply(302, headers={"Location": location}))
+    descriptor = descriptor_of(image)
     with pytest.raises(HookCheckError, match="not an https"):
-        registry.layer(TAG, descriptor_of(image), tmp_path / "layer")
+        registry.layer(TAG, descriptor, tmp_path / "layer")
     assert len(fake.seen) == 2
 
 
@@ -230,8 +234,9 @@ def test_redirect_without_a_location_is_refused(tmp_path):
     image = Image()
     fake, registry = make_registry(image)
     fake.script("/blobs/", Reply(302))
+    descriptor = descriptor_of(image)
     with pytest.raises(HookCheckError, match="without a Location"):
-        registry.layer(TAG, descriptor_of(image), tmp_path / "layer")
+        registry.layer(TAG, descriptor, tmp_path / "layer")
 
 
 def test_relative_redirect_stays_on_the_registry_host_and_loses_the_header(tmp_path):
@@ -249,8 +254,9 @@ def test_redirect_loop_ends(tmp_path):
     image = Image()
     fake, registry = make_registry(image)
     fake.script("/blobs/", *[Reply(302, headers={"Location": "https://localhost/blobs/loop"})] * 10)
+    descriptor = descriptor_of(image)
     with pytest.raises(HookCheckError, match="too many redirects"):
-        registry.layer(TAG, descriptor_of(image), tmp_path / "layer")
+        registry.layer(TAG, descriptor, tmp_path / "layer")
     assert len(fake.seen) <= 2 + hook_check.MAX_REDIRECTS + 1
 
 
@@ -307,6 +313,36 @@ def test_a_connection_error_while_reading_the_body_is_retried(tmp_path):
     assert (tmp_path / "layer").read_bytes() == image.layer
 
 
+class FailingDisk:
+    def __init__(self, fails_on):
+        self.fails_on = fails_on
+
+    def open(self, mode):
+        if self.fails_on == "open":
+            raise PermissionError(errno.EACCES, "permission denied")
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def write(self, data):
+        raise OSError(errno.ENOSPC, "no space left on device")
+
+
+@pytest.mark.parametrize("fails_on", ["open", "write"])
+def test_a_local_write_error_is_reported_as_such_and_not_retried(fails_on):
+    image = Image()
+    fake, registry = make_registry(image)
+    descriptor = descriptor_of(image)
+    disk = FailingDisk(fails_on)
+    with pytest.raises(HookCheckError, match=r"could not be written \(\w+\)"):
+        registry.layer(TAG, descriptor, disk)
+    assert len([seen for seen in fake.seen if seen[0].startswith("https://ghcr.io/v2/")]) == 1
+
+
 def test_a_config_cut_off_halfway_is_read_again_from_the_start():
     image = Image()
     fake, registry = make_registry(image)
@@ -337,8 +373,9 @@ def test_layer_with_the_wrong_digest_is_refused(tmp_path):
     fake, registry = make_registry(image)
     tampered = bytes([image.layer[0] ^ 1]) + image.layer[1:]
     fake.blobs[digest_of(image.layer)] = tampered
+    descriptor = descriptor_of(image)
     with pytest.raises(HookCheckError, match=r"has digest sha256:[0-9a-f]{64}, but the manifest says"):
-        registry.layer(TAG, descriptor_of(image), tmp_path / "layer")
+        registry.layer(TAG, descriptor, tmp_path / "layer")
 
 
 @pytest.mark.parametrize("delta", [-1, 1])
@@ -370,9 +407,21 @@ def test_descriptor_without_a_sha256_digest_and_size_is_refused(descriptor, tmp_
 def test_oversized_config_is_refused_before_it_is_fetched():
     image = Image()
     fake, registry = make_registry(image)
+    descriptor = {"digest": digest_of(image.config), "size": hook_check.MAX_JSON_BYTES + 1}
     with pytest.raises(HookCheckError, match="more than"):
-        registry.config(TAG, {"digest": digest_of(image.config), "size": hook_check.MAX_JSON_BYTES + 1})
+        registry.config(TAG, descriptor)
     assert len(fake.seen) == 1
+
+
+def test_oversized_layer_is_refused_before_it_is_fetched(tmp_path):
+    image = Image()
+    fake, registry = make_registry(image)
+    descriptor = {"digest": digest_of(image.layer), "size": hook_check.MAX_LAYER_BYTES + 1}
+    dest = tmp_path / "layer"
+    with pytest.raises(HookCheckError, match="more than"):
+        registry.layer(TAG, descriptor, dest)
+    assert len(fake.seen) == 1
+    assert not dest.exists()
 
 
 def test_replies_that_are_not_json_or_lack_the_token_are_refused():
@@ -425,8 +474,9 @@ def test_pull_never_uses_extract_or_extractall(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("count", [0, 2])
 def test_an_image_without_exactly_one_layer_is_refused(count, tmp_path):
+    image = Image(layers=count)
     with pytest.raises(HookCheckError, match="exactly one layer"):
-        pull(Image(layers=count), tmp_path)
+        pull(image, tmp_path)
 
 
 def test_an_index_in_place_of_an_image_is_refused(tmp_path):
@@ -458,14 +508,16 @@ def test_an_index_in_place_of_an_image_is_refused(tmp_path):
     ],
 )
 def test_labels_must_name_the_build_and_the_row_sha(labels, message, tmp_path):
+    image = Image(labels=labels)
     with pytest.raises(HookCheckError, match=message):
-        pull(Image(labels=labels), tmp_path)
+        pull(image, tmp_path)
 
 
 @pytest.mark.parametrize("config", [{}, {"config": None}, {"config": {"Labels": None}}, {"config": {"Labels": ["x"]}}])
 def test_an_image_config_without_labels_is_refused(config, tmp_path):
+    image = Image(config=config)
     with pytest.raises(HookCheckError, match="build-id"):
-        pull(Image(config=config), tmp_path)
+        pull(image, tmp_path)
 
 
 def test_labels_are_checked_before_the_layer_is_downloaded(tmp_path):
@@ -498,7 +550,10 @@ def test_the_layer_must_hold_exactly_one_file_with_the_exe_name(members, tmp_pat
     assert not (tmp_path.parent / hook_check.EXE_NAME).exists()
 
 
-@pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.DIRTYPE, tarfile.FIFOTYPE])
+@pytest.mark.parametrize(
+    "kind",
+    [tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.DIRTYPE, tarfile.FIFOTYPE, tarfile.CONTTYPE, tarfile.GNUTYPE_SPARSE],
+)
 def test_a_member_that_is_not_a_regular_file_is_refused(kind, tmp_path):
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:
@@ -506,15 +561,27 @@ def test_a_member_that_is_not_a_regular_file_is_refused(kind, tmp_path):
         info.type = kind
         info.linkname = "/etc/hostname"
         tar.addfile(info)
+    image = Image(layer=buffer.getvalue())
     with pytest.raises(HookCheckError, match="exactly one regular file named"):
-        pull(Image(layer=buffer.getvalue()), tmp_path)
+        pull(image, tmp_path)
     assert list(tmp_path.rglob(hook_check.EXE_NAME)) == []
+
+
+def test_a_file_larger_than_the_cap_is_refused_before_it_is_written(tmp_path, monkeypatch):
+    archive = tmp_path / "layer"
+    archive.write_bytes(make_layer())
+    dest = tmp_path / hook_check.EXE_NAME
+    monkeypatch.setattr(hook_check, "MAX_LAYER_BYTES", len(EXE) - 1)
+    with pytest.raises(HookCheckError, match="more than"):
+        hook_check.extract_exe(archive, dest, TAG, EXE_SHA256)
+    assert not dest.exists()
 
 
 @pytest.mark.parametrize("layer", [b"not a tar archive at all" * 50, make_layer()[:-30]])
 def test_an_unreadable_layer_is_refused(layer, tmp_path):
+    image = Image(layer=layer)
     with pytest.raises(HookCheckError, match="not a readable tar"):
-        pull(Image(layer=layer), tmp_path)
+        pull(image, tmp_path)
 
 
 def test_an_exe_that_does_not_match_the_row_sha_is_refused(tmp_path):
@@ -567,6 +634,18 @@ def test_selftest_runs_on_the_extracted_exe_with_a_timeout(selftest, tmp_path):
     command, kwargs = run.calls[0]
     assert command == [str(selftest), str(tmp_path / "exe")]
     assert 0 < kwargs["timeout"] <= 600
+
+
+def test_selftest_runs_without_the_registry_token_and_keeps_the_rest_of_the_environment(
+    selftest, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("GH_TOKEN", SECRET)
+    monkeypatch.setenv("HOOK_CHECK_PROBE", "kept")
+    run = FakeRun()
+    hook_check.run_selftest(selftest, tmp_path / "exe", ROW, run)
+    env = run.calls[0][1]["env"]
+    assert "GH_TOKEN" not in env
+    assert env["HOOK_CHECK_PROBE"] == "kept"
 
 
 def test_selftest_output_is_printed(selftest, tmp_path, capsys):
@@ -650,14 +729,16 @@ def test_rows_without_an_exe_sha256_get_a_notice_and_are_not_selected(tmp_path, 
 
 
 def test_no_row_with_an_exe_sha256_fails_the_check(tmp_path):
+    path = builds_file(tmp_path, make_row("old", ["11"], None))
     with pytest.raises(HookCheckError, match="no build with an exe_sha256"):
-        hook_check.select_builds(builds_file(tmp_path, make_row("old", ["11"], None)))
+        hook_check.select_builds(path)
 
 
-@pytest.mark.parametrize("bad", ["", "1a", "../1", "1/2", "1234567890123", " 1"])
+@pytest.mark.parametrize("bad", ["", "1a", "../1", "1/2", "1234567890123", " 1", "\u0661\u0662\u0663"])
 def test_build_ids_are_digits_only_before_they_reach_a_url_or_path(bad, tmp_path):
+    path = builds_file(tmp_path, make_row("a", [bad], EXE_SHA256))
     with pytest.raises(HookCheckError, match="not a build id"):
-        hook_check.select_builds(builds_file(tmp_path, make_row("a", [bad], EXE_SHA256)))
+        hook_check.select_builds(path)
 
 
 def test_every_selected_build_is_pulled_and_self_tested(tmp_path, selftest):
@@ -677,8 +758,9 @@ def test_every_selected_build_is_pulled_and_self_tested(tmp_path, selftest):
 def test_a_build_missing_from_the_store_fails_the_whole_check(tmp_path, selftest):
     _, registry = make_registry(Image())
     path = builds_file(tmp_path, make_row(LABEL, [TAG, "7654321"], EXE_SHA256))
+    run = FakeRun()
     with pytest.raises(HookCheckError, match="no exe for build 7654321"):
-        hook_check.check_builds(path, selftest, tmp_path / "work", registry, FakeRun())
+        hook_check.check_builds(path, selftest, tmp_path / "work", registry, run)
 
 
 class RedirectingServer(http.server.BaseHTTPRequestHandler):
@@ -687,9 +769,6 @@ class RedirectingServer(http.server.BaseHTTPRequestHandler):
         self.send_response(302)
         self.send_header("Location", "/next")
         self.end_headers()
-
-    def log_message(self, *args):
-        pass
 
 
 def test_the_real_opener_hands_redirects_back_instead_of_following_them():
@@ -701,8 +780,9 @@ def test_the_real_opener_hands_redirects_back_instead_of_following_them():
         request = urllib.request.Request(
             f"http://127.0.0.1:{server.server_port}/start", headers={"Authorization": "Bearer x"}
         )
+        opener = hook_check.build_opener()
         with pytest.raises(urllib.error.HTTPError) as caught:
-            hook_check.build_opener().open(request, timeout=5)
+            opener.open(request, timeout=5)
     finally:
         server.shutdown()
         server.server_close()

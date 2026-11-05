@@ -42,9 +42,11 @@ REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 CONNECTION_ERRORS = (OSError, http.client.HTTPException)
 DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 MAX_JSON_BYTES = 1 << 20
+MAX_LAYER_BYTES = 1 << 30
+REGULAR_FILE_TYPES = (tarfile.REGTYPE, tarfile.AREGTYPE)
 CHUNK_BYTES = 1 << 20
 SELFTEST_TIMEOUT = 120
-BUILD_ID = re.compile(r"[0-9]{1,12}")
+BUILD_ID = re.compile(r"\d{1,12}", re.ASCII)
 WORK_NAME = "exe-hook-check"
 BUILDS_PATH = Path("data") / "builds.json"
 SELFTEST_PATH = Path("build") / "livemap_selftest.exe"
@@ -95,9 +97,7 @@ class Registry:
 
     def config(self, tag, descriptor):
         what = f"the config of build {tag}"
-        digest, size = descriptor_fields(descriptor, what)
-        if size > MAX_JSON_BYTES:
-            raise HookCheckError(f"{what} is {size} bytes, more than the {MAX_JSON_BYTES} allowed")
+        digest, size = descriptor_fields(descriptor, what, MAX_JSON_BYTES)
 
         def read(stream):
             out = io.BytesIO()
@@ -108,10 +108,14 @@ class Registry:
 
     def layer(self, tag, descriptor, dest):
         what = f"the layer of build {tag}"
-        digest, size = descriptor_fields(descriptor, what)
+        digest, size = descriptor_fields(descriptor, what, MAX_LAYER_BYTES)
 
         def save(stream):
-            with dest.open("wb") as out:
+            try:
+                out = dest.open("wb")
+            except OSError as exc:
+                raise write_error(what, exc) from exc
+            with out:
                 copy_verified(stream, out, digest, size, what)
 
         self._blob(digest, what, save)
@@ -180,14 +184,20 @@ def redirect_target(current, location, what):
     return target
 
 
-def descriptor_fields(descriptor, what):
+def descriptor_fields(descriptor, what, limit):
     digest = descriptor.get("digest") if isinstance(descriptor, dict) else None
     size = descriptor.get("size") if isinstance(descriptor, dict) else None
     if not isinstance(digest, str) or not DIGEST_PATTERN.fullmatch(digest):
         raise HookCheckError(f"{what} has no sha256 digest in the manifest")
     if not isinstance(size, int) or isinstance(size, bool) or size < 0:
         raise HookCheckError(f"{what} has no size in the manifest")
+    if size > limit:
+        raise HookCheckError(f"{what} is {size} bytes, more than the {limit} allowed")
     return digest, size
+
+
+def write_error(what, exc):
+    return HookCheckError(f"{what} could not be written ({type(exc).__name__})")
 
 
 def copy_verified(stream, out, digest, size, what):
@@ -198,7 +208,10 @@ def copy_verified(stream, out, digest, size, what):
         if total > size:
             raise HookCheckError(f"{what} is longer than the {size} bytes the manifest says")
         hasher.update(chunk)
-        out.write(chunk)
+        try:
+            out.write(chunk)
+        except OSError as exc:
+            raise write_error(what, exc) from exc
     if total != size:
         raise HookCheckError(f"{what} is {total} bytes, but the manifest says {size}")
     actual = "sha256:" + hasher.hexdigest()
@@ -251,8 +264,12 @@ def extract_exe(archive, dest, tag, expected_sha256):
     try:
         with tarfile.open(archive, mode="r:*") as tar:
             members = list(itertools.islice(tar, 2))
-            if len(members) != 1 or members[0].name != EXE_NAME or not members[0].isreg():
+            if len(members) != 1 or members[0].name != EXE_NAME or members[0].type not in REGULAR_FILE_TYPES:
                 raise HookCheckError(f"{what} must hold exactly one regular file named {EXE_NAME}")
+            if members[0].size > MAX_LAYER_BYTES:
+                raise HookCheckError(
+                    f"{EXE_NAME} in {what} is {members[0].size} bytes, more than the {MAX_LAYER_BYTES} allowed"
+                )
             source = tar.extractfile(members[0])
             with dest.open("wb") as out:
                 actual, size = copy_hashed(source, out)
@@ -279,8 +296,9 @@ def run_selftest(selftest, exe, row, run=subprocess.run):
     if not selftest.is_file():
         raise HookCheckError(f"{selftest} was not built")
     command = [str(selftest), str(exe)]
+    env = {key: value for key, value in os.environ.items() if key != "GH_TOKEN"}
     try:
-        result = run(command, capture_output=True, text=True, errors="replace", timeout=SELFTEST_TIMEOUT)
+        result = run(command, capture_output=True, text=True, errors="replace", timeout=SELFTEST_TIMEOUT, env=env)
     except subprocess.TimeoutExpired as exc:
         raise HookCheckError(f"livemap_selftest timed out after {SELFTEST_TIMEOUT} seconds (build {label})") from exc
     except OSError as exc:

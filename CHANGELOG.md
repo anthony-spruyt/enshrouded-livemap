@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.8.0...v1.8.1) (2026-11-05)
+
+
+### Continuous Integration
+
+* add the data-only check and the boot test ([#19](https://github.com/anthony-spruyt/enshrouded-livemap/issues/19)) ([e0a50fd](https://github.com/anthony-spruyt/enshrouded-livemap/commit/e0a50fd802804c1555a6647d03b9db801c4cace9))
+
 ## [1.8.0](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.5...v1.8.0) (2026-11-05)
 
 

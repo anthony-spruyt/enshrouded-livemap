@@ -106,6 +106,7 @@ if(NOT LIVEMAP_PYTEST_STATUS EQUAL 0)
 endif()
 # pytest comes from tools/requirements-test.txt; the cache and bytecode stay out of the source tree.
 add_test(NAME tools_paths COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_paths.py")
+add_test(NAME tools_hook_check COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hook_check.py")
 
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)

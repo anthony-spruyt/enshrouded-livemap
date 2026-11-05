@@ -51,7 +51,8 @@
         "jetmartin.bats",
         "mhutchie.git-graph",
         "nk2552003.forest-ash-theme-vscode",
-        "redhat.vscode-yaml"
+        "redhat.vscode-yaml",
+        "github.vscode-github-actions"
       ],
       "settings": {
         "workbench.startupEditor": "none"

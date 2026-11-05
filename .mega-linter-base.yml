@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxsecurity/megalinter/main/megalinter/descriptors/schemas/megalinter-configuration.jsonschema.json
+# Base MegaLinter configuration synced from repo-operator
+# This file is automatically updated - do not modify directly
+# To add custom linters, modify .mega-linter.yml instead
+
+DEFAULT_BRANCH: "main"
+ENABLE_LINTERS:
+  - "ACTION_ACTIONLINT"
+  - "BASH_SHELLCHECK"
+  - "BASH_SHFMT"
+  - "JSON_JSONLINT"
+  - "MARKDOWN_MARKDOWNLINT"
+  - "REPOSITORY_BETTERLEAKS"
+  - "REPOSITORY_SECRETLINT"
+  - "REPOSITORY_TRIVY"
+  - "SPELL_LYCHEE"
+  - "YAML_YAMLLINT"
+  - "PYTHON_RUFF"
+  - "PYTHON_RUFF_FORMAT"
+ADDITIONAL_EXCLUDED_DIRECTORIES:
+  - ".output"
+  - ".venv"
+  - ".worktrees"
+  - "__pycache__"
+  - "coverage"
+  - "dist"
+  - "node_modules"
+  - "plans"
+  - "site"
+  - "tmp"
+  - "worktrees"
+FILTER_REGEX_EXCLUDE: "(CLAUDE\\.md$|CHANGELOG\\.md$)"
+ACTION_FILTER_REGEX_EXCLUDE: "^\\.claude/"
+BASH_FILTER_REGEX_EXCLUDE: "^\\.claude/"
+BASH_SHELLCHECK_FILE_EXTENSIONS:
+  - ".sh"
+  - ".bash"
+  - ".dash"
+  - ".ksh"
+  - ".bats"
+BASH_SHFMT_FILE_EXTENSIONS:
+  - ".sh"
+  - ".bash"
+  - ".dash"
+  - ".ksh"
+  - ".bats"
+JSON_FILTER_REGEX_EXCLUDE: "^\\.claude/"
+MARKDOWN_FILTER_REGEX_EXCLUDE: "^\\.claude/"
+SPELL_FILTER_REGEX_EXCLUDE: "^\\.claude/"
+YAML_FILTER_REGEX_EXCLUDE: "^\\.claude/"
+FLAVOR_SUGGESTIONS: false
+FORMATTERS_DISABLE_ERRORS: false
+IGNORE_GITIGNORED_FILES: true
+REPOSITORY_SECRETLINT_ARGUMENTS:
+  - "--secretlintignore"
+  - ".secretlintignore"
+SPELL_LYCHEE_FILTER_REGEX_EXCLUDE: "(package-lock\\.json)"
+REPOSITORY_TRIVY_CONFIG_FILE: "trivy-mega-linter.yaml"
+REPOSITORY_TRIVY_COMMAND_REMOVE_ARGUMENTS:
+  - "--scanners"
+  - "vuln,misconfig"
+PYTHON_RUFF_CONFIG_FILE: "pyproject.toml"
+PYTHON_RUFF_FORMAT_CONFIG_FILE: "pyproject.toml"

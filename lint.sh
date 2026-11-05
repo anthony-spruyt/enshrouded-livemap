@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This file is automatically updated - do not modify directly
+
+# Runs MegaLinter against the repository.
+# Usage:
+#   ./lint.sh       - Local mode (with fixes, user permissions)
+#   ./lint.sh --ci  - CI mode (no fixes, passes GitHub env vars)
+#
+# Local mode honors APPLY_FIXES (default: all); set APPLY_FIXES=none to lint
+# without modifying any files.
+
+# Pinned in repo-operator (src/groups.yaml, or src/repos.yaml for a per-repo flavor), where Renovate bumps it
+# shellcheck disable=SC2154
+MEGALINTER_IMAGE="ghcr.io/anthony-spruyt/megalinter-cpp:1.1.6@sha256:3b4406bdf1c3ad5886ae793a39ac9923ff2de8b983030b30160f2a7982c41bd8"
+# "all" skips MegaLinter's flavor check, which rejects custom images
+MEGALINTER_FLAVOR="all"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Only when set: an empty value would override the lists in .mega-linter.yml
+linter_args=()
+[[ -z "${ENABLE_LINTERS:-}" ]] || linter_args+=(-e ENABLE_LINTERS="$ENABLE_LINTERS")
+[[ -z "${DISABLE_LINTERS:-}" ]] || linter_args+=(-e DISABLE_LINTERS="$DISABLE_LINTERS")
+[[ -z "${ENABLE_DISABLE_LINTERS_PRIORITY:-}" ]] || linter_args+=(-e ENABLE_DISABLE_LINTERS_PRIORITY="$ENABLE_DISABLE_LINTERS_PRIORITY")
+
+if [[ "${1:-}" == "--ci" ]]; then
+  docker_args=(
+    -u "$(id -u):$(id -g)"
+    -e HOME=/tmp
+    -e MEGALINTER_FLAVOR="$MEGALINTER_FLAVOR"
+    -e SARIF_REPORTER=true
+    -e LOG_LEVEL=ERROR
+    -e PRINT_ALPACA=false
+    -e SHOW_SKIPPED_LINTERS=false
+    -e VALIDATE_ALL_CODEBASE="${VALIDATE_ALL_CODEBASE:-}"
+    -e DEFAULT_WORKSPACE=/tmp/lint
+    -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
+    -e GITHUB_SHA="${GITHUB_SHA:-}"
+    -e GITHUB_REF="${GITHUB_REF:-}"
+    -e GITHUB_RUN_ID="${GITHUB_RUN_ID:-}"
+    -v "$REPO_ROOT:/tmp/lint:rw"
+    --rm
+  )
+  docker_args+=("${linter_args[@]}")
+
+  # By name, so the value stays out of argv
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    docker_args+=(-e GITHUB_TOKEN)
+  fi
+
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "${GITHUB_STEP_SUMMARY}" ]]; then
+    docker_args+=(-e GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY}")
+    docker_args+=(-v "${GITHUB_STEP_SUMMARY}:${GITHUB_STEP_SUMMARY}:rw")
+  fi
+
+  docker run "${docker_args[@]}" "$MEGALINTER_IMAGE"
+else
+  # .output may be root-owned from an earlier rootful-podman run, so fall
+  # back to sudo if a plain rm is rejected.
+  rm -rf "$REPO_ROOT/.output" 2>/dev/null || sudo -n rm -rf "$REPO_ROOT/.output"
+  mkdir "$REPO_ROOT/.output"
+
+  LINT_EXIT_CODE=0
+  apply_fixes="${APPLY_FIXES:-all}"
+  fixes_applied=0
+  if [[ "$apply_fixes" == all || "$apply_fixes" == *_* ]]; then
+    fixes_applied=1
+  fi
+
+  # Devcontainer podman is rootful; linters still run as the invoking user via -u.
+  if [[ "$(id -u)" != "0" ]] && command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    runner=(sudo -n podman)
+    network_arg=(--network=host --uts=host)
+  else
+    runner=(docker)
+    network_arg=()
+  fi
+
+  echo "Running MegaLinter (output suppressed)..."
+
+  "${runner[@]}" run \
+    "${network_arg[@]}" \
+    -u "$(id -u):$(id -g)" \
+    -w /tmp/lint \
+    -e HOME=/tmp \
+    -e MEGALINTER_FLAVOR="$MEGALINTER_FLAVOR" \
+    -e VALIDATE_ALL_CODEBASE="true" \
+    -e APPLY_FIXES="$apply_fixes" \
+    -e UPDATED_SOURCES_REPORTER="true" \
+    -e REPORT_OUTPUT_FOLDER="/tmp/lint/.output" \
+    "${linter_args[@]}" \
+    -v "$REPO_ROOT:/tmp/lint:rw" \
+    --rm \
+    "$MEGALINTER_IMAGE" >/dev/null 2>&1 ||
+    LINT_EXIT_CODE=$?
+
+  # Copy back only when MegaLinter applies fixes (APPLY_FIXES is all or a linter
+  # list): updated_sources also lists unfixed files, and stale ones undo edits.
+  if [[ "$fixes_applied" -eq 1 ]] && compgen -G "$REPO_ROOT/.output/updated_sources/*" >/dev/null; then
+    cp -r "$REPO_ROOT/.output/updated_sources"/* "$REPO_ROOT/"
+  fi
+
+  if [[ "$LINT_EXIT_CODE" -eq 0 ]]; then
+    echo "MegaLinter passed. Results in .output/"
+  else
+    echo "MegaLinter failed (exit code $LINT_EXIT_CODE). Check .output/ for details:"
+    echo "  .output/megalinter.log        - Full run log"
+    echo "  .output/linters_logs/          - Per-linter logs"
+    if [[ "$fixes_applied" -eq 1 ]]; then
+      echo "  .output/updated_sources/       - Auto-fixed files (already copied back)"
+    fi
+  fi
+
+  exit "$LINT_EXIT_CODE"
+fi

@@ -365,21 +365,23 @@ def test_an_unknown_command_is_a_usage_error(tmp_path, monkeypatch, capsys):
 
 def job_block(name):
     workflow = (ROOT / ".github" / "workflows" / "ci-repo.yaml").read_text(encoding=ENCODING)
-    match = re.search(rf"^  {re.escape(name)}:\n(.*?)(?=^  [\w-]+:\n|\Z)", workflow, re.MULTILINE | re.DOTALL)
-    assert match, f"no {name} job in ci-repo.yaml"
-    return match.group(1)
+    header = re.search(rf"^ {{2}}{re.escape(name)}:\n", workflow, re.MULTILINE)
+    assert header, f"no {name} job in ci-repo.yaml"
+    body = workflow[header.end() :]
+    next_header = re.search(r"^ {2}[\w-]+:\n", body, re.MULTILINE)
+    return body[: next_header.start()] if next_header else body
 
 
 def step_script(job, step_id):
     """The run script of one workflow step, cut out of the workflow text."""
-    steps = re.split(r"^      - ", job_block(job), flags=re.MULTILINE)[1:]
-    step = next((text for text in steps if re.search(rf"^        id: {step_id}$", text, re.MULTILINE)), "")
-    block = re.search(r"^        run: \|\n((?:          .*\n|\n)+)", step, re.MULTILINE)
+    steps = re.split(r"^ {6}- ", job_block(job), flags=re.MULTILINE)[1:]
+    step = next((text for text in steps if re.search(rf"^ {{8}}id: {step_id}$", text, re.MULTILINE)), "")
+    block = re.search(r"^ {8}run: \|\n((?: {10}.*\n|\n)+)", step, re.MULTILINE)
     assert block, f"no run script on step {step_id} of job {job}"
     return textwrap.dedent(block.group(1))
 
 
-SELF_CLAIM = (
+HEAD_CLASSIFIER = (
     "import os\n"
     'with open(os.environ["GITHUB_OUTPUT"], "a") as out:\n'
     '    out.write("data_only=true\\nboot_test=false\\n")\n'
@@ -423,15 +425,15 @@ def test_the_base_commits_classifier_sorts_a_data_only_pull_request(tmp_path):
 
 
 @needs_bash_and_posix
-def test_a_pull_request_cannot_vouch_for_itself_with_its_own_classifier(tmp_path):
-    def vouch(repo):
-        write(repo, CLASSIFIER, SELF_CLAIM)
+def test_the_step_runs_the_base_commits_classifier_when_the_pull_request_changes_it(tmp_path):
+    def change_classifier_and_code(repo):
+        write(repo, CLASSIFIER, HEAD_CLASSIFIER)
         write(repo, CODE, "changed\n")
 
-    assert classify_pull_request(tmp_path, vouch, WITH_CLASSIFIER) == (0, COUNTS_AS_CODE)
+    assert classify_pull_request(tmp_path, change_classifier_and_code, WITH_CLASSIFIER) == (0, COUNTS_AS_CODE)
 
 
 @needs_bash_and_posix
 def test_a_pull_request_that_adds_the_classifier_is_code_and_gets_the_boot_test(tmp_path):
-    claim = classify_pull_request(tmp_path, lambda r: write(r, CLASSIFIER, SELF_CLAIM), BASE_FILES)
-    assert claim == (0, COUNTS_AS_CODE)
+    outcome = classify_pull_request(tmp_path, lambda r: write(r, CLASSIFIER, HEAD_CLASSIFIER), BASE_FILES)
+    assert outcome == (0, COUNTS_AS_CODE)

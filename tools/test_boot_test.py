@@ -412,6 +412,15 @@ def test_wait_running_stops_at_once_when_the_server_cannot_start():
     assert clock.now() == 0
 
 
+def test_wait_answering_stops_when_the_container_stops_before_the_game_answers():
+    clock = FakeClock()
+    docker = FakeDocker(clock, mute=True, dies_after=40)
+    docker.started[CHILD] = clock.now()
+    with pytest.raises(BootTestError, match="stopped before"):
+        boot_test.wait_answering(docker, CHILD, clock, 1_000)
+    assert 40 <= clock.now() < 40 + boot_test.POLL_SECONDS
+
+
 def hold(docker, clock, seconds=SOAK):
     docker.started[CHILD] = clock.now() - 100
     boot_test.hold_running(docker, CHILD, clock, PID, seconds)
@@ -966,7 +975,7 @@ def test_no_game_file_can_leave_the_runner_through_the_job():
 
 
 def test_the_boot_test_job_can_only_read_the_repository():
-    assert re.search(r"    permissions:\n      contents: read\n(?!      )", job_block(BOOT_JOB))
+    assert re.search(r" {4}permissions:\n {6}contents: read\n(?! {6})", job_block(BOOT_JOB))
 
 
 def test_the_server_image_is_pinned_in_the_shape_the_renovate_manager_reads():

@@ -196,7 +196,7 @@ supporting another build whose code the existing signatures still match is a dat
 
 A pull request that is a plain edit of `data/builds.json` and changes nothing else runs the `data-only` check, which
 passes when the file validates against the schema. Code pull requests skip it and merge as usual. The base commit's
-`tools/data_only.py` sorts the pull request, so a pull request cannot classify itself.
+`tools/data_only.py` classifies the pull request.
 
 A pull request that changes `data/`, `src/`, `cmake/`, `CMakeLists.txt` or the boot test's own files (`tools/boot_test.py`,
 `tools/data_only.py`, `ci-repo.yaml`) also runs the `boot-test` job. It downloads the newest build in `data/builds.json`

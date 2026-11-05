@@ -280,8 +280,8 @@ jobs:
       - name: Create the Wine prefix
         run: timeout 120 "$FAULT_GATE_RUNNER" wineboot --init
 
-      - name: Test the fault line
-        run: '"$RUNNER_TEMP/venv/bin/python" -B -m pytest -q -p no:cacheprovider tools/test_fault_gate.py'
+      - name: Test the fault line and the tools
+        run: '"$RUNNER_TEMP/venv/bin/python" -B -m pytest -q -p no:cacheprovider tools/test_fault_gate.py tools/test_data_only.py tools/test_boot_test.py'
 
   boot-test:
     name: Boot the server with the DLL

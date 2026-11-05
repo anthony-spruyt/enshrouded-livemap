@@ -79,11 +79,13 @@ jobs:
         shell: cmd
         run: ctest --test-dir build --output-on-failure --no-tests=error
 
-      - name: Keep the fault gate executable for the Wine job
+      - name: Keep the fault gate for the Wine job
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fault-gate
-          path: build/fault_gate.exe
+          path: |
+            build/fault_gate.exe
+            build/fault_gate_mod.dll
           if-no-files-found: error
           retention-days: 1
 
@@ -206,7 +208,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download the fault gate executable
+      - name: Download the fault gate
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: fault-gate
@@ -214,16 +216,18 @@ jobs:
 
       - name: Install Wine
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends wine64
 
       - name: Install the test dependencies
         run: |
+          set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --require-hashes --no-deps -r tools/requirements-test.txt
+          "$RUNNER_TEMP/venv/bin/pip" install --only-binary :all: --require-hashes --no-deps -r tools/requirements-test.txt
 
       - name: Create the Wine prefix
-        run: timeout 120 /usr/lib/wine/wine64 wineboot --init
+        run: timeout 120 "$FAULT_GATE_RUNNER" wineboot --init
 
       - name: Test the fault line
         run: '"$RUNNER_TEMP/venv/bin/python" -B -m pytest -q -p no:cacheprovider tools/test_fault_gate.py'

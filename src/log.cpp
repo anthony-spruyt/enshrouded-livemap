@@ -1,6 +1,7 @@
 #include "log.h"
 
 #include <windows.h>
+#include <io.h>
 
 #include <cstdarg>
 #include <cstdio>
@@ -20,6 +21,15 @@ void log_open(const std::wstring& dir, bool enabled) {
     }
     std::wstring path = dir + L"\\livemap.log";
     g_file = _wfsopen(path.c_str(), L"a", _SH_DENYWR);
+}
+
+void* log_handle() {
+    std::lock_guard lock(g_mutex);
+    if (g_file == nullptr) {
+        return nullptr;
+    }
+    const intptr_t handle = _get_osfhandle(_fileno(g_file));
+    return handle == -1 ? nullptr : reinterpret_cast<void*>(handle);
 }
 
 void log(const char* fmt, ...) {

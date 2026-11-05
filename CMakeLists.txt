@@ -41,6 +41,7 @@ add_library(iphlpapi SHARED
     src/config.cpp
     src/log.cpp
     src/memory.cpp
+    src/fault_handler.cpp
     src/ecs.cpp
     src/world.cpp
     src/web.cpp
@@ -110,6 +111,14 @@ endif()
 # pytest comes from tools/requirements-test.txt; the cache and bytecode stay out of the source tree.
 add_test(NAME tools_paths COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_paths.py")
 add_test(NAME tools_hook_check COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hook_check.py")
+
+# A stand-in for the game that faults on purpose; CI runs the same test under Wine with this executable.
+add_executable(fault_gate tests/fault_gate.cpp src/fault_handler.cpp src/log.cpp src/memory.cpp)
+target_link_libraries(fault_gate PRIVATE livemap_core safetyhook::safetyhook)
+target_compile_definitions(fault_gate PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
+target_compile_options(fault_gate PRIVATE /W4 /permissive-)
+add_test(NAME fault_gate COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_fault_gate.py")
+set_tests_properties(fault_gate PROPERTIES ENVIRONMENT "FAULT_GATE_EXE=$<TARGET_FILE:fault_gate>")
 
 add_executable(mining_test tests/mining_test.cpp)
 add_test(NAME mining_register_layouts COMMAND mining_test)

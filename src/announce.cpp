@@ -8,6 +8,7 @@
 
 #include <safetyhook.hpp>
 
+#include "fault_handler.h"
 #include "log.h"
 #include "memory.h"
 #include "scan.h"
@@ -22,8 +23,11 @@ using ChatPostFn = void* (*)(void* out, uintptr_t chat, uint8_t type, const void
                              uint32_t loca2, uint32_t player, uint64_t account, const void* opt);
 constexpr uint8_t kSystemLine = 4;
 
-SafetyHookMid g_join_call;
-SafetyHookMid g_join_after;
+constexpr const char* kSiteJoinCall = "join_call";
+constexpr const char* kSiteJoinAfter = "join_after";
+
+fault::Hook g_join_call;
+fault::Hook g_join_after;
 ChatPostFn g_post = nullptr;
 uint32_t g_join_tag = 0;
 std::function<std::string()> g_line;
@@ -38,6 +42,7 @@ struct Pending {
 Pending g_pending;
 
 void on_join_call(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteJoinCall);
     uint32_t tag = 0, handle = 0;
     uint64_t account = 0;
     if (!read_u32(ctx.rsp + 0x20, tag) || tag != g_join_tag || !read_u32(ctx.rsp + 0x30, handle) || handle == 0 ||
@@ -48,6 +53,7 @@ void on_join_call(SafetyHookContext& ctx) {
 }
 
 void on_join_after(SafetyHookContext&) {
+    fault::SiteScope scope(kSiteJoinAfter);
     if (!g_pending.armed) {
         return;
     }
@@ -81,8 +87,8 @@ bool install_announce(const uint8_t* base, const Build& build, std::function<std
     g_line = std::move(line);
     g_post = reinterpret_cast<ChatPostFn>(sites.chat_post);
     g_join_tag = sites.join_tag;
-    auto call = safetyhook::MidHook::create(reinterpret_cast<void*>(sites.join_call), on_join_call);
-    auto after = safetyhook::MidHook::create(reinterpret_cast<void*>(sites.join_after), on_join_after);
+    auto call = fault::Hook::create(kSiteJoinCall, reinterpret_cast<void*>(sites.join_call), on_join_call);
+    auto after = fault::Hook::create(kSiteJoinAfter, reinterpret_cast<void*>(sites.join_after), on_join_after);
     if (!call || !after) {
         log("announce: could not hook the join line, no chat line");
         return false;

@@ -13,6 +13,7 @@
 
 #include "a2s.h"
 #include "config.h"
+#include "fault_handler.h"
 #include "log.h"
 #include "proxy.h"
 #include "scan.h"
@@ -181,6 +182,9 @@ DWORD WINAPI start(LPVOID) {
     livemap::log_open(dir, config.log);
     livemap::log("livemap %s starting: Enabled=%d Port=%d%s real iphlpapi %s", kVersion, config.enabled, config.port,
                  config.port_from_game ? " (auto: the game's queryPort, TCP)" : "", g_real_loaded ? "loaded" : "MISSING");
+    if (void* const log_file = livemap::log_handle(); log_file != nullptr && !livemap::fault::install(log_file)) {
+        livemap::log("fault line off: the exception handler could not be registered");
+    }
     if (!livemap::link::key_ok(config.key)) {
         livemap::log(
             "WARNING: Key in livemap.ini should be 3 to 64 letters, digits, - or _ (and not state, events, "
@@ -301,6 +305,8 @@ BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {
         if (HANDLE thread = CreateThread(nullptr, 0, start, nullptr, 0, nullptr)) {
             CloseHandle(thread);
         }
+    } else if (reason == DLL_PROCESS_DETACH) {
+        livemap::fault::remove();
     }
     return TRUE;
 }

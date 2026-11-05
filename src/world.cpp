@@ -16,6 +16,7 @@
 #include <safetyhook.hpp>
 
 #include "ecs.h"
+#include "fault_handler.h"
 #include "log.h"
 #include "memory.h"
 #include "text.h"
@@ -60,13 +61,21 @@ std::atomic<uint32_t>& entity_table() {
     return offset;
 }
 
-SafetyHookMid g_player_table_hook;
-SafetyHookMid g_movement_hook;
-SafetyHookMid g_daytime_hook;
-SafetyHookMid g_registry_hook;
-SafetyHookMid g_mining_hook;
-SafetyHookMid g_chest_hook;
-SafetyHookMid g_bases_hook;
+constexpr const char* kSitePlayerTable = "player_table";
+constexpr const char* kSiteMovement = "movement";
+constexpr const char* kSiteDaytime = "daytime";
+constexpr const char* kSiteRegistry = "registry";
+constexpr const char* kSiteMining = "mining";
+constexpr const char* kSiteChest = "chest";
+constexpr const char* kSiteBases = "bases";
+
+fault::Hook g_player_table_hook;
+fault::Hook g_movement_hook;
+fault::Hook g_daytime_hook;
+fault::Hook g_registry_hook;
+fault::Hook g_mining_hook;
+fault::Hook g_chest_hook;
+fault::Hook g_bases_hook;
 finds::Store g_finds;
 bases::Store g_bases;
 discovered::Store g_discovered;
@@ -171,12 +180,14 @@ void probe_step(uintptr_t manager) {
 }
 
 void on_player_table(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSitePlayerTable);
     g_manager.store(ctx.rcx, std::memory_order_relaxed);
     probe_step(ctx.rcx);
 }
 
 // Every entity the movement system moves passes here; only players are kept.
 void on_movement(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteMovement);
     uint32_t entity = param_entity(ctx.rbx, entity_table().load());
     if (entity == 0) {
         return;
@@ -210,6 +221,7 @@ void on_movement(SafetyHookContext& ctx) {
 }
 
 void on_daytime(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteDaytime);
     g_daytime.store(ctx.rdi, std::memory_order_relaxed);
     g_time.store(static_cast<int64_t>(ctx.rax), std::memory_order_relaxed);
     g_time_ms.store(GetTickCount64(), std::memory_order_relaxed);
@@ -242,6 +254,7 @@ std::atomic<int> g_mining_logs{0};
 std::atomic<MiningLayout> g_mining_layout{MiningLayout::InlineArray};
 
 void on_mining(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteMining);
     uint32_t entity = 0;
     bool readable = read_u32(ctx.rdi + 0x14c, entity);
     const auto sample = mining_sample(g_mining_layout.load(std::memory_order_relaxed), ctx.rax, ctx.rbp, ctx.r15);
@@ -379,6 +392,7 @@ std::string nearest_player(double x, double z, double within) {
 }
 
 void on_chest(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteChest);
     uintptr_t event = ctx.rdi, offer = 0, record = 0, system = 0, accessor = 0;
     uint32_t entity = 0, guest = 0, verb = 0;
     uint16_t offer_index = 0;
@@ -416,6 +430,7 @@ void on_chest(SafetyHookContext& ctx) {
 // +0x28), [rbp-0x10] = transform, [rbp-0x8] = the build zone (size float3 at +4; the system adds
 // a zone only when a side is above a minimum).
 void on_base(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteBases);
     uintptr_t component = 0, transform = 0, zone = 0;
     uint64_t id_lo = 0, id_hi = 0;
     uint32_t size[3] = {};
@@ -443,6 +458,7 @@ void on_base(SafetyHookContext& ctx) {
 
 // Service registry entry: rdx = {const char* name, size_t length}, r8 = the service object.
 void on_registry(SafetyHookContext& ctx) {
+    fault::SiteScope scope(kSiteRegistry);
     uintptr_t name_ptr = 0;
     uint64_t length = 0;
     if (!read_ptr(ctx.rdx, name_ptr) || !read_u64(ctx.rdx + 8, length) || length == 0 || length > 80) {
@@ -491,8 +507,8 @@ void log_raw_slot(int index, uintptr_t slot) {
     log("SLOT   %d raw +0x20: %s", index, hex);
 }
 
-bool create(SafetyHookMid& hook, uintptr_t at, safetyhook::MidHookFn fn, const char* name, std::string& error) {
-    auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(at), fn);
+bool create(fault::Hook& hook, uintptr_t at, safetyhook::MidHookFn fn, const char* name, std::string& error) {
+    auto h = fault::Hook::create(name, reinterpret_cast<void*>(at), fn);
     if (!h) {
         error = std::string("could not hook ") + name;
         return false;
@@ -679,13 +695,13 @@ void install_bases(const Targets& t) {
         log("bases site not found: Flame Altars are off");
         return;
     }
-    auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.bases), on_base);
+    auto h = fault::Hook::create(kSiteBases, reinterpret_cast<void*>(t.bases), on_base);
     if (!h) {
         log("could not hook bases: Flame Altars are off");
         return;
     }
     g_bases_hook = std::move(*h);
-    log("hooked %-12s at %llx", "bases", static_cast<unsigned long long>(t.bases));
+    log("hooked %-12s at %llx", kSiteBases, static_cast<unsigned long long>(t.bases));
 }
 
 void install_mining(const Targets& t) {
@@ -694,13 +710,13 @@ void install_mining(const Targets& t) {
         return;
     }
     g_mining_layout.store(t.mining_layout, std::memory_order_relaxed);
-    auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.mining), on_mining);
+    auto h = fault::Hook::create(kSiteMining, reinterpret_cast<void*>(t.mining), on_mining);
     if (!h) {
         log("could not hook mining: ore finds are off");
         return;
     }
     g_mining_hook = std::move(*h);
-    log("hooked %-12s at %llx", "mining", static_cast<unsigned long long>(t.mining));
+    log("hooked %-12s at %llx", kSiteMining, static_cast<unsigned long long>(t.mining));
 }
 
 void install_chest(const Targets& t) {
@@ -708,13 +724,13 @@ void install_chest(const Targets& t) {
         log("chest site not found: looted chests are off");
         return;
     }
-    auto h = safetyhook::MidHook::create(reinterpret_cast<void*>(t.chest), on_chest);
+    auto h = fault::Hook::create(kSiteChest, reinterpret_cast<void*>(t.chest), on_chest);
     if (!h) {
         log("could not hook chest: looted chests are off");
         return;
     }
     g_chest_hook = std::move(*h);
-    log("hooked %-12s at %llx", "chest", static_cast<unsigned long long>(t.chest));
+    log("hooked %-12s at %llx", kSiteChest, static_cast<unsigned long long>(t.chest));
 }
 
 void enable_chat_probe(const Targets& t) {
@@ -734,10 +750,10 @@ bool install(const Targets& t, std::string& error) {
     entity_table().store(t.entity_table);
     log("entity ids  at world+0x%x (param_entity at %llx)", t.entity_table,
         static_cast<unsigned long long>(t.param_entity));
-    if (create(g_player_table_hook, t.player_table, on_player_table, "player_table", error) &&
-        create(g_movement_hook, t.movement, on_movement, "movement", error) &&
-        create(g_daytime_hook, t.daytime, on_daytime, "daytime", error) &&
-        create(g_registry_hook, t.registry, on_registry, "registry", error)) {
+    if (create(g_player_table_hook, t.player_table, on_player_table, kSitePlayerTable, error) &&
+        create(g_movement_hook, t.movement, on_movement, kSiteMovement, error) &&
+        create(g_daytime_hook, t.daytime, on_daytime, kSiteDaytime, error) &&
+        create(g_registry_hook, t.registry, on_registry, kSiteRegistry, error)) {
         return true;
     }
     g_registry_hook = {};

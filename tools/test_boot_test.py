@@ -911,7 +911,8 @@ def test_the_target_command_fails_on_a_file_without_a_download(tmp_path, capsys)
     assert "::error::" in capsys.readouterr().out
 
 
-def test_the_verify_command_checks_the_download_against_the_target(tmp_path, capsys):
+def test_the_verify_command_checks_the_download_against_the_target(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     server = tmp_path / SERVER
     server.mkdir()
     write_builds(tmp_path, builds_of(row("a", ["1"], exe_sha256=write_exe(server))))
@@ -922,6 +923,19 @@ def test_the_verify_command_checks_the_download_against_the_target(tmp_path, cap
     assert "does not match" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("shape", [("verify-exe", "out"), ("run", "out", "in"), ("run", "in", "out")])
+def test_a_path_outside_the_working_directory_and_runner_temp_exits_1(shape, tmp_path, monkeypatch, capsys):
+    cwd, inside, outside = tmp_path / "cwd", tmp_path / "temp", tmp_path / "elsewhere"
+    for folder in (cwd, inside, outside):
+        folder.mkdir()
+    write_builds(tmp_path, builds_of(row("a", ["1"], exe_sha256=write_exe(outside))))
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("RUNNER_TEMP", str(inside))
+    choice = {"in": str(inside), "out": str(outside)}
+    assert boot_test.main([choice.get(word, word) for word in shape], tmp_path) == 1
+    assert "outside the working directory" in capsys.readouterr().out
+
+
 def test_an_unknown_command_is_a_usage_error(tmp_path, capsys):
     assert boot_test.main(["frobnicate"], tmp_path) == 2
     assert "usage" in capsys.readouterr().out
@@ -929,6 +943,7 @@ def test_an_unknown_command_is_a_usage_error(tmp_path, capsys):
 
 def test_run_needs_the_image_from_the_environment(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("BOOT_TEST_IMAGE", raising=False)
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     assert boot_test.main(["run", str(tmp_path), str(tmp_path)], tmp_path) == 1
     assert "BOOT_TEST_IMAGE" in capsys.readouterr().out
 

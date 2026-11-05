@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from data_only import annotation, github_output
+from paths import safe_path
 
 DATA_FILE = "data/builds.json"
 USAGE = "usage: boot_test.py target | verify-exe SERVER_DIR | run WORK_DIR PACKAGE_DIR"
@@ -501,10 +502,11 @@ def _run(root, work, package):
 def main(argv=None, root=None):
     argv = sys.argv[1:] if argv is None else argv
     root = Path.cwd() if root is None else Path(root)
+    roots = [os.environ["RUNNER_TEMP"]] if os.environ.get("RUNNER_TEMP") else []
     commands = {
         ("target", 0): lambda: _target(root),
-        ("verify-exe", 1): lambda: _verify(root, Path(argv[1])),
-        ("run", 2): lambda: _run(root, Path(argv[1]), Path(argv[2])),
+        ("verify-exe", 1): lambda: _verify(root, Path(safe_path(argv[1], roots))),
+        ("run", 2): lambda: _run(root, Path(safe_path(argv[1], roots)), Path(safe_path(argv[2], roots))),
     }
     command = commands.get((argv[0], len(argv) - 1)) if argv else None
     if command is None:
@@ -512,7 +514,7 @@ def main(argv=None, root=None):
         return 2
     try:
         return command()
-    except BootTestError as error:
+    except (BootTestError, ValueError) as error:
         print(annotation(str(error)))
         return 1
 

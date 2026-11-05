@@ -11,6 +11,7 @@ jobs:
   build:
     permissions:
       contents: read
+      packages: read
     uses: ./.github/workflows/ci-repo.yaml
 
   release:

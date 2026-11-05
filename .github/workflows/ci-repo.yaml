@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      packages: read
     env:
       PYTHONUTF8: "1"
     outputs:
@@ -156,103 +157,11 @@ jobs:
           identical = len(built) - 1 - len(LINTED)
           print(f"file list equals upstream's 1.7.0 zip ({len(built)} files); {identical} non-DLL files are byte-identical, {len(LINTED)} match their pinned digests")
 
-      - name: Check the hook sites against the public server build
-        shell: python
-        run: |
-          import hashlib, io, json, os, pathlib, re, shutil, subprocess, sys, urllib.request, zipfile
-
-          DEPOTDOWNLOADER_URL = "https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-windows-x64.zip"
-          DEPOTDOWNLOADER_SHA256 = "41c9e9f0df54b3ad02e67a11726756e5c73283bd7c2e1b04acfa5ae4c2ed3767"
-          APP_ID = "2278520"
-          EXE_NAME = "enshrouded_server.exe"
-          SELFTEST = pathlib.Path("build") / "livemap_selftest.exe"
-          DOWNLOAD_TIMEOUT = 900
-
-          def fail(message):
-              print(f"::error::{message}")
-              sys.exit(1)
-
-          rows = []
-          for row in json.loads(pathlib.Path("data/builds.json").read_text(encoding="utf-8"))["builds"]:
-              given = [row["steam"][key] for key in ("depot", "manifest", "exe_sha256")]
-              if all(value is None for value in given):
-                  print(f"::notice title=Hook check skipped::build {row['label']} has no steam block in data/builds.json, so the hook sites are not checked against its live executable.")
-                  continue
-              if any(value is None for value in given):
-                  fail(f"build {row['label']} has an incomplete steam block in data/builds.json")
-              rows.append(row)
-          if not rows:
-              fail("data/builds.json has no build with a steam block to check")
-          pinned = ", ".join(build_id for row in rows for build_id in row["buildids"])
-
-          work = pathlib.Path(os.environ["RUNNER_TEMP"]) / "steam-hook-check"
-          shutil.rmtree(work, ignore_errors=True)
-          work.mkdir(parents=True)
-
-          try:
-              with urllib.request.urlopen(f"https://api.steamcmd.net/v1/info/{APP_ID}", timeout=30) as response:
-                  public = str(json.load(response)["data"][APP_ID]["depots"]["branches"]["public"]["buildid"])
-              if re.fullmatch(r"[0-9]{1,12}", public):
-                  print(f"Current public Steam build id: {public} (this check pins build {pinned})")
-              else:
-                  print("Current public Steam build id: unreadable")
-          except Exception as exc:
-              print(f"Current public Steam build id: unavailable ({type(exc).__name__})")
-
-          with urllib.request.urlopen(DEPOTDOWNLOADER_URL, timeout=300) as response:
-              blob = response.read()
-          digest = hashlib.sha256(blob).hexdigest()
-          if digest != DEPOTDOWNLOADER_SHA256:
-              fail(f"DepotDownloader zip sha256 is {digest}, expected {DEPOTDOWNLOADER_SHA256}")
-          depotdownloader = work / "DepotDownloader.exe"
-          with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-              depotdownloader.write_bytes(archive.read("DepotDownloader.exe"))
-
-          filelist = work / "filelist.txt"
-          filelist.write_text(EXE_NAME + "\n", encoding="ascii")
-
-          for row in rows:
-              label = row["label"]
-              depot, manifest, expected_sha256 = (row["steam"][key] for key in ("depot", "manifest", "exe_sha256"))
-              server_dir = work / f"server-{label}"
-              exe = server_dir / EXE_NAME
-              command = [str(depotdownloader), "-app", APP_ID, "-depot", depot, "-manifest", manifest,
-                         "-filelist", str(filelist), "-dir", str(server_dir)]
-              reason = None
-              try:
-                  completed = subprocess.run(command, timeout=DOWNLOAD_TIMEOUT)
-                  if completed.returncode != 0:
-                      reason = f"DepotDownloader exited with {completed.returncode}"
-                  elif not exe.is_file():
-                      reason = f"DepotDownloader exited 0 but wrote no {EXE_NAME}"
-              except subprocess.TimeoutExpired:
-                  reason = f"DepotDownloader timed out after {DOWNLOAD_TIMEOUT} seconds"
-              except OSError as exc:
-                  reason = f"DepotDownloader could not start ({type(exc).__name__})"
-              if reason:
-                  if os.environ.get("GITHUB_REF_TYPE") == "tag":
-                      fail(f"The anonymous Steam download of {EXE_NAME} (app {APP_ID}, depot {depot}, manifest {manifest}) failed: {reason}. A release needs the hook check against build {label}.")
-                  print(f"::warning title=Hook check skipped::The anonymous Steam download of {EXE_NAME} (app {APP_ID}, depot {depot}, manifest {manifest}) failed: {reason}. The hook sites were NOT checked against build {label}.")
-                  continue
-
-              actual = hashlib.sha256(exe.read_bytes()).hexdigest()
-              if actual != expected_sha256:
-                  fail(f"{EXE_NAME} sha256 is {actual}, expected {expected_sha256} (build {label})")
-              if not SELFTEST.is_file():
-                  fail(f"{SELFTEST} was not built")
-
-              result = subprocess.run([str(SELFTEST), str(exe)], capture_output=True, text=True, errors="replace", timeout=120)
-              print(result.stdout, end="")
-              print(result.stderr, end="")
-              expected_sites = [name for name in row["expected"] if name != "param_entity"]
-              found = re.findall(r"^(\w+)\s+rva 0x[0-9a-f]+$", result.stdout, flags=re.M)
-              if result.returncode != 0:
-                  fail(f"livemap_selftest exited with {result.returncode}")
-              if not re.search(rf"^server build {re.escape(label)}$", result.stdout, flags=re.M):
-                  fail(f"livemap_selftest did not report server build {label}")
-              if "OK: all hook sites found" not in result.stdout or sorted(found) != sorted(expected_sites):
-                  fail(f"livemap_selftest found {len(found)} of {len(expected_sites)} hook sites")
-              print(f"Hook check passed: all {len(expected_sites)} hook sites found on server build {label}")
+      - name: Check the hook sites against the exe store
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"%PYTHON_EXE%" -B tools\hook_check.py'
 
       - name: Upload the zip
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -267,6 +176,6 @@ jobs:
         run: |
           import os, pathlib, shutil
 
-          work = pathlib.Path(os.environ["RUNNER_TEMP"]) / "steam-hook-check"
+          work = pathlib.Path(os.environ["RUNNER_TEMP"]) / "exe-hook-check"
           shutil.rmtree(work, ignore_errors=True)
-          print("steam-hook-check directory removed" if not work.exists() else "::warning::steam-hook-check directory could not be removed")
+          print("exe-hook-check directory removed" if not work.exists() else "::warning::exe-hook-check directory could not be removed")

@@ -9,6 +9,7 @@
 #include <cstring>
 #include <format>
 #include <mutex>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -681,7 +682,8 @@ void refresh_discovered(int64_t unix_now) {
             return;
         }
         std::vector<uint32_t> k(count), v(count);
-        if (count && (!read_bytes(keys, k.data(), count * 4) || !read_bytes(values, v.data(), count * 4))) {
+        if (count && (!read_bytes(keys, std::as_writable_bytes(std::span(k))) ||
+                      !read_bytes(values, std::as_writable_bytes(std::span(v))))) {
             continue;
         }
         std::vector<uint32_t> set;

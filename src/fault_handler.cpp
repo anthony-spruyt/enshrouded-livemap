@@ -40,10 +40,10 @@ const char*& current_site() {
 }
 
 uintptr_t this_module() {
-    HMODULE module = nullptr;
+    HMODULE self = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       std::bit_cast<LPCWSTR>(&this_module), &module);
-    return std::bit_cast<uintptr_t>(module);
+                       std::bit_cast<LPCWSTR>(&this_module), &self);
+    return std::bit_cast<uintptr_t>(self);
 }
 
 uintptr_t exe_module() {
@@ -116,7 +116,7 @@ bool install(uintptr_t file) {
         return false;
     }
     SetFilePointerEx(std::bit_cast<HANDLE>(file), LARGE_INTEGER{}, nullptr, FILE_END);
-    current.layout.module = image_range(self);
+    current.layout.dll = image_range(self);
     current.layout.probes = probe_range(self);
     current.layout.game = image_range(exe_module());
     current.file.store(file);

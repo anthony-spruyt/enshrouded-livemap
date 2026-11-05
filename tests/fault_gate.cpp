@@ -4,15 +4,11 @@
 
 #include "fault_gate.h"
 
-namespace {
-
-void game_fault(volatile int* target) {
+extern "C" __declspec(dllexport) void game_fault(volatile int* target) {
     *target = 1;
 }
 
-}  // namespace
-
 int main(int argc, char** argv) {
     SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
-    return argc == 2 ? gate_run(argv[1], game_fault) : kHookFailed;
+    return argc == 2 ? gate_run(argv[1]) : kHookFailed;
 }

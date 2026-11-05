@@ -16,6 +16,7 @@ struct Range {
 
 constexpr size_t kMaxRegions = 32;
 constexpr size_t kNoSlot = SIZE_MAX;
+constexpr size_t kMaxSite = 32;  // longest site name in the line; a longer one is cut
 
 // Memory a hook's stub and trampoline live in, named by the hook site.
 struct Region {
@@ -37,7 +38,7 @@ private:
 };
 
 struct Layout {
-    Range module;
+    Range dll;
     Range probes;
     Range game;
     RegionTable regions;
@@ -52,7 +53,7 @@ enum class Where {
 
 struct Verdict {
     Where where = Where::Outside;
-    uint32_t offset = 0;  // from the module or game image base, or from the start of the trampoline region
+    uint32_t offset = 0;  // from the DLL or game image base, or from the start of the trampoline region
     const char* site = nullptr;
 };
 

@@ -1,4 +1,5 @@
 // Plain assert-based tests for the fault line: its text and which exception addresses count (no framework).
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -11,6 +12,7 @@
 using livemap::fault::classify;
 using livemap::fault::format_line;
 using livemap::fault::kMaxRegions;
+using livemap::fault::kMaxSite;
 using livemap::fault::kNoSlot;
 using livemap::fault::Layout;
 using livemap::fault::Stamp;
@@ -52,7 +54,7 @@ constexpr uintptr_t kRegionSize = 0x10000;
 constexpr const char* kActive = "chest";
 
 void fill_layout(Layout& layout) {
-    layout.module = {kModule, kModuleEnd};
+    layout.dll = {kModule, kModuleEnd};
     layout.probes = {kProbes, kProbesEnd};
     layout.game = {kGame, kGameEnd};
     layout.regions.publish({kRegionA, kRegionA + kRegionSize}, "movement");
@@ -91,6 +93,15 @@ void test_format_bounds() {
     const std::string cut = line(at, kAccessViolation, {Module, 1, longest.c_str()});
     check(!cut.empty() && cut.size() < buf.size());
     check(cut.ends_with("x\r\n"));
+}
+
+void test_format_site_cap() {
+    const Stamp at{2026, 11, 5, 7, 8, 9, 42};
+    for (const size_t length : {kMaxSite - 1, kMaxSite, kMaxSite + 1, kMaxSite * 2}) {
+        const std::string name(length, 'x');
+        const std::string cut(std::min(length, kMaxSite), 'x');
+        check(line(at, kAccessViolation, {Module, 1, name.c_str()}).ends_with(" site=" + cut + "\r\n"));
+    }
 }
 
 void test_fault_codes() {
@@ -223,6 +234,7 @@ void test_region_table_capacity() {
 int main() {
     test_format();
     test_format_bounds();
+    test_format_site_cap();
     test_fault_codes();
     test_bad_read_codes();
     test_classify_module();

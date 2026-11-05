@@ -73,12 +73,11 @@ __declspec(noinline) bool read_u64(uintptr_t address, uint64_t& out) {
     }
 }
 
-__declspec(noinline) bool read_bytes(uintptr_t address, void* out, size_t size) {
+__declspec(noinline) bool read_bytes(uintptr_t address, std::span<std::byte> out) {
     __try {
         const volatile uint8_t* src = reinterpret_cast<const volatile uint8_t*>(address);
-        uint8_t* dst = static_cast<uint8_t*>(out);
-        for (size_t i = 0; i < size; ++i) {
-            dst[i] = src[i];
+        for (size_t i = 0; i < out.size(); ++i) {
+            out[i] = std::byte{src[i]};
         }
         return true;
     } __except (probe_filter(GetExceptionCode())) {

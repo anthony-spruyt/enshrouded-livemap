@@ -30,6 +30,8 @@ constexpr std::array<uint8_t, 10> kQuiet{0x48, 0x83, 0xEC, 0x28, 0x90, 0x48, 0x8
 constexpr std::array<uint8_t, 6> kReader{0x48, 0x8B, 0x01, 0x90, 0x90, 0xC3};
 constexpr unsigned kReaderStep = 3;
 
+using GameFault = void (*)(volatile int* target);
+
 struct Gate {
     std::atomic<int> skips{0};
     volatile int* read_only = nullptr;
@@ -42,6 +44,10 @@ Gate& gate() {
 }
 
 using Standin = void (*)(const int*);
+
+GameFault find_game_fault() {
+    return std::bit_cast<GameFault>(GetProcAddress(GetModuleHandleW(nullptr), kGameFaultExport));
+}
 
 std::byte* allocate_page(DWORD protection) {
     return static_cast<std::byte*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, protection));
@@ -70,7 +76,9 @@ void faulting_callback(SafetyHookContext&) {
 
 void game_callback(SafetyHookContext&) {
     const livemap::fault::SiteScope scope(kSiteGame);
-    gate().game_fault(gate().read_only);
+    if (const GameFault fault = gate().game_fault) {
+        fault(gate().read_only);
+    }
 }
 
 // Registered after the fault handler, so it sees each fault second and can let the process go on.
@@ -143,8 +151,12 @@ int fault_in_the_game_from_a_callback() {
 }
 
 int fault_in_the_game_alone() {
+    const GameFault fault = gate().game_fault;
+    if (fault == nullptr) {
+        return kHookFailed;
+    }
     livemap::log("gate: calling the game outside any callback");
-    gate().game_fault(gate().read_only);
+    fault(gate().read_only);
     return kSurvived;
 }
 
@@ -204,11 +216,15 @@ int run(std::string_view mode) {
 
 }  // namespace
 
-extern "C" __declspec(dllexport) int gate_run(const char* mode, GameFault game_fault) {
+extern "C" FAULT_GATE_API int gate_run(const char* mode) {
     livemap::log_open(L".", true);
     Gate& current = gate();
-    current.game_fault = game_fault;
+    current.game_fault = find_game_fault();
     current.read_only = static_cast<volatile int*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READONLY));
+    if (current.game_fault == nullptr) {
+        livemap::log("gate: the executable does not export %s", kGameFaultExport);
+        return kHookFailed;
+    }
     if (current.read_only == nullptr || !livemap::fault::install(livemap::log_handle())) {
         return kHookFailed;
     }

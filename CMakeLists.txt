@@ -116,7 +116,7 @@ add_test(NAME tools_hook_check COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -
 # images; CI runs the same test under Wine with both files.
 add_library(fault_gate_mod SHARED tests/fault_gate_mod.cpp src/fault_handler.cpp src/log.cpp src/memory.cpp)
 target_link_libraries(fault_gate_mod PRIVATE livemap_core safetyhook::safetyhook)
-target_compile_definitions(fault_gate_mod PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
+target_compile_definitions(fault_gate_mod PRIVATE FAULT_GATE_EXPORTS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
 target_compile_options(fault_gate_mod PRIVATE /W4 /permissive-)
 add_executable(fault_gate tests/fault_gate.cpp)
 target_link_libraries(fault_gate PRIVATE fault_gate_mod)

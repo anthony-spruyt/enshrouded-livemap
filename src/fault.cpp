@@ -7,7 +7,6 @@ namespace {
 constexpr uint32_t kSeverityMask = 0xE0000000;
 constexpr uint32_t kErrorSeverity = 0xC0000000;
 constexpr uint32_t kDatatypeMisalignment = 0x80000002;
-constexpr size_t kMaxSite = 32;
 
 bool contains(const Range& range, uintptr_t address) {
     return address >= range.begin && address < range.end;
@@ -25,7 +24,7 @@ public:
 
     void site(const char* name) {
         size_t n = 0;
-        for (; name != nullptr && name[n] != '\0' && n < kMaxSite; ++n) {
+        for (; name != nullptr && n < kMaxSite && name[n] != '\0'; ++n) {
             put(name[n]);
         }
         if (n == 0) {
@@ -122,8 +121,8 @@ Verdict classify(const Layout& layout, uintptr_t address, uint32_t code, const c
     if (contains(layout.probes, address) && is_bad_read(code)) {
         return {};
     }
-    if (contains(layout.module, address)) {
-        return {Module, static_cast<uint32_t>(address - layout.module.begin), active_site};
+    if (contains(layout.dll, address)) {
+        return {Module, static_cast<uint32_t>(address - layout.dll.begin), active_site};
     }
     if (const Region* region = layout.regions.find(address)) {
         return {Trampoline, static_cast<uint32_t>(address - region->range.begin), region->site};

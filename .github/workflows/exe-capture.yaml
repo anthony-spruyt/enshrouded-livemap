@@ -1,0 +1,238 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+# Saves one server build's enshrouded_server.exe to the private exe store while Steam still serves it as the public build.
+
+name: Exe capture
+run-name: Capture the server exe for build ${{ inputs.build_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Steam build id of the public server build
+        required: true
+        type: string
+      manifest_gid:
+        description: Manifest gid of depot 2278521 for that build
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: exe-capture-${{ inputs.build_id }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: Save the exe to the private store
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      MANIFEST_GID: ${{ inputs.manifest_gid }}
+      IMAGE: ghcr.io/anthony-spruyt/enshrouded-server-exe
+      LABEL_PREFIX: io.github.anthony-spruyt.enshrouded.
+      APP_ID: "2278520"
+      DEPOT_ID: "2278521"
+      EXE_NAME: enshrouded_server.exe
+      DEPOTDOWNLOADER_URL: https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip
+      DEPOTDOWNLOADER_SHA256: a999dec66b4850fc961bd50366696d23c2d0fad7b18790e6a5647b2f19097a53
+    steps:
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_ID" =~ ^[0-9]{1,12}$ ]] || { echo "::error::build_id must be 1 to 12 digits."; exit 1; }
+          [[ "$MANIFEST_GID" =~ ^[0-9]{1,20}$ ]] || { echo "::error::manifest_gid must be 1 to 20 digits."; exit 1; }
+          echo "capturing build ${BUILD_ID}, manifest ${MANIFEST_GID}"
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: data
+
+      - name: Confirm the build is Steam's public build
+        run: |
+          set -euo pipefail
+          info="${RUNNER_TEMP}/steam-info.json"
+          curl -fsS --retry 3 --max-time 30 -o "$info" "https://api.steamcmd.net/v1/info/${APP_ID}" \
+            || { echo "::error::The Steam info API is unreachable, so build ${BUILD_ID} cannot be confirmed as the public build."; exit 1; }
+          jq -e '.status == "success"' "$info" > /dev/null \
+            || { echo "::error::The Steam info API did not report success."; exit 1; }
+          public_build=$(jq -r --arg app "$APP_ID" '.data[$app].depots.branches.public.buildid // empty' "$info")
+          public_gid=$(jq -r --arg app "$APP_ID" --arg depot "$DEPOT_ID" '.data[$app].depots[$depot].manifests.public.gid // empty' "$info")
+          [[ "$public_build" =~ ^[0-9]{1,12}$ ]] || { echo "::error::The Steam info API has no readable public build id."; exit 1; }
+          [[ "$public_gid" =~ ^[0-9]{1,20}$ ]] || { echo "::error::The Steam info API has no readable public manifest gid for depot ${DEPOT_ID}."; exit 1; }
+          echo "Steam public build ${public_build}, depot ${DEPOT_ID} public manifest ${public_gid}"
+          [[ "$public_build" == "$BUILD_ID" ]] || { echo "::error::build_id ${BUILD_ID} is not Steam's public build (${public_build})."; exit 1; }
+          [[ "$public_gid" == "$MANIFEST_GID" ]] || { echo "::error::manifest_gid ${MANIFEST_GID} is not depot ${DEPOT_ID}'s public manifest (${public_gid})."; exit 1; }
+
+      - name: Fetch DepotDownloader
+        run: |
+          set -euo pipefail
+          tools="${RUNNER_TEMP}/tools"
+          mkdir -p "$tools"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 -o "${tools}/dd.zip" "$DEPOTDOWNLOADER_URL"
+          echo "${DEPOTDOWNLOADER_SHA256}  ${tools}/dd.zip" | sha256sum --check --status \
+            || { echo "::error::The DepotDownloader zip does not match its pinned sha256."; exit 1; }
+          unzip -q -o "${tools}/dd.zip" DepotDownloader -d "$tools"
+          chmod u+x "${tools}/DepotDownloader"
+
+      - name: Download only the server exe
+        id: download
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/steam"
+          mkdir -p "${work}/server"
+          printf '%s\n' "$EXE_NAME" > "${work}/filelist.txt"
+          timeout 900 "${RUNNER_TEMP}/tools/DepotDownloader" \
+            -app "$APP_ID" -depot "$DEPOT_ID" -manifest "$MANIFEST_GID" \
+            -filelist "${work}/filelist.txt" -dir "${work}/server" \
+            || { echo "::error::The anonymous Steam download of ${EXE_NAME} (app ${APP_ID}, depot ${DEPOT_ID}, manifest ${MANIFEST_GID}) failed."; exit 1; }
+          exe="${work}/server/${EXE_NAME}"
+          [[ -f "$exe" ]] || { echo "::error::DepotDownloader exited 0 but wrote no ${EXE_NAME}."; exit 1; }
+          actual=$(sha256sum "$exe" | cut -d ' ' -f 1)
+          echo "downloaded ${EXE_NAME}: sha256 ${actual}, $(stat -c %s "$exe") bytes"
+
+          rows=$(jq -c --arg id "$BUILD_ID" '[.builds[] | select(any(.buildids[]; . == $id)) | .steam.exe_sha256 | select(. != null)] | unique' data/builds.json)
+          recorded=$(jq 'length' <<< "$rows")
+          if [[ "$recorded" -gt 1 ]]; then
+            echo "::error::data/builds.json lists build ${BUILD_ID} with more than one exe_sha256."
+            exit 1
+          elif [[ "$recorded" -eq 1 ]]; then
+            expected=$(jq -r '.[0]' <<< "$rows")
+            [[ "$actual" == "$expected" ]] || { echo "::error::${EXE_NAME} sha256 is ${actual}, but data/builds.json records ${expected} for build ${BUILD_ID}."; exit 1; }
+            echo "the sha256 matches data/builds.json at ${GITHUB_SHA}"
+          else
+            echo "data/builds.json at ${GITHUB_SHA} has no exe_sha256 for build ${BUILD_ID}; recording ${actual}"
+          fi
+          echo "sha256=${actual}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
+
+      - name: Check whether the store already holds this build
+        id: store
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_SHA256: ${{ steps.download.outputs.sha256 }}
+          MANIFEST_ACCEPT: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json
+        run: |
+          set -euo pipefail
+          path="${IMAGE#*/}"
+          headers="${RUNNER_TEMP}/store-headers.txt"
+          token=$(printf 'user = "%s:%s"\n' "$GITHUB_ACTOR" "$GH_TOKEN" \
+            | curl -fsS --retry 3 --max-time 30 --config - "https://ghcr.io/token?service=ghcr.io&scope=repository:${path}:pull" \
+            | jq -er '.token')
+          # Only a 404 means the tag is free; any other failure must not read as absence
+          status=$(printf 'header = "Authorization: Bearer %s"\nheader = "Accept: %s"\n' "$token" "$MANIFEST_ACCEPT" \
+            | curl -sS --retry 3 --max-time 30 --head --config - --dump-header "$headers" --output /dev/null --write-out '%{http_code}' \
+              "https://ghcr.io/v2/${path}/manifests/${BUILD_ID}")
+          case "$status" in
+            404)
+              echo "${IMAGE}:${BUILD_ID} is not in the store yet"
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+            200)
+              digest=$(grep -i '^docker-content-digest:' "$headers" | tr -d '\r' | cut -d ' ' -f 2 || true)
+              [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::The registry gave no readable digest for ${IMAGE}:${BUILD_ID}."; exit 1; }
+              docker pull --quiet "${IMAGE}@${digest}" > /dev/null
+              stored=$(docker image inspect --format "{{index .Config.Labels \"${LABEL_PREFIX}exe-sha256\"}}" "${IMAGE}@${digest}")
+              if [[ "$stored" != "$EXE_SHA256" ]]; then
+                echo "::error::${IMAGE}:${BUILD_ID} already exists with exe-sha256 '${stored}', but the download is ${EXE_SHA256}. Tags are write-once, so nothing was changed."
+                exit 1
+              fi
+              echo "${IMAGE}:${BUILD_ID} already exists as ${digest} with the same exe-sha256; nothing to push"
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::The registry answered ${status} for ${IMAGE}:${BUILD_ID}, so the tag's state is unknown."
+              exit 1
+              ;;
+          esac
+
+      - name: Build the image
+        if: steps.store.outputs.exists != 'true'
+        env:
+          EXE_SHA256: ${{ steps.download.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          ctx="${RUNNER_TEMP}/ctx"
+          mkdir -p "$ctx"
+          cp "${RUNNER_TEMP}/steam/server/${EXE_NAME}" "${ctx}/${EXE_NAME}"
+          printf 'FROM scratch\nCOPY %s /%s\n' "$EXE_NAME" "$EXE_NAME" > "${ctx}/Dockerfile"
+          docker build \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.description=Enshrouded server exe, build ${BUILD_ID}. Private store, not for redistribution." \
+            --label "${LABEL_PREFIX}build-id=${BUILD_ID}" \
+            --label "${LABEL_PREFIX}manifest=${MANIFEST_GID}" \
+            --label "${LABEL_PREFIX}exe-sha256=${EXE_SHA256}" \
+            --tag "${IMAGE}:${BUILD_ID}" \
+            "$ctx"
+
+      - name: Push the image
+        id: push
+        if: steps.store.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE}:${BUILD_ID}"
+          digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}:${BUILD_ID}" | grep -F "${IMAGE}@" | head -n 1 | cut -d '@' -f 2)
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::No digest was recorded for the pushed image."; exit 1; }
+          echo "pushed ${IMAGE}:${BUILD_ID} ${digest}"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull the image back and check the exe
+        env:
+          PUSHED_DIGEST: ${{ steps.push.outputs.digest || steps.store.outputs.digest }}
+          EXE_SHA256: ${{ steps.download.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          docker image ls --quiet --no-trunc "$IMAGE" | sort -u | xargs -r docker image rm --force > /dev/null
+          docker builder prune --all --force > /dev/null
+          docker pull --quiet "${IMAGE}@${PUSHED_DIGEST}" > /dev/null
+          pulled=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}@${PUSHED_DIGEST}" | grep -F "${IMAGE}@" | head -n 1 | cut -d '@' -f 2)
+          echo "pushed digest ${PUSHED_DIGEST}, pulled digest ${pulled}"
+          [[ "$pulled" == "$PUSHED_DIGEST" ]] || { echo "::error::The pulled digest differs from the pushed one."; exit 1; }
+          docker pull --quiet "${IMAGE}:${BUILD_ID}" > /dev/null
+          tagged=$(docker image inspect --format '{{.Id}}' "${IMAGE}:${BUILD_ID}")
+          image_id=$(docker image inspect --format '{{.Id}}' "${IMAGE}@${PUSHED_DIGEST}")
+          [[ "$tagged" == "$image_id" ]] || { echo "::error::The tag ${BUILD_ID} does not point at the pushed image."; exit 1; }
+
+          for pair in "build-id=${BUILD_ID}" "manifest=${MANIFEST_GID}" "exe-sha256=${EXE_SHA256}"; do
+            name="${pair%%=*}"
+            want="${pair#*=}"
+            got=$(docker image inspect --format "{{index .Config.Labels \"${LABEL_PREFIX}${name}\"}}" "$image_id")
+            echo "label ${name}: ${got}"
+            [[ "$got" == "$want" ]] || { echo "::error::label ${name} is '${got}', expected '${want}'."; exit 1; }
+          done
+
+          out="${RUNNER_TEMP}/img"
+          mkdir -p "$out"
+          docker save --output "${out}/image.tar" "$image_id"
+          mapfile -t layers < <(tar -xOf "${out}/image.tar" manifest.json | jq -r '.[0].Layers[]')
+          echo "layers: ${#layers[@]}"
+          [[ "${#layers[@]}" -eq 1 ]] || { echo "::error::The image must have exactly one layer."; exit 1; }
+          tar -xOf "${out}/image.tar" "${layers[0]}" > "${out}/layer"
+          mapfile -t files < <(tar -tf "${out}/layer")
+          echo "files in the layer: ${files[*]}"
+          [[ "${#files[@]}" -eq 1 ]] || { echo "::error::The layer must hold exactly one file."; exit 1; }
+          [[ "${files[0]}" == "$EXE_NAME" ]] || { echo "::error::The layer's file must be named ${EXE_NAME}."; exit 1; }
+          actual=$(tar -xOf "${out}/layer" -- "$EXE_NAME" | sha256sum | cut -d ' ' -f 1)
+          echo "pulled ${EXE_NAME}: sha256 ${actual}, $(tar -xOf "${out}/layer" -- "$EXE_NAME" | wc -c) bytes"
+          [[ "$actual" == "$EXE_SHA256" ]] || { echo "::error::The pulled exe does not match the downloaded sha256 ${EXE_SHA256}."; exit 1; }
+          echo "match: yes"
+
+      - name: Delete the exe and the build context
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP}/steam" "${RUNNER_TEMP}/ctx" "${RUNNER_TEMP}/img"
+          docker image ls --quiet --no-trunc "$IMAGE" | sort -u | xargs -r docker image rm --force > /dev/null || echo "::warning::The exe image could not be removed from the runner."
+          docker builder prune --all --force > /dev/null || echo "::warning::The build cache could not be pruned on the runner."

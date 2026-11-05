@@ -32,5 +32,12 @@ https://trivy\.dev/.*
 # URL built at runtime from APP_ID; the hook check handles the API being down
 https://api\.steamcmd\.net/v1/info/(\{|%7B)APP_ID(\}|%7D)
 
+# exe-capture.yaml's Steam info URL, built at runtime from APP_ID
+https://api\.steamcmd\.net/v1/info/\$(\{|%7B)APP_ID(\}|%7D)
+
+# exe-capture.yaml's registry URLs, built at runtime from the image path and build id
+https://ghcr\.io/token\?service=ghcr\.io&scope=repository:\$(\{|%7B)path(\}|%7D):pull
+https://ghcr\.io/v2/\$(\{|%7B)path(\}|%7D)/manifests/\$(\{|%7B)BUILD_ID(\}|%7D)
+
 # Regex in release.yaml's upload URL check, not a link
 ^https://uploads/$

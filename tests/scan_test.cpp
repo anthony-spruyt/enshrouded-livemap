@@ -195,7 +195,8 @@ void check_build(const snapshot::Row& row) {
     plant_build(image, row, row.patch1, true);
     livemap::Targets t;
     std::string error;
-    check(livemap::find_targets(image.base(), t, error), std::format("{}: {}", row.label, error));
+    const bool ok = livemap::find_targets(image.base(), t, error);
+    check(ok, std::format("{}: {}", row.label, error));
     check(t.build != nullptr && std::strcmp(t.build, row.label) == 0,
           std::format("{} recognised as {}", row.label, t.build ? t.build : "nothing"));
     check(t.mining_layout == (row.patch1 ? livemap::MiningLayout::StackRecord : livemap::MiningLayout::InlineArray),
@@ -262,7 +263,8 @@ void check_rejections(const snapshot::Row& row) {
         Image image(row);
         plant_build(image, row, row.patch1, false);
         image.clear(expected_rva(row, "mining") - (row.patch1 ? 2 : 0x16));
-        check(livemap::find_targets(image.base(), t, error), std::format("{}: {}", row.label, error));
+        const bool ok = livemap::find_targets(image.base(), t, error);
+        check(ok, std::format("{}: {}", row.label, error));
         check(t.mining == 0 && t.player_table != 0,
               std::format("{}: a missing optional site stops the rest", row.label));
         livemap::ChatSites chat;
@@ -304,8 +306,8 @@ void check_installed_sites_are_required(const snapshot::Row& row) {
     plant_build(intact, row, true, false);
     livemap::Targets t;
     std::string error;
-    check(livemap::find_targets(intact.base(), only(control.build()), t, error),
-          std::format("{}: {}", row.label, error));
+    const bool ok = livemap::find_targets(intact.base(), only(control.build()), t, error);
+    check(ok, std::format("{}: {}", row.label, error));
     for (const char* name : {"player_table", "movement", "daytime", "registry"}) {
         {
             Table table(row);

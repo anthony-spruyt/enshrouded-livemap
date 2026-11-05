@@ -10,11 +10,13 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 DATA_FILE = "data/builds.json"
 SCHEMA_FILE = "data/builds.schema.json"
-BOOT_TEST_DIRS = ("data/", "src/")
-BOOT_TEST_FILES = ("tools/boot_test.py", ".github/workflows/ci-repo.yaml")
+BOOT_TEST_DIRS = ("cmake/", "data/", "src/")
+BOOT_TEST_FILES = ("CMakeLists.txt", "tools/boot_test.py", "tools/data_only.py", ".github/workflows/ci-repo.yaml")
+PLAIN_EDIT = ("M", "100644", "100644")
 USAGE = "usage: data_only.py classify|validate"
 
 
@@ -22,8 +24,15 @@ class DataOnlyError(Exception):
     pass
 
 
-def is_data_only(paths):
-    return list(paths) == [DATA_FILE]
+class Change(NamedTuple):
+    path: str
+    status: str
+    old_mode: str
+    new_mode: str
+
+
+def is_data_only(changes):
+    return [(c.path, c.status, c.old_mode, c.new_mode) for c in changes] == [(DATA_FILE, *PLAIN_EDIT)]
 
 
 def needs_boot_test(paths):
@@ -47,12 +56,35 @@ def _git(root, *args):
     return result.stdout
 
 
-def changed_paths(root):
+def changed_files(root):
     parents = _git(root, "rev-list", "--parents", "-n", "1", "HEAD").split()
     if len(parents) != 3:
         raise DataOnlyError("HEAD is not a merge commit; check out the pull request merge ref with fetch-depth 2")
-    listing = _git(root, "diff", "--name-only", "--no-renames", "-z", "HEAD^1", "HEAD")
-    return [os.fsdecode(name) for name in listing.split(b"\0") if name]
+    raw = _git(root, "diff", "--raw", "--no-renames", "-z", "HEAD^1", "HEAD")
+    fields = [os.fsdecode(field) for field in raw.split(b"\0")[:-1]]
+    changes = []
+    for meta, path in zip(fields[0::2], fields[1::2], strict=True):
+        old_mode, new_mode, _old_id, _new_id, status = meta.lstrip(":").split(" ")
+        changes.append(Change(path, status, old_mode, new_mode))
+    return changes
+
+
+def _where(path):
+    parts = [str(part) if str(part).isprintable() else ascii(part) for part in path]
+    return "/".join(parts) or "(root)"
+
+
+def _non_printing(node, path=()):
+    found = []
+    if isinstance(node, str) and not node.isprintable():
+        found.append(path)
+    elif isinstance(node, dict):
+        for key, value in node.items():
+            found += _non_printing(key, (*path, key)) + _non_printing(value, (*path, key))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found += _non_printing(value, (*path, index))
+    return found
 
 
 def schema_errors(builds, schema):
@@ -64,10 +96,12 @@ def schema_errors(builds, schema):
     except jsonschema.SchemaError as error:
         raise DataOnlyError(f"the schema is not a valid schema: {error.message}") from error
     found = jsonschema.Draft202012Validator(schema).iter_errors(builds)
-    return [
-        f"{'/'.join(str(part) for part in error.absolute_path) or '(root)'}: {error.message}"
+    errors = [
+        f"{_where(error.absolute_path)}: {error.message}"
         for error in sorted(found, key=lambda e: [str(part) for part in e.absolute_path])
     ]
+    # Python's $ matches before a trailing newline, so the schema's anchored patterns alone let one through.
+    return errors + [f"{_where(path)}: contains a non-printing character" for path in _non_printing(builds)]
 
 
 def _load(root, name):
@@ -91,10 +125,10 @@ def annotation(message):
 
 
 def _classify(root):
-    paths = changed_paths(root)
+    changes = changed_files(root)
     flags = [
-        f"data_only={'true' if is_data_only(paths) else 'false'}",
-        f"boot_test={'true' if needs_boot_test(paths) else 'false'}",
+        f"data_only={'true' if is_data_only(changes) else 'false'}",
+        f"boot_test={'true' if needs_boot_test(change.path for change in changes) else 'false'}",
     ]
     print(*flags, sep="\n")
     github_output(flags)

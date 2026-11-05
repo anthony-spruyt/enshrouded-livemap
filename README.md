@@ -194,11 +194,15 @@ The supported server builds, their hook signatures and the RVAs the selftest exp
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so
 supporting another build whose code the existing signatures still match is a data change.
 
-A pull request that changes `data/builds.json` and nothing else runs the `data-only` check, which passes when the file
-validates against the schema. Code pull requests skip it and merge as usual.
+A pull request that is a plain edit of `data/builds.json` and changes nothing else runs the `data-only` check, which
+passes when the file validates against the schema. Code pull requests skip it and merge as usual. The base commit's
+`tools/data_only.py` sorts the pull request, so a pull request cannot classify itself.
 
-A pull request that changes `data/`, `src/` or the boot test itself also runs the `boot-test` job. It downloads the newest
-build in `data/builds.json` that lists a Steam depot and manifest, starts it in the `mornedhels/enshrouded-server` image
-first without the DLL and then with the built one, and passes when the server reaches RUNNING, `livemap.log` lists every
-mandatory hook, the map serves fresh data, and the server runs for 10 minutes without a crash or exit. The game files stay
-on the runner and are never uploaded or cached; `tools/boot_test.py` holds the checks.
+A pull request that changes `data/`, `src/`, `cmake/`, `CMakeLists.txt` or the boot test's own files (`tools/boot_test.py`,
+`tools/data_only.py`, `ci-repo.yaml`) also runs the `boot-test` job. It downloads the newest build in `data/builds.json`
+that lists a Steam depot and manifest and starts it in the `mornedhels/enshrouded-server` image, first without the DLL and
+then with the built one. The server must be started by its supervisor exactly once, so a crash that the supervisor retries
+fails the job. The run without the DLL passes when the game answers its query port and stays up for a minute. The run with
+the DLL passes when the server reaches RUNNING, `livemap.log` lists every mandatory hook, the map serves fresh data, and the
+server runs for 10 minutes without a crash or exit. The game files stay on the runner and are never uploaded or cached;
+`tools/boot_test.py` holds the checks.

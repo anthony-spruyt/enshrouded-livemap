@@ -27,12 +27,14 @@ ENCODING = "utf-8"
 PORT = 18080
 MAX_AGE_MS = 5000
 STATE_TIMEOUT = 5
-KEY_SHAPE = re.compile(r"[A-Za-z0-9_-]{3,64}")
-ID_SHAPE = re.compile(r"[1-9][0-9]{0,19}")
+ID_SHAPE = re.compile(r"[1-9]\d{0,19}", re.ASCII)
+COUNT_SHAPE = re.compile(r"\d{1,6}", re.ASCII)
 
 BASELINE = "boot-test-baseline"
 WITH_DLL = "boot-test-livemap"
 SERVER_PROGRAM = "enshrouded-server"
+SUPERVISOR_LOG = "/var/log/supervisor/supervisord.log"
+QUERY_PORT = 15637
 EXE_NAME = "enshrouded_server.exe"
 DLL_NAME = "iphlpapi.dll"
 SERVER_DIR = "server"
@@ -42,6 +44,10 @@ STATUS_LINE = re.compile(rf"^{SERVER_PROGRAM}\s+(\w+)(?:\s+pid (\d+))?", re.MULT
 POLL_SECONDS = 2
 READ_GAP_SECONDS = 5
 RUNNING_TIMEOUT = 300
+ANSWER_TIMEOUT = 240
+BASELINE_HOLD_SECONDS = 60
+CALL_TIMEOUT = 60
+PULL_TIMEOUT = 300
 HOOKS_TIMEOUT = 60
 FRESH_TIMEOUT = 180
 FINAL_FRESH_TIMEOUT = 60
@@ -174,7 +180,7 @@ def fetch_state(port, key):
             body = response.read()
     except urllib.error.HTTPError as error:
         raise BootTestError(f"the map answered HTTP {error.code}") from None
-    except (urllib.error.URLError, OSError) as error:
+    except OSError as error:
         raise BootTestError(f"the map did not answer ({type(error).__name__})") from None
     try:
         state = json.loads(body)
@@ -193,14 +199,19 @@ def parse_status(text):
 
 
 class Docker:
-    def __init__(self, command=("docker",)):
+    def __init__(self, command=("docker",), call_timeout=CALL_TIMEOUT, run_timeout=PULL_TIMEOUT):
         self.command = tuple(command)
+        self.call_timeout = call_timeout
+        self.run_timeout = run_timeout
 
     def __call__(self, *args):
+        timeout = self.run_timeout if args[0] == "run" else self.call_timeout
         try:
             result = subprocess.run(
-                [*self.command, *args], capture_output=True, text=True, errors="replace", check=False
+                [*self.command, *args], capture_output=True, text=True, errors="replace", check=False, timeout=timeout
             )
+        except subprocess.TimeoutExpired:
+            raise BootTestError(f"docker {args[0]} did not finish within {timeout} s") from None
         except OSError as error:
             raise BootTestError(f"docker could not run ({type(error).__name__})") from None
         return result.returncode, result.stdout + result.stderr
@@ -240,6 +251,48 @@ def container_state(docker, name):
 
 def server_status(docker, name):
     return parse_status(docker("exec", name, "supervisorctl", "status", SERVER_PROGRAM)[1])
+
+
+def query_probe(port, timeout=2):
+    """Python source that exits 0 when the game answers an A2S info query on the port; it runs inside the container."""
+    return (
+        "import socket, sys\n"
+        "request = b'\\xff\\xff\\xff\\xffTSource Engine Query\\x00'\n"
+        "udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+        f"udp.settimeout({timeout})\n"
+        f"address = ('127.0.0.1', {port})\n"
+        "udp.sendto(request, address)\n"
+        "reply = udp.recv(1400)\n"
+        "if reply[4:5] == b'A':\n"
+        "    udp.sendto(request + reply[5:9], address)\n"
+        "    reply = udp.recv(1400)\n"
+        "sys.exit(0 if reply[4:5] == b'I' else 1)\n"
+    )
+
+
+def spawn_count(docker, name):
+    code, text = docker("exec", name, "grep", "-c", "-F", f"spawned: '{SERVER_PROGRAM}'", SUPERVISOR_LOG)
+    count = text.strip()
+    if code not in (0, 1) or not COUNT_SHAPE.fullmatch(count):
+        raise BootTestError("the supervisor log could not be read to count the server's starts")
+    return int(count)
+
+
+def require_single_start(docker, name):
+    count = spawn_count(docker, name)
+    if count != 1:
+        raise BootTestError(f"the supervisor started the server {count} times, not once: it exited and was restarted")
+
+
+def wait_answering(docker, name, clock, timeout):
+    deadline = clock.now() + timeout
+    probe = query_probe(QUERY_PORT)
+    while docker("exec", name, "python3", "-c", probe)[0] != 0:
+        if container_state(docker, name) != "running":
+            raise BootTestError("the container stopped before the server answered its query port")
+        if clock.now() >= deadline:
+            raise BootTestError(f"the server did not answer its query port within {timeout} s")
+        clock.sleep(POLL_SECONDS)
 
 
 def wait_running(docker, name, clock, timeout):
@@ -371,16 +424,20 @@ def run_boot_test(setup, tools):
         say("baseline: the server without the DLL")
         start(docker, BASELINE, setup, publish=False)
         try:
-            wait_running(docker, BASELINE, clock, RUNNING_TIMEOUT)
+            baseline_pid = wait_running(docker, BASELINE, clock, RUNNING_TIMEOUT)
+            wait_answering(docker, BASELINE, clock, ANSWER_TIMEOUT)
+            hold_running(docker, BASELINE, clock, baseline_pid, BASELINE_HOLD_SECONDS)
+            require_single_start(docker, BASELINE)
         except BootTestError as error:
             raise BootTestError(f"baseline (no DLL): {error}") from None
-        say("baseline reached RUNNING")
+        say(f"baseline reached RUNNING, answered its query port and ran {BASELINE_HOLD_SECONDS} s without a restart")
         docker("rm", "-f", BASELINE)
         reset_state(setup.root)
         install(setup)
         say("with the DLL: starting from a fresh world")
         start(docker, WITH_DLL, setup, publish=True)
         pid = wait_running(docker, WITH_DLL, clock, RUNNING_TIMEOUT)
+        require_single_start(docker, WITH_DLL)
         say("with the DLL: RUNNING")
         check_hooks(lambda: read_log(setup.root), setup.names, clock, HOOKS_TIMEOUT)
         say("livemap.log lists the mandatory hooks: " + ", ".join(setup.names))
@@ -388,6 +445,7 @@ def run_boot_test(setup, tools):
         say(f"the map serves fresh data; watching for {SOAK_SECONDS} s")
         hold_running(docker, WITH_DLL, clock, pid, SOAK_SECONDS)
         wait_fresh(lambda: tools.fetch(PORT, setup.key), clock, FINAL_FRESH_TIMEOUT)
+        require_single_start(docker, WITH_DLL)
         say(f"boot test passed: no crash or exit for {SOAK_SECONDS} s and the map still serves fresh data")
         return 0
     except BootTestError as error:

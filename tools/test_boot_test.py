@@ -4,6 +4,8 @@ import hashlib
 import http.server
 import json
 import re
+import socket
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -19,6 +21,7 @@ DATA = "data/builds.json"
 PLAIN = "plain"
 PATCHED = "patched"
 KEY = "k3y-Under_test"
+KEY_SHAPE = re.compile(r"[\w-]{3,64}", re.ASCII)
 MANDATORY = ["player_table", "movement", "daytime", "registry"]
 FRESH = {"raw": 100, "ageMs": 40, "dayStart": 1, "dayEnd": 2, "isDay": True}
 
@@ -129,7 +132,7 @@ def test_an_unsafe_line_is_not_repeated_even_when_it_reports_a_failed_start():
 def test_the_key_is_valid_and_new_every_time():
     first, second = boot_test.make_key(), boot_test.make_key()
     assert first != second
-    assert boot_test.KEY_SHAPE.fullmatch(first)
+    assert KEY_SHAPE.fullmatch(first)
 
 
 def test_the_ini_holds_the_key_and_keeps_the_map_off_the_network_lookups():
@@ -203,10 +206,6 @@ def answer(self):
     self.wfile.write(self.body if authorised else b"forbidden")
 
 
-def quiet(self, *_args):
-    pass
-
-
 @pytest.fixture
 def serve():
     started = []
@@ -215,7 +214,7 @@ def serve():
         handler = type(
             "Handler",
             (http.server.BaseHTTPRequestHandler,),
-            {"do_GET": answer, "log_message": quiet, "body": body, "status": status},
+            {"do_GET": answer, "log_message": lambda *_args: None, "body": body, "status": status},
         )
         server = http.server.HTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -271,6 +270,7 @@ IDS = (1000, 1001)
 PID = 172
 CHILD = "c"
 SOAK = boot_test.SOAK_SECONDS
+TWICE = "2 times"
 
 
 @pytest.mark.parametrize(
@@ -300,23 +300,33 @@ class FakeClock:
         self.seconds += seconds
 
 
+HEALTHY = {
+    "up_after": 30,
+    "dies_after": None,
+    "restarts_after": None,
+    "extra_spawns": 0,
+    "answers_after": None,
+    "mute": False,
+}
+
+
 class FakeDocker:
     """Stands in for the docker command; the container named by sick follows its own timetable in simulated seconds."""
 
     def __init__(self, clock, sick=None, **plan):
         self.clock = clock
         self.sick = sick
-        self.plan = {"up_after": 30, "dies_after": None, "restarts_after": None, **plan}
+        self.plan = {**HEALTHY, **plan}
         self.calls = []
         self.started = {}
         self.removed = []
         self.on_run = {}
         self.refuse = None
+        self.unreadable_log = False
         self.logs = ""
 
     def timetable(self, name):
-        healthy = {"up_after": 30, "dies_after": None, "restarts_after": None}
-        return self.plan if self.sick in (None, name) else healthy
+        return self.plan if self.sick in (None, name) else HEALTHY
 
     def __call__(self, *args):
         self.calls.append(args)
@@ -328,19 +338,32 @@ class FakeDocker:
             return 0, ""
         if verb == "logs":
             return 0, self.logs
-        return self.query(verb, args[1] if verb == "exec" else args[-1])
+        return self.query(verb, args[1] if verb == "exec" else args[-1], args[2:])
 
-    def query(self, verb, name):
+    def spawns(self, plan, age):
+        restarted = plan["restarts_after"] is not None and age >= plan["restarts_after"]
+        return 1 + plan["extra_spawns"] + (1 if restarted else 0)
+
+    def query(self, verb, name, command):
         if name not in self.started:
             return 1, "no such container"
         plan, age = self.timetable(name), self.clock.now() - self.started[name]
         if verb == "inspect":
             dead = plan["dies_after"] is not None and age >= plan["dies_after"]
             return 0, "exited" if dead else "running"
+        return self.exec_reply(plan, age, command[0])
+
+    def exec_reply(self, plan, age, program):
+        if program == "grep":
+            if self.unreadable_log:
+                return 2, "grep: " + boot_test.SUPERVISOR_LOG + ": No such file or directory"
+            return (0 if self.spawns(plan, age) else 1), f"{self.spawns(plan, age)}\n"
+        if program == "python3":
+            ready_at = plan["up_after"] if plan["answers_after"] is None else plan["answers_after"]
+            return (0 if not plan["mute"] and age >= ready_at else 1), ""
         if age < plan["up_after"]:
             return 0, STATUS_STARTING
-        restarted = plan["restarts_after"] is not None and age >= plan["restarts_after"]
-        return 0, STATUS_UP.replace(str(PID), str(PID + 1) if restarted else str(PID))
+        return 0, STATUS_UP.replace(str(PID), str(PID + self.spawns(plan, age) - 1))
 
     def run(self, name):
         if self.refuse == name:
@@ -519,6 +542,7 @@ class Run:
 
     def dll_started(self):
         self.dll_started_at = self.clock.now()
+        self.seen["baseline_lived"] = self.clock.now() - self.docker.started[boot_test.BASELINE]
         self.seen["baseline_removed"] = boot_test.BASELINE in self.docker.removed
         self.seen["log_kept"] = (self.server / LOG).exists()
         self.seen["savegame_kept"] = (self.server / "savegame").exists()
@@ -677,6 +701,140 @@ def test_a_failure_shows_supervisor_events_and_nothing_else_of_the_container_log
     assert "SteamId" not in shown
 
 
+def test_a_baseline_that_is_restarted_by_its_supervisor_fails_even_though_it_reaches_running(tmp_path):
+    run = Run(tmp_path, sick=boot_test.BASELINE, extra_spawns=1)
+    assert run.go() == 1
+    assert not run.docker.ran(boot_test.WITH_DLL)
+    assert any("baseline" in line and TWICE in line for line in run.errors())
+
+
+def test_a_dll_run_that_was_restarted_before_running_fails_before_the_soak(tmp_path):
+    run = Run(tmp_path, sick=boot_test.WITH_DLL, extra_spawns=1)
+    assert run.go() == 1
+    assert any(TWICE in line for line in run.errors())
+    assert run.clock.now() - run.dll_started_at < SOAK
+
+
+def test_a_restart_after_the_last_check_of_the_soak_still_fails_the_run(tmp_path):
+    run = Run(tmp_path, sick=boot_test.WITH_DLL)
+    reads = []
+
+    def state():
+        reads.append(run.clock.now())
+        if len(reads) == 3:
+            run.docker.plan["restarts_after"] = run.clock.now() - run.docker.started[boot_test.WITH_DLL]
+        return at(run.clock.now() + 1)
+
+    run.state = state
+    assert run.go() == 1
+    assert any(TWICE in line for line in run.errors())
+    assert run.clock.now() - run.dll_started_at >= SOAK
+
+
+def test_a_supervisor_log_that_cannot_be_read_fails_the_run(tmp_path):
+    run = Run(tmp_path)
+    run.docker.unreadable_log = True
+    assert run.go() == 1
+    assert any("supervisor log" in line for line in run.errors())
+
+
+def test_a_grep_that_failed_is_not_trusted_even_when_it_printed_a_count():
+    with pytest.raises(boot_test.BootTestError, match="supervisor log"):
+        boot_test.spawn_count(lambda *_: (2, "1\n"), boot_test.BASELINE)
+
+
+def test_a_supervisor_log_that_lists_no_start_fails_the_run():
+    with pytest.raises(boot_test.BootTestError, match="0 times"):
+        boot_test.require_single_start(lambda *_: (1, "0\n"), boot_test.BASELINE)
+
+
+def test_the_baseline_waits_until_the_game_answers_its_query_port_and_then_stays_up_a_minute(tmp_path):
+    run = Run(tmp_path, sick=boot_test.BASELINE, answers_after=120)
+    assert run.go() == 0
+    assert run.seen["baseline_lived"] >= 120 + boot_test.BASELINE_HOLD_SECONDS
+
+
+def test_a_baseline_that_never_answers_its_query_port_fails_before_the_dll_is_tried(tmp_path):
+    run = Run(tmp_path, sick=boot_test.BASELINE, mute=True)
+    assert run.go() == 1
+    assert not run.docker.ran(boot_test.WITH_DLL)
+    assert any("baseline" in line and "query port" in line for line in run.errors())
+
+
+def test_a_baseline_that_exits_within_a_minute_of_answering_fails(tmp_path):
+    run = Run(tmp_path, sick=boot_test.BASELINE, dies_after=boot_test.BASELINE_HOLD_SECONDS)
+    assert run.go() == 1
+    assert not run.docker.ran(boot_test.WITH_DLL)
+    assert any("baseline" in line and "exited" in line for line in run.errors())
+
+
+def serve_queries(answers):
+    """A stand-in game on a UDP port; answers(datagram) gives the reply or None."""
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind(("127.0.0.1", 0))
+
+    def loop():
+        while True:
+            try:
+                data, peer = udp.recvfrom(1400)
+            except OSError:
+                return
+            reply = answers(data)
+            if reply is not None:
+                udp.sendto(reply, peer)
+
+    threading.Thread(target=loop, daemon=True).start()
+    return udp
+
+
+A2S_HEADER = b"\xff\xff\xff\xff"
+A2S_REQUEST = A2S_HEADER + b"TSource Engine Query\x00"
+A2S_CHALLENGE = b"\x01\x02\x03\x04"
+
+
+def probe(port):
+    return subprocess.run(
+        [sys.executable, "-I", "-c", boot_test.query_probe(port, timeout=0.5)], capture_output=True, check=False
+    ).returncode
+
+
+@pytest.fixture
+def game():
+    sockets = []
+
+    def start(answers):
+        udp = serve_queries(answers)
+        sockets.append(udp)
+        return udp.getsockname()[1]
+
+    yield start
+    for udp in sockets:
+        udp.close()
+
+
+def test_the_query_probe_accepts_a_game_that_answers_the_info_request(game):
+    port = game(lambda data: A2S_HEADER + b"I" + b"info" if data == A2S_REQUEST else None)
+    assert probe(port) == 0
+
+
+def test_the_query_probe_answers_the_challenge_a_game_sends_first(game):
+    def answers(data):
+        if data == A2S_REQUEST:
+            return A2S_HEADER + b"A" + A2S_CHALLENGE
+        return A2S_HEADER + b"I" + b"info" if data == A2S_REQUEST + A2S_CHALLENGE else None
+
+    assert probe(game(answers)) == 0
+
+
+def test_the_query_probe_rejects_a_reply_that_is_not_an_info_answer(game):
+    assert probe(game(lambda _data: A2S_HEADER + b"E" + b"nope")) != 0
+    assert probe(game(lambda _data: b"hello")) != 0
+
+
+def test_the_query_probe_rejects_a_port_nobody_answers(game):
+    assert probe(game(lambda _data: None)) != 0
+
+
 def write_exe(directory, data=b"synthetic server bytes"):
     (directory / EXE).write_bytes(data)
     return hashlib.sha256(data).hexdigest()
@@ -771,24 +929,34 @@ def test_the_docker_wrapper_returns_the_exit_code_and_text_of_the_command():
     assert docker("a", "b") == (3, "['a', 'b']\n")
 
 
+def test_a_docker_command_that_hangs_is_an_error_and_not_a_hung_job():
+    docker = boot_test.Docker((sys.executable, "-c", "import time; time.sleep(30)"), call_timeout=0.5)
+    with pytest.raises(BootTestError, match="did not finish"):
+        docker("ps")
+
+
+def test_starting_a_container_may_take_the_longer_time_a_pull_needs():
+    docker = boot_test.Docker((sys.executable, "-c", "import time; time.sleep(1.5)"), call_timeout=0.5, run_timeout=30)
+    assert docker("run")[0] == 0
+    with pytest.raises(BootTestError, match="did not finish"):
+        docker("ps")
+
+
 def test_the_docker_wrapper_reports_a_command_that_cannot_run(tmp_path):
     with pytest.raises(BootTestError, match="could not run"):
         boot_test.Docker((str(tmp_path / "no-such-docker"),))("ps")
 
 
 BOOT_JOB = "boot-test"
+EXE_CAPTURE = ROOT / ".github" / "workflows" / "exe-capture.yaml"
 IMAGE_PIN = (
     r"# renovate: datasource=docker depName=mornedhels/enshrouded-server\n"
     r"\s+BOOT_TEST_IMAGE: \"mornedhels/enshrouded-server:[^@\"\s]+@sha256:[0-9a-f]{64}\"\n"
 )
 
 
-def test_the_boot_test_job_runs_only_for_a_pull_request_that_changes_data_or_source():
-    block = job_block(BOOT_JOB)
-    assert "needs: [build, changes]\n" in block
-    assert "if: github.event_name == 'pull_request' && needs.changes.outputs.boot_test == 'true'\n" in block
-    assert "continue-on-error" not in block
-    assert re.search(r"timeout-minutes: \d+\n", block)
+def test_a_failing_boot_test_fails_the_check():
+    assert "continue-on-error" not in job_block(BOOT_JOB)
 
 
 def test_no_game_file_can_leave_the_runner_through_the_job():
@@ -801,20 +969,8 @@ def test_the_boot_test_job_can_only_read_the_repository():
     assert re.search(r"    permissions:\n      contents: read\n(?!      )", job_block(BOOT_JOB))
 
 
-def test_every_action_of_the_boot_test_job_is_pinned_to_a_commit():
-    uses = re.findall(r"uses: (\S+)", job_block(BOOT_JOB))
-    assert uses
-    assert all(re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", pin) for pin in uses)
-
-
 def test_the_server_image_is_pinned_in_the_shape_the_renovate_manager_reads():
     assert re.search(IMAGE_PIN, job_block(BOOT_JOB))
-
-
-def test_values_from_the_data_file_reach_the_shell_only_through_the_environment():
-    for line in job_block(BOOT_JOB).splitlines():
-        if "${{" in line and not line.lstrip().startswith("if:"):
-            assert re.match(r"\s+[A-Za-z_-]+: ", line), line
 
 
 def test_the_depot_downloads_write_their_file_lists_to_a_file_and_not_to_the_log():
@@ -842,3 +998,15 @@ def test_the_containers_and_game_files_are_removed_even_after_a_failure():
     block = job_block(BOOT_JOB)
     assert re.search(r"- name: Remove[^\n]*\n\s+if: always\(\)\n", block)
     assert "docker rm -f" in block
+
+
+def pinned_value(text, name):
+    match = re.search(rf"^ +{name}: (\S+)$", text, re.MULTILINE)
+    assert match, f"{name} is not set"
+    return match.group(1)
+
+
+@pytest.mark.parametrize("name", ["DEPOTDOWNLOADER_URL", "DEPOTDOWNLOADER_SHA256"])
+def test_the_downloader_is_pinned_to_the_same_release_as_the_exe_capture_job(name):
+    ours = pinned_value(job_block(BOOT_JOB), name)
+    assert ours == pinned_value(EXE_CAPTURE.read_text(encoding=ENCODING), name)

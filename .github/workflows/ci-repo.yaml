@@ -30,9 +30,17 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Classify
+      - name: Classify with the base commit's classifier
         id: classify
-        run: python3 -B tools/data_only.py classify
+        run: |
+          set -euo pipefail
+          classifier="${RUNNER_TEMP}/data_only.py"
+          if git show HEAD^1:tools/data_only.py > "$classifier"; then
+            python3 -B -I "$classifier" classify
+          else
+            echo "::notice::The base commit has no classifier; this pull request counts as code."
+            printf 'data_only=false\nboot_test=true\n' >> "$GITHUB_OUTPUT"
+          fi
 
   data-only:
     needs: changes
@@ -49,8 +57,9 @@ jobs:
 
       - name: Install the validator
         run: |
+          set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps -r tools/requirements-test.txt
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --only-binary :all: --require-hashes --no-deps -r tools/requirements-test.txt
 
       - name: Validate data/builds.json against its schema
         run: '"$RUNNER_TEMP/venv/bin/python" -B tools/data_only.py validate'
@@ -279,7 +288,7 @@ jobs:
     needs: [build, changes]
     if: github.event_name == 'pull_request' && needs.changes.outputs.boot_test == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 65
     permissions:
       contents: read
     env:
@@ -334,9 +343,9 @@ jobs:
           server="${WORK}/enshrouded/server"
           log="${WORK}/depotdownloader.log"
           mkdir -p "$server"
-          timeout 1500 "${WORK}/tools/DepotDownloader" -app "$APP_ID" -depot "$DEPOT_ID" -manifest "$MANIFEST_GID" -dir "$server" > "$log" 2>&1 \
+          timeout 900 "${WORK}/tools/DepotDownloader" -app "$APP_ID" -depot "$DEPOT_ID" -manifest "$MANIFEST_GID" -dir "$server" > "$log" 2>&1 \
             || { echo "::error::The anonymous Steam download of depot ${DEPOT_ID} manifest ${MANIFEST_GID} failed."; exit 1; }
-          timeout 600 "${WORK}/tools/DepotDownloader" -app 1007 -depot 1004 -dir "$server" >> "$log" 2>&1 \
+          timeout 300 "${WORK}/tools/DepotDownloader" -app 1007 -depot 1004 -dir "$server" >> "$log" 2>&1 \
             || { echo "::error::The anonymous Steam download of the Steamworks redistributables failed."; exit 1; }
           echo "downloaded $(du -sh "$server" | cut -f1)"
 

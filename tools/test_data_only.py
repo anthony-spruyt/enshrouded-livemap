@@ -2,8 +2,12 @@
 
 import copy
 import json
+import os
 import re
+import shutil
 import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import data_only
@@ -16,9 +20,11 @@ DATA = data_only.DATA_FILE
 SCHEMA = data_only.SCHEMA_FILE
 CODE = "src/main.cpp"
 BOOT_TEST_TOOL = "tools/boot_test.py"
+CLASSIFIER = "tools/data_only.py"
 CI_WORKFLOW = ".github/workflows/ci-repo.yaml"
 CLASSIFY = "classify"
 VALIDATE = "validate"
+COUNTS_AS_CODE = "data_only=false\nboot_test=true\n"
 GIT = ("git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false")
 README = "README.md"
 BASE_FILES = {README: "x\n", DATA: "x\n", CODE: "x\n"}
@@ -79,23 +85,32 @@ def real():
     )
 
 
+def edit(path, status="M", old="100644", new="100644"):
+    return data_only.Change(path, status, old, new)
+
+
 @pytest.mark.parametrize(
-    ("paths", "expected"),
+    ("changes", "expected"),
     [
-        ([DATA], True),
+        ([edit(DATA)], True),
         ([], False),
-        ([CODE], False),
-        ([DATA, CODE], False),
-        ([DATA, SCHEMA], False),
-        ([SCHEMA], False),
-        ([DATA + ".bak"], False),
-        (["Data/builds.json"], False),
-        (["./" + DATA], False),
-        ([DATA, DATA], False),
+        ([edit(CODE)], False),
+        ([edit(DATA), edit(CODE)], False),
+        ([edit(DATA), edit(SCHEMA)], False),
+        ([edit(SCHEMA)], False),
+        ([edit(DATA + ".bak")], False),
+        ([edit("Data/builds.json")], False),
+        ([edit("./" + DATA)], False),
+        ([edit(DATA), edit(DATA)], False),
+        ([edit(DATA, new="100755")], False),
+        ([edit(DATA, "T", "100644", "120000")], False),
+        ([edit(DATA, "M", "120000", "120000")], False),
+        ([edit(DATA, "A", "000000", "100644")], False),
+        ([edit(DATA, "D", "100644", "000000")], False),
     ],
 )
-def test_only_a_change_to_builds_json_alone_is_data_only(paths, expected):
-    assert data_only.is_data_only(paths) is expected
+def test_only_a_plain_edit_of_builds_json_alone_is_data_only(changes, expected):
+    assert data_only.is_data_only(changes) is expected
 
 
 @pytest.mark.parametrize(
@@ -107,30 +122,40 @@ def test_only_a_change_to_builds_json_alone_is_data_only(paths, expected):
         (["src/deep/er.h"], True),
         ([BOOT_TEST_TOOL], True),
         ([CI_WORKFLOW], True),
+        ([CLASSIFIER], True),
+        (["CMakeLists.txt"], True),
+        (["cmake/builds.cmake"], True),
         ([README, "web/index.html", "tools/render_map.py"], False),
         (["source/main.cpp", "database/x.json", "Data/builds.json"], False),
+        (["cmakelists.txt", "cmake.txt", "xcmake/a.cmake"], False),
         ([], False),
         ([README, CODE], True),
     ],
 )
-def test_the_boot_test_runs_for_data_and_source_and_for_its_own_files(paths, expected):
+def test_the_boot_test_runs_for_data_and_source_and_for_what_builds_or_runs_it(paths, expected):
     assert data_only.needs_boot_test(paths) is expected
 
 
-def test_changed_paths_lists_what_the_pull_request_changes_against_its_base(tmp_path):
+def paths_of(changes):
+    return [change.path for change in changes]
+
+
+def test_changed_files_lists_what_the_pull_request_changes_against_its_base(tmp_path):
     repo = make_merge(tmp_path, touch(DATA, CODE), base=touch(README))
-    assert sorted(data_only.changed_paths(repo)) == [DATA, CODE]
+    changes = data_only.changed_files(repo)
+    assert sorted(paths_of(changes)) == [DATA, CODE]
+    assert {change[1:] for change in changes} == {("M", "100644", "100644")}
 
 
-def test_changed_paths_keeps_unusual_names_whole(tmp_path):
+def test_changed_files_keeps_unusual_names_whole(tmp_path):
     odd = "data/odd nameé.txt"
     repo = make_merge(tmp_path, touch(odd))
-    assert data_only.changed_paths(repo) == [odd]
+    assert paths_of(data_only.changed_files(repo)) == [odd]
 
 
 def test_a_deleted_file_counts_as_a_change(tmp_path):
     repo = make_merge(tmp_path, lambda r: (r / CODE).unlink())
-    assert data_only.changed_paths(repo) == [CODE]
+    assert data_only.changed_files(repo) == [edit(CODE, "D", "100644", "000000")]
 
 
 def test_a_rename_lists_both_paths(tmp_path):
@@ -141,9 +166,37 @@ def test_a_rename_lists_both_paths(tmp_path):
         git(repo, "mv", DATA, moved)
 
     repo = make_merge(tmp_path, rename, files={DATA: "same content " * 40})
-    changed = data_only.changed_paths(repo)
-    assert sorted(changed) == [DATA, moved]
+    changed = data_only.changed_files(repo)
+    assert sorted(paths_of(changed)) == [DATA, moved]
     assert not data_only.is_data_only(changed)
+
+
+def test_a_plain_edit_of_builds_json_is_data_only(tmp_path):
+    repo = make_merge(tmp_path, touch(DATA))
+    assert data_only.is_data_only(data_only.changed_files(repo))
+
+
+def test_a_mode_change_of_builds_json_is_not_data_only(tmp_path):
+    def make_executable(repo):
+        git(repo, "update-index", "--chmod=+x", DATA)
+        (repo / DATA).chmod(0o755)
+
+    repo = make_merge(tmp_path, make_executable)
+    changes = data_only.changed_files(repo)
+    assert paths_of(changes) == [DATA]
+    assert not data_only.is_data_only(changes)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need a privilege on Windows")
+def test_a_symbolic_link_in_place_of_builds_json_is_not_data_only(tmp_path):
+    def link(repo):
+        (repo / DATA).unlink()
+        os.symlink("../" + README, repo / DATA)
+
+    repo = make_merge(tmp_path, link)
+    changes = data_only.changed_files(repo)
+    assert paths_of(changes) == [DATA]
+    assert not data_only.is_data_only(changes)
 
 
 def test_a_checkout_that_is_not_a_merge_commit_is_refused(tmp_path):
@@ -151,12 +204,12 @@ def test_a_checkout_that_is_not_a_merge_commit_is_refused(tmp_path):
     write(repo, DATA, "two\n")
     commit_all(repo, "two")
     with pytest.raises(DataOnlyError, match="merge commit"):
-        data_only.changed_paths(repo)
+        data_only.changed_files(repo)
 
 
 def test_a_missing_git_checkout_is_an_error(tmp_path):
     with pytest.raises(DataOnlyError, match="git"):
-        data_only.changed_paths(tmp_path)
+        data_only.changed_files(tmp_path)
 
 
 def test_the_shipped_builds_file_validates_against_the_shipped_schema(real):
@@ -189,6 +242,35 @@ def mutated(builds, edit):
 def test_a_file_that_breaks_the_schema_is_reported(real, edit):
     builds, schema = real
     assert data_only.schema_errors(mutated(builds, edit), schema)
+
+
+def set_buildid(builds, text):
+    first_build(builds)["buildids"][0] = text
+
+
+SHAPES = {
+    "buildid": (set_buildid, "26430253"),
+    "label": (lambda b, text: first_build(b).update(label=text), "abc"),
+    "depot": (lambda b, text: first_build(b)["steam"].update(depot=text), "2278521"),
+    "site": (lambda b, text: b["sigsets"]["launch"][0].update(site=text), "player_table"),
+}
+
+
+@pytest.mark.parametrize("char", ["\n", "\r", "\t", "\x00", "\x1b", "\x7f", "\x85", "\u2028"])
+@pytest.mark.parametrize("field", SHAPES)
+def test_a_non_printing_character_is_reported_even_where_a_pattern_passes_it(real, field, char):
+    builds, schema = real
+    edit, valid = SHAPES[field]
+    assert data_only.schema_errors(mutated(builds, lambda b: edit(b, valid)), schema) == []
+    errors = data_only.schema_errors(mutated(builds, lambda b: edit(b, valid + char)), schema)
+    assert any("non-printing character" in error for error in errors)
+
+
+def test_a_key_with_a_newline_is_reported_without_a_raw_newline(real):
+    builds, schema = real
+    errors = data_only.schema_errors(mutated(builds, lambda b: first_build(b).update({"x\ny": 1})), schema)
+    assert any("non-printing" in error for error in errors)
+    assert not any("\n" in error for error in errors)
 
 
 def test_errors_name_where_the_file_is_wrong(real):
@@ -242,7 +324,7 @@ def test_classify_reports_true_for_a_data_only_change(tmp_path, monkeypatch, cap
 
 def test_classify_reports_false_for_a_code_change_and_still_succeeds(tmp_path, monkeypatch):
     repo = make_merge(tmp_path, touch(DATA, CODE))
-    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, "data_only=false\nboot_test=true\n")
+    assert run_main([CLASSIFY], repo, tmp_path, monkeypatch) == (0, COUNTS_AS_CODE)
 
 
 def test_classify_reports_no_boot_test_for_a_change_outside_data_and_source(tmp_path, monkeypatch):
@@ -288,19 +370,68 @@ def job_block(name):
     return match.group(1)
 
 
-def test_the_data_only_check_runs_only_for_a_pull_request_the_classifier_calls_data_only():
-    block = job_block("data-only")
-    assert "needs: changes\n" in block
-    assert "if: needs.changes.outputs.data_only == 'true'\n" in block
-    assert "continue-on-error" not in block
-    assert "always()" not in block
+def step_script(job, step_id):
+    """The run script of one workflow step, cut out of the workflow text."""
+    steps = re.split(r"^      - ", job_block(job), flags=re.MULTILINE)[1:]
+    step = next((text for text in steps if re.search(rf"^        id: {step_id}$", text, re.MULTILINE)), "")
+    block = re.search(r"^        run: \|\n((?:          .*\n|\n)+)", step, re.MULTILINE)
+    assert block, f"no run script on step {step_id} of job {job}"
+    return textwrap.dedent(block.group(1))
 
 
-def test_the_classifier_job_reads_the_merge_commit_and_exposes_its_answer():
-    block = job_block("changes")
-    assert "if: github.event_name == 'pull_request'\n" in block
-    assert "fetch-depth: 2\n" in block
-    assert "\n          ref:" not in block
-    assert "id: classify\n" in block
-    assert "data_only: ${{ steps.classify.outputs.data_only }}\n" in block
-    assert "boot_test: ${{ steps.classify.outputs.boot_test }}\n" in block
+SELF_CLAIM = (
+    "import os\n"
+    'with open(os.environ["GITHUB_OUTPUT"], "a") as out:\n'
+    '    out.write("data_only=true\\nboot_test=false\\n")\n'
+)
+CLASSIFY_STEP = ("changes", "classify")
+needs_bash_and_posix = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None, reason="the step is a bash script for a Linux runner"
+)
+
+
+def run_step(script, repo, tmp_path):
+    runner_temp = tmp_path / "runner"
+    shim = runner_temp / "bin"
+    shim.mkdir(parents=True)
+    (shim / "python3").symlink_to(sys.executable)
+    env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"}
+    env.update(RUNNER_TEMP=str(runner_temp), GITHUB_OUTPUT=str(tmp_path / "github-output"))
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = Path(env["GITHUB_OUTPUT"])
+    return result.returncode, output.read_text(encoding=ENCODING) if output.exists() else ""
+
+
+def classify_pull_request(tmp_path, head, base_files):
+    repo = make_merge(tmp_path, head, files=base_files)
+    return run_step(step_script(*CLASSIFY_STEP), repo, tmp_path)
+
+
+WITH_CLASSIFIER = {**BASE_FILES, CLASSIFIER: (ROOT / CLASSIFIER).read_text(encoding=ENCODING)}
+
+
+@needs_bash_and_posix
+def test_the_base_commits_classifier_sorts_a_data_only_pull_request(tmp_path):
+    assert classify_pull_request(tmp_path, touch(DATA), WITH_CLASSIFIER) == (0, "data_only=true\nboot_test=true\n")
+
+
+@needs_bash_and_posix
+def test_a_pull_request_cannot_vouch_for_itself_with_its_own_classifier(tmp_path):
+    def vouch(repo):
+        write(repo, CLASSIFIER, SELF_CLAIM)
+        write(repo, CODE, "changed\n")
+
+    assert classify_pull_request(tmp_path, vouch, WITH_CLASSIFIER) == (0, COUNTS_AS_CODE)
+
+
+@needs_bash_and_posix
+def test_a_pull_request_that_adds_the_classifier_is_code_and_gets_the_boot_test(tmp_path):
+    claim = classify_pull_request(tmp_path, lambda r: write(r, CLASSIFIER, SELF_CLAIM), BASE_FILES)
+    assert claim == (0, COUNTS_AS_CODE)

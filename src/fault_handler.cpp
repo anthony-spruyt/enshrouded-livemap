@@ -1,170 +1,150 @@
 #include "fault_handler.h"
 
-#include <windows.h>
+#include <Windows.h>
 
-#include <algorithm>
+#include <array>
 #include <atomic>
+#include <bit>
 #include <cstring>
+#include <span>
+#include <string_view>
 #include <utility>
-
-#include "fault.h"
 
 namespace livemap::fault {
 
 namespace {
 
-constexpr size_t kNoSlot = SIZE_MAX;
 constexpr size_t kAnchorSize = 2;
 constexpr size_t kLineCapacity = 192;
-constexpr char kProbeSection[] = ".lmprobe";
+constexpr uintptr_t kInvalidHandle = ~uintptr_t{0};
+constexpr std::string_view kProbeSection = ".lmprobe";
+static_assert(kProbeSection.size() == IMAGE_SIZEOF_SHORT_NAME);
 
-// The handler reads these while the process crashes: each is set before it is registered or published through g_table.
-Range g_module;
-Range g_probes;
-Region g_entries[kMaxRegions];
-std::atomic<const Region*> g_table[kMaxRegions];
-std::atomic<size_t> g_used{0};
-std::atomic<bool> g_written{false};
-std::atomic<void*> g_file{nullptr};
-std::atomic<void*> g_handler{nullptr};
-thread_local const char* t_site = nullptr;
+// Set before the handler is registered; the regions publish atomically, so the handler reads them without a lock.
+struct State {
+    Layout layout;
+    std::atomic<bool> written{false};
+    std::atomic<uintptr_t> file{0};
+    std::atomic<uintptr_t> handler{0};
+};
 
-HMODULE this_module() {
+// constinit: the first call may be the handler's, which must not take an init guard.
+State& state() {
+    static constinit State instance;
+    return instance;
+}
+
+const char*& current_site() {
+    static constinit thread_local const char* site = nullptr;
+    return site;
+}
+
+uintptr_t this_module() {
     HMODULE module = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       reinterpret_cast<LPCWSTR>(&this_module), &module);
-    return module;
+                       std::bit_cast<LPCWSTR>(&this_module), &module);
+    return std::bit_cast<uintptr_t>(module);
 }
 
-const IMAGE_NT_HEADERS* headers_of(HMODULE module) {
-    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
-    return reinterpret_cast<const IMAGE_NT_HEADERS*>(reinterpret_cast<const uint8_t*>(module) + dos->e_lfanew);
+uintptr_t exe_module() {
+    return std::bit_cast<uintptr_t>(GetModuleHandleW(nullptr));
 }
 
-Range image_range(HMODULE module) {
-    const auto base = reinterpret_cast<uintptr_t>(module);
-    return {base, base + headers_of(module)->OptionalHeader.SizeOfImage};
+const IMAGE_NT_HEADERS* headers_of(uintptr_t base) {
+    const auto* dos = std::bit_cast<const IMAGE_DOS_HEADER*>(base);
+    return std::bit_cast<const IMAGE_NT_HEADERS*>(base + static_cast<uintptr_t>(dos->e_lfanew));
 }
 
-Range probe_range(HMODULE module) {
-    const IMAGE_NT_HEADERS* nt = headers_of(module);
-    const IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
-    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
-        if (std::memcmp(section[i].Name, kProbeSection, IMAGE_SIZEOF_SHORT_NAME) == 0) {
-            const auto begin = reinterpret_cast<uintptr_t>(module) + section[i].VirtualAddress;
-            return {begin, begin + section[i].Misc.VirtualSize};
+Range image_range(uintptr_t base) {
+    return {base, base + headers_of(base)->OptionalHeader.SizeOfImage};
+}
+
+Range probe_range(uintptr_t base) {
+    const IMAGE_NT_HEADERS* nt = headers_of(base);
+    const std::span sections(IMAGE_FIRST_SECTION(nt), nt->FileHeader.NumberOfSections);
+    for (const IMAGE_SECTION_HEADER& section : sections) {
+        if (std::memcmp(section.Name, kProbeSection.data(), kProbeSection.size()) == 0) {
+            return {base + section.VirtualAddress, base + section.VirtualAddress + section.Misc.VirtualSize};
         }
     }
     return {};
 }
 
 // The whole allocation a hook's private allocator took, which holds the hook's stub and trampoline.
-Range block_of(const void* address) {
+Range block_of(uintptr_t address) {
     MEMORY_BASIC_INFORMATION inside{};
     MEMORY_BASIC_INFORMATION whole{};
-    if (VirtualQuery(address, &inside, sizeof inside) == 0 || VirtualQuery(inside.AllocationBase, &whole, sizeof whole) == 0) {
+    if (VirtualQuery(std::bit_cast<LPCVOID>(address), &inside, sizeof inside) == 0 ||
+        VirtualQuery(inside.AllocationBase, &whole, sizeof whole) == 0) {
         return {};
     }
-    const auto base = reinterpret_cast<uintptr_t>(inside.AllocationBase);
+    const auto base = std::bit_cast<uintptr_t>(inside.AllocationBase);
     return {base, base + whole.RegionSize};
 }
 
-size_t publish(const Range& range, const char* site) {
-    if (range.begin >= range.end) {
-        return kNoSlot;
-    }
-    const size_t slot = g_used.fetch_add(1);
-    if (slot >= kMaxRegions) {
-        return kNoSlot;
-    }
-    g_entries[slot] = {range, site};
-    g_table[slot].store(&g_entries[slot], std::memory_order_release);
-    return slot;
-}
-
-void retire(size_t slot) {
-    if (slot < kMaxRegions) {
-        g_table[slot].store(nullptr, std::memory_order_release);
-    }
-}
-
-size_t fill_layout(Layout& layout) {
-    layout.module = g_module;
-    layout.probes = g_probes;
-    size_t regions = 0;
-    const size_t used = std::min(g_used.load(std::memory_order_acquire), kMaxRegions);
-    for (size_t i = 0; i < used; ++i) {
-        if (const Region* entry = g_table[i].load(std::memory_order_acquire)) {
-            layout.regions[regions++] = *entry;
-        }
-    }
-    return regions;
-}
-
-void write_line(uint32_t code, const Verdict& verdict) {
-    SYSTEMTIME now;
+void write_line(const State& current, uint32_t code, const Verdict& verdict) {
+    SYSTEMTIME now{};
     GetSystemTime(&now);
     const Stamp stamp{now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds};
-    char line[kLineCapacity];
-    const char* site = verdict.site != nullptr ? verdict.site : t_site;
-    const size_t length = format_line(line, sizeof line, stamp, code, verdict.where, verdict.offset, site);
-    if (length > 0) {
+    std::array<char, kLineCapacity> line{};
+    if (const size_t length = format_line(line.data(), line.size(), stamp, code, verdict); length > 0) {
         DWORD written = 0;
-        WriteFile(g_file.load(std::memory_order_acquire), line, static_cast<DWORD>(length), &written, nullptr);
+        WriteFile(std::bit_cast<HANDLE>(current.file.load()), line.data(), static_cast<DWORD>(length), &written, nullptr);
     }
 }
 
 LONG CALLBACK on_exception(EXCEPTION_POINTERS* info) {
+    State& current = state();
     const auto code = static_cast<uint32_t>(info->ExceptionRecord->ExceptionCode);
-    if (!is_fault_code(code) || g_written.load(std::memory_order_relaxed)) {
+    if (!is_fault_code(code) || current.written.load()) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
-    Layout layout;
-    const size_t regions = fill_layout(layout);
-    const auto address = reinterpret_cast<uintptr_t>(info->ExceptionRecord->ExceptionAddress);
-    const Verdict verdict = classify(layout, regions, address, code);
-    if (verdict.where != Where::Outside && !g_written.exchange(true)) {
-        write_line(code, verdict);
+    const auto address = std::bit_cast<uintptr_t>(info->ExceptionRecord->ExceptionAddress);
+    if (const Verdict verdict = classify(current.layout, address, code, current_site());
+        verdict.where != Where::Outside && !current.written.exchange(true)) {
+        write_line(current, code, verdict);
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
 }  // namespace
 
-bool install(void* file) {
-    HMODULE self = this_module();
-    if (file == nullptr || file == INVALID_HANDLE_VALUE || self == nullptr || g_handler.load() != nullptr) {
+bool install(uintptr_t file) {
+    State& current = state();
+    const uintptr_t self = this_module();
+    if (file == 0 || file == kInvalidHandle || self == 0 || current.handler.load() != 0) {
         return false;
     }
-    SetFilePointerEx(file, LARGE_INTEGER{}, nullptr, FILE_END);
-    g_module = image_range(self);
-    g_probes = probe_range(self);
-    g_file.store(file, std::memory_order_release);
-    // Last in line: safetyhook's own handler runs first and takes the faults it causes on purpose.
-    void* handler = AddVectoredExceptionHandler(0, on_exception);
-    g_handler.store(handler);
-    return handler != nullptr;
+    SetFilePointerEx(std::bit_cast<HANDLE>(file), LARGE_INTEGER{}, nullptr, FILE_END);
+    current.layout.module = image_range(self);
+    current.layout.probes = probe_range(self);
+    current.layout.game = image_range(exe_module());
+    current.file.store(file);
+    // First, so an earlier handler cannot end the process before this one writes; a later first=1 handler, such as the hook library's, still runs ahead.
+    const auto handler = std::bit_cast<uintptr_t>(AddVectoredExceptionHandler(1, on_exception));
+    current.handler.store(handler);
+    return handler != 0;
 }
 
 void remove() {
-    if (void* handler = g_handler.exchange(nullptr)) {
-        RemoveVectoredExceptionHandler(handler);
+    if (const uintptr_t handler = state().handler.exchange(0); handler != 0) {
+        RemoveVectoredExceptionHandler(std::bit_cast<PVOID>(handler));
     }
 }
 
-SiteScope::SiteScope(const char* site) : previous_(t_site) {
-    t_site = site;
+SiteScope::SiteScope(const char* site) : previous_(current_site()) {
+    current_site() = site;
 }
 
 SiteScope::~SiteScope() {
-    t_site = previous_;
+    current_site() = previous_;
 }
 
 Hook::Hook(Hook&& other) noexcept : hook_(std::move(other.hook_)), slot_(std::exchange(other.slot_, kNoSlot)) {}
 
 Hook& Hook::operator=(Hook&& other) noexcept {
     if (this != &other) {
-        retire(slot_);
+        state().layout.regions.retire(slot_);
         hook_ = std::move(other.hook_);
         slot_ = std::exchange(other.slot_, kNoSlot);
     }
@@ -172,19 +152,19 @@ Hook& Hook::operator=(Hook&& other) noexcept {
 }
 
 Hook::~Hook() {
-    retire(slot_);
+    state().layout.regions.retire(slot_);
 }
 
-std::expected<Hook, safetyhook::MidHook::Error> Hook::create(const char* site, void* target,
+std::expected<Hook, safetyhook::MidHook::Error> Hook::create(const char* site, uintptr_t target,
                                                              safetyhook::MidHookFn callback) {
     const auto allocator = safetyhook::Allocator::create();
     // The first allocation of a private allocator opens the block that the hook's stub and trampoline then share.
-    auto anchor = allocator->allocate_near({static_cast<uint8_t*>(target)}, kAnchorSize);
+    auto anchor = allocator->allocate_near({std::bit_cast<uint8_t*>(target)}, kAnchorSize);
     if (!anchor) {
         return std::unexpected(safetyhook::MidHook::Error::bad_allocation(anchor.error()));
     }
     Hook created;
-    created.slot_ = publish(block_of(anchor->data()), site);
+    created.slot_ = state().layout.regions.publish(block_of(std::bit_cast<uintptr_t>(anchor->data())), site);
     auto hook = safetyhook::MidHook::create(allocator, target, callback);
     if (!hook) {
         return std::unexpected(hook.error());

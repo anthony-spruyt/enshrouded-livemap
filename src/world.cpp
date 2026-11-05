@@ -69,13 +69,21 @@ constexpr const char* kSiteMining = "mining";
 constexpr const char* kSiteChest = "chest";
 constexpr const char* kSiteBases = "bases";
 
-fault::Hook g_player_table_hook;
-fault::Hook g_movement_hook;
-fault::Hook g_daytime_hook;
-fault::Hook g_registry_hook;
-fault::Hook g_mining_hook;
-fault::Hook g_chest_hook;
-fault::Hook g_bases_hook;
+struct Hooks {
+    fault::Hook player_table;
+    fault::Hook movement;
+    fault::Hook daytime;
+    fault::Hook registry;
+    fault::Hook mining;
+    fault::Hook chest;
+    fault::Hook bases;
+};
+
+Hooks& hooks() {
+    static Hooks all;
+    return all;
+}
+
 finds::Store g_finds;
 bases::Store g_bases;
 discovered::Store g_discovered;
@@ -508,7 +516,7 @@ void log_raw_slot(int index, uintptr_t slot) {
 }
 
 bool create(fault::Hook& hook, uintptr_t at, safetyhook::MidHookFn fn, const char* name, std::string& error) {
-    auto h = fault::Hook::create(name, reinterpret_cast<void*>(at), fn);
+    auto h = fault::Hook::create(name, at, fn);
     if (!h) {
         error = std::string("could not hook ") + name;
         return false;
@@ -695,12 +703,12 @@ void install_bases(const Targets& t) {
         log("bases site not found: Flame Altars are off");
         return;
     }
-    auto h = fault::Hook::create(kSiteBases, reinterpret_cast<void*>(t.bases), on_base);
+    auto h = fault::Hook::create(kSiteBases, t.bases, on_base);
     if (!h) {
         log("could not hook bases: Flame Altars are off");
         return;
     }
-    g_bases_hook = std::move(*h);
+    hooks().bases = std::move(*h);
     log("hooked %-12s at %llx", kSiteBases, static_cast<unsigned long long>(t.bases));
 }
 
@@ -710,12 +718,12 @@ void install_mining(const Targets& t) {
         return;
     }
     g_mining_layout.store(t.mining_layout, std::memory_order_relaxed);
-    auto h = fault::Hook::create(kSiteMining, reinterpret_cast<void*>(t.mining), on_mining);
+    auto h = fault::Hook::create(kSiteMining, t.mining, on_mining);
     if (!h) {
         log("could not hook mining: ore finds are off");
         return;
     }
-    g_mining_hook = std::move(*h);
+    hooks().mining = std::move(*h);
     log("hooked %-12s at %llx", kSiteMining, static_cast<unsigned long long>(t.mining));
 }
 
@@ -724,12 +732,12 @@ void install_chest(const Targets& t) {
         log("chest site not found: looted chests are off");
         return;
     }
-    auto h = fault::Hook::create(kSiteChest, reinterpret_cast<void*>(t.chest), on_chest);
+    auto h = fault::Hook::create(kSiteChest, t.chest, on_chest);
     if (!h) {
         log("could not hook chest: looted chests are off");
         return;
     }
-    g_chest_hook = std::move(*h);
+    hooks().chest = std::move(*h);
     log("hooked %-12s at %llx", kSiteChest, static_cast<unsigned long long>(t.chest));
 }
 
@@ -750,16 +758,16 @@ bool install(const Targets& t, std::string& error) {
     entity_table().store(t.entity_table);
     log("entity ids  at world+0x%x (param_entity at %llx)", t.entity_table,
         static_cast<unsigned long long>(t.param_entity));
-    if (create(g_player_table_hook, t.player_table, on_player_table, kSitePlayerTable, error) &&
-        create(g_movement_hook, t.movement, on_movement, kSiteMovement, error) &&
-        create(g_daytime_hook, t.daytime, on_daytime, kSiteDaytime, error) &&
-        create(g_registry_hook, t.registry, on_registry, kSiteRegistry, error)) {
+    if (create(hooks().player_table, t.player_table, on_player_table, kSitePlayerTable, error) &&
+        create(hooks().movement, t.movement, on_movement, kSiteMovement, error) &&
+        create(hooks().daytime, t.daytime, on_daytime, kSiteDaytime, error) &&
+        create(hooks().registry, t.registry, on_registry, kSiteRegistry, error)) {
         return true;
     }
-    g_registry_hook = {};
-    g_daytime_hook = {};
-    g_movement_hook = {};
-    g_player_table_hook = {};
+    hooks().registry = {};
+    hooks().daytime = {};
+    hooks().movement = {};
+    hooks().player_table = {};
     return false;
 }
 

@@ -122,9 +122,9 @@ used instead. `DetectPublicAddress=0` stops the IP lookup entirely.
 `livemap.log` is next to the server exe and is written while `Log` is `1`. Each line starts with a
 UTC timestamp and ends in CRLF.
 
-When the process hits a fault in the mod's own code or in the memory of one of its hooks, the mod
-writes one line first, at most once per run, and does not stop the fault: the process ends the
-normal way.
+When the process hits a fault in the mod's own code, in the memory of one of its hooks, or in game
+code that one of its hook callbacks called, the mod writes one line first, at most once per run,
+and does not stop the fault: the process ends the normal way.
 
 ```text
 2000-01-02 03:04:05.678 [livemap] FAULT code=0xC0000005 at=livemap+0x000014A8 site=movement
@@ -133,11 +133,12 @@ normal way.
 | Field | Meaning |
 | --- | --- |
 | `code` | The exception code: `0x` and 8 upper-case hex digits. |
-| `at` | `livemap+0x...` is the offset from the start of `iphlpapi.dll`, 8 upper-case hex digits. `trampoline+0x...` is the offset into the memory holding one hook's stub and moved game instructions; the same hex form. |
-| `site` | The name of the hook whose callback or trampoline was running, or `none` when the fault is in the mod but in no hook (the names are in `src/world.cpp` and `src/announce.cpp`). |
+| `at` | `livemap+0x...` is the offset from the start of `iphlpapi.dll`, 8 upper-case hex digits. `trampoline+0x...` is the offset into the memory holding one hook's stub and moved game instructions; the same hex form. `game+0x...` is the offset from the start of the game exe, for a fault in game code while one of the mod's hook callbacks was running; the same hex form. |
+| `site` | The name of the hook whose callback or trampoline was running, or `none` when the fault is in the mod but in no hook (the names are in `src/world.cpp` and `src/announce.cpp`); a `game+0x...` line always names the hook. |
 
-The line tells a crash in the mod from a crash in the game. A bad read that the mod handles itself
-is not a fault and writes no line.
+The line tells a crash in the mod, or in game code a hook callback called, from a crash in the game
+on its own, which writes no line. A bad read that the mod handles itself is not a fault and writes
+no line.
 
 ## The map
 

@@ -7,11 +7,13 @@
 
 #include <safetyhook.hpp>
 
+#include "fault.h"
+
 namespace livemap::fault {
 
 // Registers a vectored handler that only observes: it always lets the search go on, so a fault still
-// takes the process down the normal way. `file` is an open handle to livemap.log, positioned at its end.
-bool install(void* file);
+// takes the process down the normal way. `file` is an open OS handle to livemap.log.
+bool install(uintptr_t file);
 
 // Run before the hooks go: a handler left behind would outlive the code it points into.
 void remove();
@@ -38,12 +40,12 @@ public:
     Hook& operator=(Hook&& other) noexcept;
     ~Hook();
 
-    static std::expected<Hook, safetyhook::MidHook::Error> create(const char* site, void* target,
+    static std::expected<Hook, safetyhook::MidHook::Error> create(const char* site, uintptr_t target,
                                                                   safetyhook::MidHookFn callback);
 
 private:
     safetyhook::MidHook hook_;
-    size_t slot_ = SIZE_MAX;
+    size_t slot_ = kNoSlot;
 };
 
 }  // namespace livemap::fault

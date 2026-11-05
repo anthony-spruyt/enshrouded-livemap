@@ -7,17 +7,10 @@ namespace {
 constexpr uint32_t kSeverityMask = 0xE0000000;
 constexpr uint32_t kErrorSeverity = 0xC0000000;
 constexpr uint32_t kDatatypeMisalignment = 0x80000002;
-constexpr uint32_t kAccessViolation = 0xC0000005;
-constexpr uint32_t kInPageError = 0xC0000006;
 constexpr size_t kMaxSite = 32;
 
 bool contains(const Range& range, uintptr_t address) {
     return address >= range.begin && address < range.end;
-}
-
-// What the probes in memory.cpp guard against with their own __except.
-bool is_bad_read(uint32_t code) {
-    return code == kAccessViolation || code == kInPageError;
 }
 
 class Writer {
@@ -75,13 +68,52 @@ private:
     bool ok_ = true;
 };
 
+const char* place_of(Where where) {
+    switch (where) {
+        case Where::Trampoline:
+            return "trampoline";
+        case Where::Game:
+            return "game";
+        default:
+            return "livemap";
+    }
+}
+
 }  // namespace
 
 bool is_fault_code(uint32_t code) {
     return (code & kSeverityMask) == kErrorSeverity || code == kDatatypeMisalignment;
 }
 
-Verdict classify(const Layout& layout, size_t regions, uintptr_t address, uint32_t code) {
+size_t RegionTable::publish(const Range& range, const char* site) {
+    if (range.begin >= range.end) {
+        return kNoSlot;
+    }
+    const size_t slot = used_.fetch_add(1);
+    if (slot >= kMaxRegions) {
+        return kNoSlot;
+    }
+    entries_[slot] = {range, site};
+    live_[slot].store(&entries_[slot]);
+    return slot;
+}
+
+void RegionTable::retire(size_t slot) {
+    if (slot < kMaxRegions) {
+        live_[slot].store(nullptr);
+    }
+}
+
+const Region* RegionTable::find(uintptr_t address) const {
+    for (const auto& slot : live_) {
+        if (const Region* region = slot.load(); region != nullptr && contains(region->range, address)) {
+            return region;
+        }
+    }
+    return nullptr;
+}
+
+Verdict classify(const Layout& layout, uintptr_t address, uint32_t code, const char* active_site) {
     if (!is_fault_code(code)) {
         return {};
     }
@@ -89,19 +121,18 @@ Verdict classify(const Layout& layout, size_t regions, uintptr_t address, uint32
         return {};
     }
     if (contains(layout.module, address)) {
-        return {Where::Module, static_cast<uint32_t>(address - layout.module.begin), nullptr};
+        return {Where::Module, static_cast<uint32_t>(address - layout.module.begin), active_site};
     }
-    for (size_t i = 0; i < regions && i < kMaxRegions; ++i) {
-        const Region& region = layout.regions[i];
-        if (contains(region.range, address)) {
-            return {Where::Trampoline, static_cast<uint32_t>(address - region.range.begin), region.site};
-        }
+    if (const Region* region = layout.regions.find(address)) {
+        return {Where::Trampoline, static_cast<uint32_t>(address - region->range.begin), region->site};
+    }
+    if (active_site != nullptr && contains(layout.game, address)) {
+        return {Where::Game, static_cast<uint32_t>(address - layout.game.begin), active_site};
     }
     return {};
 }
 
-size_t format_line(char* out, size_t capacity, const Stamp& at, uint32_t code, Where where, uint32_t offset,
-                   const char* site) {
+size_t format_line(char* out, size_t capacity, const Stamp& at, uint32_t code, const Verdict& verdict) {
     Writer w(out, capacity);
     w.decimal(at.year, 4);
     w.text("-");
@@ -118,10 +149,12 @@ size_t format_line(char* out, size_t capacity, const Stamp& at, uint32_t code, W
     w.decimal(at.millisecond, 3);
     w.text(" [livemap] FAULT code=");
     w.hex8(code);
-    w.text(where == Where::Trampoline ? " at=trampoline+" : " at=livemap+");
-    w.hex8(offset);
+    w.text(" at=");
+    w.text(place_of(verdict.where));
+    w.text("+");
+    w.hex8(verdict.offset);
     w.text(" site=");
-    w.site(site);
+    w.site(verdict.site);
     w.text("\r\n");
     return w.finish();
 }

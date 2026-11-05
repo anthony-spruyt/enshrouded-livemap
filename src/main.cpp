@@ -182,7 +182,7 @@ DWORD WINAPI start(LPVOID) {
     livemap::log_open(dir, config.log);
     livemap::log("livemap %s starting: Enabled=%d Port=%d%s real iphlpapi %s", kVersion, config.enabled, config.port,
                  config.port_from_game ? " (auto: the game's queryPort, TCP)" : "", g_real_loaded ? "loaded" : "MISSING");
-    if (void* const log_file = livemap::log_handle(); log_file != nullptr && !livemap::fault::install(log_file)) {
+    if (const uintptr_t log_file = livemap::log_handle(); log_file != 0 && !livemap::fault::install(log_file)) {
         livemap::log("fault line off: the exception handler could not be registered");
     }
     if (!livemap::link::key_ok(config.key)) {

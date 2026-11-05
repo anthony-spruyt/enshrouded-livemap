@@ -23,13 +23,13 @@ void log_open(const std::wstring& dir, bool enabled) {
     g_file = _wfsopen(path.c_str(), L"a", _SH_DENYWR);
 }
 
-void* log_handle() {
+uintptr_t log_handle() {
     std::lock_guard lock(g_mutex);
     if (g_file == nullptr) {
-        return nullptr;
+        return 0;
     }
     const intptr_t handle = _get_osfhandle(_fileno(g_file));
-    return handle == -1 ? nullptr : reinterpret_cast<void*>(handle);
+    return handle == -1 ? 0 : static_cast<uintptr_t>(handle);
 }
 
 void log(const char* fmt, ...) {

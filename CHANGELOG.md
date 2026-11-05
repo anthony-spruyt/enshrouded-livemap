@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.8.0](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.5...v1.8.0) (2026-11-05)
+
+
+### Features
+
+* **dll:** write a FAULT line when the map crashes the server ([#18](https://github.com/anthony-spruyt/enshrouded-livemap/issues/18)) ([7887a42](https://github.com/anthony-spruyt/enshrouded-livemap/commit/7887a421c80367ac0dbacae589414bf441f4af0b))
+
+
+### Dependencies
+
+* add actionlint, MegaLinter, CI workflows and lint config ([6ae0779](https://github.com/anthony-spruyt/enshrouded-livemap/commit/6ae077944e0f6b657f4135bb52eaee2460a10ef5))
+* set executable file modes ([91cd036](https://github.com/anthony-spruyt/enshrouded-livemap/commit/91cd036d6a4d29450800d6be4f635ee6f1b1b3ec))
+
+
+### Documentation
+
+* **repo-operator:** document outside Actions allowlist pattern setting ([9caabf7](https://github.com/anthony-spruyt/enshrouded-livemap/commit/9caabf79b386ab60d4e087b050116bc3e723e8e4))
+* **repo-operator:** note Actions allowlist ordering in skill table ([5a50d23](https://github.com/anthony-spruyt/enshrouded-livemap/commit/5a50d23fbb0e782de41fffd06c22a7ed85f73f69))
+* require full issue links and paired closing for security issues ([8615e62](https://github.com/anthony-spruyt/enshrouded-livemap/commit/8615e626804dacce96101267cb0a4d56627bbce3))
+
+
+### Continuous Integration
+
+* add a manual job that saves a server build's exe to the private store ([#16](https://github.com/anthony-spruyt/enshrouded-livemap/issues/16)) ([ca9a960](https://github.com/anthony-spruyt/enshrouded-livemap/commit/ca9a960a2e3e8061d3b02940f7bb11dea417d616))
+* adopt the shared lint and CI standards ([#8](https://github.com/anthony-spruyt/enshrouded-livemap/issues/8)) ([7ba514a](https://github.com/anthony-spruyt/enshrouded-livemap/commit/7ba514a14fa80d9a07f552add0fcedfd566c67b7))
+* pull the hook-check exe from the exe store ([#17](https://github.com/anthony-spruyt/enshrouded-livemap/issues/17)) ([81f3e8d](https://github.com/anthony-spruyt/enshrouded-livemap/commit/81f3e8d14431198b13668e8aaa1662306ba31c9d))
+* run the build once and skip two non-link URLs in the link check ([#15](https://github.com/anthony-spruyt/enshrouded-livemap/issues/15)) ([39c61bb](https://github.com/anthony-spruyt/enshrouded-livemap/commit/39c61bbc99f9194975104a69ce1678d127e1c4f8))
+* **workflows:** add packages read permission to ci job ([1b0e347](https://github.com/anthony-spruyt/enshrouded-livemap/commit/1b0e347a416fe59cb0b463de10563abab78b2abd))
+* **workflows:** update release-please reusable workflow ref ([04cb6bf](https://github.com/anthony-spruyt/enshrouded-livemap/commit/04cb6bf5a04ed007dc39b7c10660ccfe47a081f8))
+
 ## [1.7.5](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.7.4...v1.7.5) (2026-11-05)
 
 

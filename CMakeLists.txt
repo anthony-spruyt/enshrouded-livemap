@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(enshrouded_livemap VERSION 1.7.5 LANGUAGES CXX ASM_MASM) # x-release-please-version
+project(enshrouded_livemap VERSION 1.8.0 LANGUAGES CXX ASM_MASM) # x-release-please-version
 if(MSVC AND MSVC_VERSION LESS 1950)
     message(FATAL_ERROR "livemap needs Visual Studio 2026 (MSVC 14.50) or newer; found MSVC ${MSVC_VERSION}")
 endif()

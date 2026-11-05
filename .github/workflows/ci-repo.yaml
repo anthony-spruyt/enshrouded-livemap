@@ -241,6 +241,42 @@ jobs:
           shutil.rmtree(work, ignore_errors=True)
           print("exe-hook-check directory removed" if not work.exists() else "::warning::exe-hook-check directory could not be removed")
 
+  compat:
+    name: Build and test the compat tool
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure
+        run: cmake -S tools/compat -B build/compat -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/compat --parallel
+
+      - name: Test
+        run: ctest --test-dir build/compat --output-on-failure --no-tests=error
+
+      - name: Stage the binary
+        run: |
+          set -euo pipefail
+          mkdir dist
+          cp build/compat/livemap_compat dist/livemap-compat-linux-x64
+          file dist/livemap-compat-linux-x64 | grep -Eq "statically linked|static-pie linked"
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: livemap-compat-linux-x64
+          path: dist/livemap-compat-linux-x64
+          if-no-files-found: error
+          retention-days: 7
+
   fault-gate-wine:
     name: Fault line under Wine
     needs: build

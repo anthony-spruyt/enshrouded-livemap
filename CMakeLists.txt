@@ -13,12 +13,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 include(FetchContent)
 set(SAFETYHOOK_FETCH_ZYDIS ON CACHE BOOL "" FORCE)
 # Declared before safetyhook: the first FetchContent_Declare wins, so safetyhook's own Zydis v4.1.0 tag is ignored.
-FetchContent_Declare(
-    Zydis
-    GIT_REPOSITORY https://github.com/zyantific/zydis.git
-    GIT_TAG 569320ad3c4856da13b9dbf1f0d9e20bda63870e # v4.1.0, the tag safetyhook v0.7.0 fetches
-    EXCLUDE_FROM_ALL
-)
+include(cmake/zydis.cmake)
 FetchContent_Declare(
     safetyhook
     GIT_REPOSITORY https://github.com/cursey/safetyhook.git
@@ -148,3 +143,5 @@ if(LIVEMAP_TEST_OLD_EXE AND LIVEMAP_TEST_NEW_EXE)
         add_test(NAME executable_guard_regressions COMMAND compat_test "${LIVEMAP_TEST_OLD_EXE}" "${LIVEMAP_TEST_NEW_EXE}")
     endif()
 endif()
+
+add_subdirectory(tools/compat)

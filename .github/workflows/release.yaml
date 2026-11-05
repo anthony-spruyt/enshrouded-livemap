@@ -33,18 +33,25 @@ jobs:
           name: EnshroudedLiveMap-${{ needs.build.outputs.version }}
           path: dist
 
-      - name: Write the checksum
+      - name: Download the compat tool
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: livemap-compat-linux-x64
+          path: dist
+
+      - name: Write the checksums
         working-directory: dist
         run: |
           set -euo pipefail
-          zip="EnshroudedLiveMap-${VERSION}.zip"
-          test -f "$zip"
-          sha256sum "$zip" > "$zip.sha256"
-          line=$(cat "$zip.sha256")
-          [[ "${line:0:64}" =~ ^[0-9a-f]{64}$ ]]
-          [ "${line:64:2}" = "  " ]
-          [ "${line:66}" = "$zip" ]
-          sha256sum --check "$zip.sha256"
+          for file in "EnshroudedLiveMap-${VERSION}.zip" livemap-compat-linux-x64; do
+            test -f "$file"
+            sha256sum "$file" > "$file.sha256"
+            line=$(cat "$file.sha256")
+            [[ "${line:0:64}" =~ ^[0-9a-f]{64}$ ]]
+            [ "${line:64:2}" = "  " ]
+            [ "${line:66}" = "$file" ]
+            sha256sum --check "$file.sha256"
+          done
 
       - name: Find the draft release
         id: draft
@@ -88,16 +95,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           UPLOAD_URL: ${{ steps.draft.outputs.upload_url }}
+          TOOL: livemap-compat-linux-x64
         run: |
           set -euo pipefail
           zip="EnshroudedLiveMap-${VERSION}.zip"
           gh api --method POST "${UPLOAD_URL}?name=${zip}" --header "Content-Type: application/zip" --input "$zip" > /dev/null
           gh api --method POST "${UPLOAD_URL}?name=${zip}.sha256" --header "Content-Type: text/plain" --input "${zip}.sha256" > /dev/null
+          gh api --method POST "${UPLOAD_URL}?name=${TOOL}" --header "Content-Type: application/octet-stream" --input "$TOOL" > /dev/null
+          gh api --method POST "${UPLOAD_URL}?name=${TOOL}.sha256" --header "Content-Type: text/plain" --input "${TOOL}.sha256" > /dev/null
 
       - name: Attest the build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/EnshroudedLiveMap-${{ needs.build.outputs.version }}.zip
+          subject-path: |
+            dist/EnshroudedLiveMap-${{ needs.build.outputs.version }}.zip
+            dist/livemap-compat-linux-x64
 
       - name: Publish the release
         working-directory: dist
@@ -106,19 +118,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ steps.draft.outputs.id }}
+          TOOL: livemap-compat-linux-x64
         run: |
           set -euo pipefail
           zip="EnshroudedLiveMap-${VERSION}.zip"
           zip_digest="sha256:$(sha256sum "$zip" | cut -d ' ' -f 1)"
           sum_digest="sha256:$(sha256sum "$zip.sha256" | cut -d ' ' -f 1)"
+          tool_digest="sha256:$(sha256sum "$TOOL" | cut -d ' ' -f 1)"
+          tool_sum_digest="sha256:$(sha256sum "$TOOL.sha256" | cut -d ' ' -f 1)"
           release_url="repos/${GH_REPO}/releases/${RELEASE_ID}"
           assets_match() {
             jq -e --arg zip "$zip" --arg zip_digest "$zip_digest" --arg sum "$zip.sha256" --arg sum_digest "$sum_digest" \
-              '(.assets | map({name, digest}) | sort_by(.name)) == ([{name: $zip, digest: $zip_digest}, {name: $sum, digest: $sum_digest}] | sort_by(.name))' > /dev/null
+              --arg tool "$TOOL" --arg tool_digest "$tool_digest" --arg tool_sum "$TOOL.sha256" --arg tool_sum_digest "$tool_sum_digest" \
+              '(.assets | map({name, digest}) | sort_by(.name)) == ([{name: $zip, digest: $zip_digest}, {name: $sum, digest: $sum_digest}, {name: $tool, digest: $tool_digest}, {name: $tool_sum, digest: $tool_sum_digest}] | sort_by(.name))' > /dev/null
           }
           release=$(gh api "$release_url")
           jq -e '.draft == true' <<< "$release" > /dev/null || { echo "::error::Release ${RELEASE_ID} is not a draft."; exit 1; }
-          assets_match <<< "$release" || { echo "::error::The assets of release ${RELEASE_ID} are not exactly ${zip} and ${zip}.sha256 with the digests of the local files."; exit 1; }
+          assets_match <<< "$release" || { echo "::error::The assets of release ${RELEASE_ID} are not exactly ${zip}, ${zip}.sha256, ${TOOL} and ${TOOL}.sha256 with the digests of the local files."; exit 1; }
           notes="${RUNNER_TEMP}/release-notes.md"
           printf '\n\n' >> "$notes"
           cat >> "$notes" <<EOF
@@ -127,6 +143,8 @@ jobs:
           Verify the download with \`sha256sum --check EnshroudedLiveMap-${VERSION}.zip.sha256\` or \`gh attestation verify EnshroudedLiveMap-${VERSION}.zip --repo ${GH_REPO} --signer-workflow ${GH_REPO}/.github/workflows/release.yaml --source-ref refs/tags/${TAG}\`.
 
           HD map users: use upstream's 1.7.0 HD map asset.
+
+          \`${TOOL}\` is the Linux build of the compat tool that checks a new server build against the supported ones. Verify it with \`sha256sum --check ${TOOL}.sha256\` or \`gh attestation verify ${TOOL} --repo ${GH_REPO} --signer-workflow ${GH_REPO}/.github/workflows/release.yaml --source-ref refs/tags/${TAG}\`. The licenses of the code linked into it are in https://github.com/${GH_REPO}/blob/${TAG}/tools/compat/THIRD_PARTY_NOTICES.md.
           EOF
           jq -n --rawfile body "$notes" '{draft: false, body: $body}' | gh api --method PATCH "$release_url" --input - > /dev/null
           release=$(gh api "$release_url")

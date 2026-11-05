@@ -6,9 +6,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <optional>
+#include <print>
+#include <source_location>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "builds_generated.h"
@@ -19,15 +23,12 @@ namespace {
 
 int failures = 0;
 
-#define EXPECT(cond, ...)                                               \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::printf("FAIL %s:%d  %s  ", __FILE__, __LINE__, #cond); \
-            std::printf(__VA_ARGS__);                                   \
-            std::printf("\n");                                          \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
+void check(bool ok, std::string_view detail, std::source_location where = std::source_location::current()) {
+    if (!ok) {
+        std::print("FAIL {}:{}  {}\n", where.file_name(), where.line(), detail);
+        ++failures;
+    }
+}
 
 constexpr size_t kTextRva = 0x1000;
 constexpr size_t kImageSize = 0xa00000;  // past the highest expected RVA
@@ -194,28 +195,31 @@ void check_build(const snapshot::Row& row) {
     plant_build(image, row, row.patch1, true);
     livemap::Targets t;
     std::string error;
-    EXPECT(livemap::find_targets(image.base(), t, error), "%s: %s", row.label, error.c_str());
-    EXPECT(t.build != nullptr && std::strcmp(t.build, row.label) == 0, "%s recognised as %s", row.label, t.build ? t.build : "nothing");
-    EXPECT(t.mining_layout == (row.patch1 ? livemap::MiningLayout::StackRecord : livemap::MiningLayout::InlineArray),
-           "%s mining layout", row.label);
-    EXPECT(t.player_table == image.at(row.player_table), "%s player_table", row.label);
-    EXPECT(t.movement == image.at(row.movement), "%s movement", row.label);
-    EXPECT(t.daytime == image.at(row.daytime), "%s daytime", row.label);
-    EXPECT(t.registry == image.at(row.registry), "%s registry", row.label);
-    EXPECT(t.mining == image.at(row.mining), "%s mining", row.label);
-    EXPECT(t.chest == image.at(row.chest), "%s chest", row.label);
-    EXPECT(t.bases == image.at(row.bases), "%s bases", row.label);
-    EXPECT(t.chat_post == image.at(row.chat_post), "%s chat_post", row.label);
-    EXPECT(t.param_entity == (row.patch1 ? image.at(kAccessorRva) : 0), "%s param_entity", row.label);
-    EXPECT(t.entity_table == (row.patch1 ? kPlantedTable : 0x828), "%s entity_table 0x%x", row.label, t.entity_table);
+    check(livemap::find_targets(image.base(), t, error), std::format("{}: {}", row.label, error));
+    check(t.build != nullptr && std::strcmp(t.build, row.label) == 0,
+          std::format("{} recognised as {}", row.label, t.build ? t.build : "nothing"));
+    check(t.mining_layout == (row.patch1 ? livemap::MiningLayout::StackRecord : livemap::MiningLayout::InlineArray),
+          std::format("{} mining layout", row.label));
+    check(t.player_table == image.at(row.player_table), std::format("{} player_table", row.label));
+    check(t.movement == image.at(row.movement), std::format("{} movement", row.label));
+    check(t.daytime == image.at(row.daytime), std::format("{} daytime", row.label));
+    check(t.registry == image.at(row.registry), std::format("{} registry", row.label));
+    check(t.mining == image.at(row.mining), std::format("{} mining", row.label));
+    check(t.chest == image.at(row.chest), std::format("{} chest", row.label));
+    check(t.bases == image.at(row.bases), std::format("{} bases", row.label));
+    check(t.chat_post == image.at(row.chat_post), std::format("{} chat_post", row.label));
+    check(t.param_entity == (row.patch1 ? image.at(kAccessorRva) : 0), std::format("{} param_entity", row.label));
+    check(t.entity_table == (row.patch1 ? kPlantedTable : 0x828),
+          std::format("{} entity_table 0x{:x}", row.label, t.entity_table));
 
     livemap::ChatSites chat;
-    EXPECT(livemap::find_chat_sites(image.base(), shipped(row), chat), "%s: join line", row.label);
-    EXPECT(chat.join_call == image.at(kJoinLineRva + snapshot::kJoinCallOffset), "%s join_call", row.label);
-    EXPECT(chat.join_after == image.at(kJoinLineRva + snapshot::kJoinAfterOffset), "%s join_after", row.label);
-    EXPECT(chat.chat_post == image.at(row.chat_post), "%s chat queue function", row.label);
-    EXPECT(chat.join_tag == kPlantedTag, "%s join_tag 0x%x", row.label, chat.join_tag);
-    EXPECT(!chat.shared, "%s join line already hooked", row.label);
+    check(livemap::find_chat_sites(image.base(), shipped(row), chat), std::format("{}: join line", row.label));
+    check(chat.join_call == image.at(kJoinLineRva + snapshot::kJoinCallOffset), std::format("{} join_call", row.label));
+    check(chat.join_after == image.at(kJoinLineRva + snapshot::kJoinAfterOffset),
+          std::format("{} join_after", row.label));
+    check(chat.chat_post == image.at(row.chat_post), std::format("{} chat queue function", row.label));
+    check(chat.join_tag == kPlantedTag, std::format("{} join_tag 0x{:x}", row.label, chat.join_tag));
+    check(!chat.shared, std::format("{} join line already hooked", row.label));
 }
 
 void check_rejections(const snapshot::Row& row) {
@@ -225,15 +229,17 @@ void check_rejections(const snapshot::Row& row) {
         Image image(row);
         plant_build(image, row, true, false);
         image.fingerprint(0);
-        EXPECT(!livemap::find_targets(image.base(), t, error), "%s: unknown fingerprint accepted", row.label);
-        EXPECT(error.find("unknown server build") != std::string::npos, "%s: %s", row.label, error.c_str());
+        check(!livemap::find_targets(image.base(), t, error),
+              std::format("{}: unknown fingerprint accepted", row.label));
+        check(error.find("unknown server build") != std::string::npos, std::format("{}: {}", row.label, error));
     }
     {
         Image image(row);
         plant_build(image, row, true, false);
         image.clear(expected_rva(row, "registry"));
-        EXPECT(!livemap::find_targets(image.base(), t, error), "%s: broken registry signature accepted", row.label);
-        EXPECT(error.find("registry") != std::string::npos, "%s: %s", row.label, error.c_str());
+        check(!livemap::find_targets(image.base(), t, error),
+              std::format("{}: broken registry signature accepted", row.label));
+        check(error.find("registry") != std::string::npos, std::format("{}: {}", row.label, error));
     }
     for (const snapshot::Site& site : row.patch1 ? snapshot::patch1_sites() : snapshot::launch_sites()) {
         if (site.name != std::string("player_table") && site.name != std::string("chest")) {
@@ -243,21 +249,25 @@ void check_rejections(const snapshot::Row& row) {
         plant_build(image, row, true, false);
         image.plant(kDuplicateRva, site.hex);
         const bool required = site.name == std::string("player_table");
-        EXPECT(livemap::find_targets(image.base(), t, error) != required, "%s: %s planted twice", row.label, site.name);
+        check(livemap::find_targets(image.base(), t, error) != required,
+              std::format("{}: {} planted twice", row.label, site.name));
         if (required) {
-            EXPECT(error.find("matched 2 times") != std::string::npos, "%s: %s", row.label, error.c_str());
+            check(error.find("matched 2 times") != std::string::npos, std::format("{}: {}", row.label, error));
         } else {
-            EXPECT(t.chest == 0 && t.player_table != 0, "%s: a duplicated optional site was hooked", row.label);
+            check(t.chest == 0 && t.player_table != 0,
+                  std::format("{}: a duplicated optional site was hooked", row.label));
         }
     }
     {
         Image image(row);
         plant_build(image, row, row.patch1, false);
         image.clear(expected_rva(row, "mining") - (row.patch1 ? 2 : 0x16));
-        EXPECT(livemap::find_targets(image.base(), t, error), "%s: %s", row.label, error.c_str());
-        EXPECT(t.mining == 0 && t.player_table != 0, "%s: a missing optional site stops the rest", row.label);
+        check(livemap::find_targets(image.base(), t, error), std::format("{}: {}", row.label, error));
+        check(t.mining == 0 && t.player_table != 0,
+              std::format("{}: a missing optional site stops the rest", row.label));
         livemap::ChatSites chat;
-        EXPECT(!livemap::find_chat_sites(image.base(), shipped(row), chat), "%s: join line found without it", row.label);
+        check(!livemap::find_chat_sites(image.base(), shipped(row), chat),
+              std::format("{}: join line found without it", row.label));
     }
     {
         Image image(row);
@@ -268,15 +278,18 @@ void check_rejections(const snapshot::Row& row) {
             }
         }
         livemap::ChatSites chat;
-        EXPECT(!livemap::find_chat_sites(image.base(), shipped(row), chat), "%s: two join lines accepted", row.label);
+        check(!livemap::find_chat_sites(image.base(), shipped(row), chat),
+              std::format("{}: two join lines accepted", row.label));
     }
     {
         Image image(row);
         image.drop_sections();
         livemap::ChatSites chat;
-        EXPECT(!livemap::find_targets(image.base(), t, error), "%s: image without .text accepted", row.label);
-        EXPECT(error.find("no .text section") != std::string::npos, "%s: %s", row.label, error.c_str());
-        EXPECT(!livemap::find_chat_sites(image.base(), shipped(row), chat), "%s: join line found without .text", row.label);
+        check(!livemap::find_targets(image.base(), t, error),
+              std::format("{}: image without .text accepted", row.label));
+        check(error.find("no .text section") != std::string::npos, std::format("{}: {}", row.label, error));
+        check(!livemap::find_chat_sites(image.base(), shipped(row), chat),
+              std::format("{}: join line found without .text", row.label));
     }
 }
 
@@ -291,15 +304,17 @@ void check_installed_sites_are_required(const snapshot::Row& row) {
     plant_build(intact, row, true, false);
     livemap::Targets t;
     std::string error;
-    EXPECT(livemap::find_targets(intact.base(), only(control.build()), t, error), "%s: %s", row.label, error.c_str());
+    check(livemap::find_targets(intact.base(), only(control.build()), t, error),
+          std::format("{}: {}", row.label, error));
     for (const char* name : {"player_table", "movement", "daytime", "registry"}) {
         {
             Table table(row);
             table.remove(name);
             Image image(row);
             plant_build(image, row, true, false);
-            EXPECT(!livemap::find_targets(image.base(), only(table.build()), t, error), "%s: sigset without %s accepted", row.label, name);
-            EXPECT(error.find(name) != std::string::npos, "%s: %s", row.label, error.c_str());
+            check(!livemap::find_targets(image.base(), only(table.build()), t, error),
+                  std::format("{}: sigset without {} accepted", row.label, name));
+            check(error.find(name) != std::string::npos, std::format("{}: {}", row.label, error));
         }
         {
             Table table(row);
@@ -307,8 +322,9 @@ void check_installed_sites_are_required(const snapshot::Row& row) {
             Image image(row);
             plant_build(image, row, true, false);
             image.clear(expected_rva(row, name) - table.site(name).offset);
-            EXPECT(!livemap::find_targets(image.base(), only(table.build()), t, error), "%s: optional %s accepted", row.label, name);
-            EXPECT(error.find(name) != std::string::npos, "%s: %s", row.label, error.c_str());
+            check(!livemap::find_targets(image.base(), only(table.build()), t, error),
+                  std::format("{}: optional {} accepted", row.label, name));
+            check(error.find(name) != std::string::npos, std::format("{}: {}", row.label, error));
         }
     }
 }
@@ -321,8 +337,9 @@ void check_ambiguous_fingerprint(const snapshot::Row& row) {
     plant_build(image, row, true, false);
     livemap::Targets t;
     std::string error;
-    EXPECT(!livemap::find_targets(image.base(), both, t, error), "%s: two rows with one fingerprint accepted", row.label);
-    EXPECT(error.find("more than one") != std::string::npos, "%s: %s", row.label, error.c_str());
+    check(!livemap::find_targets(image.base(), both, t, error),
+          std::format("{}: two rows with one fingerprint accepted", row.label));
+    check(error.find("more than one") != std::string::npos, std::format("{}: {}", row.label, error));
 }
 
 // The join line is searched with the sigset of the build that was recognised, not with every sigset.
@@ -331,13 +348,15 @@ void check_chat_sites_use_the_given_build(const snapshot::Row& row) {
     plant_build(image, row, row.patch1, true);
     livemap::ChatSites chat;
     Table with(row);
-    EXPECT(livemap::find_chat_sites(image.base(), with.build(), chat), "%s: join line not found", row.label);
+    check(livemap::find_chat_sites(image.base(), with.build(), chat), std::format("{}: join line not found", row.label));
     Table without(row);
     without.remove("join_line");
-    EXPECT(!livemap::find_chat_sites(image.base(), without.build(), chat), "%s: join line found through another sigset", row.label);
+    check(!livemap::find_chat_sites(image.base(), without.build(), chat),
+          std::format("{}: join line found through another sigset", row.label));
     Table other(row);
     other.fingerprint(row.time_date_stamp + 1);
-    EXPECT(!livemap::find_chat_sites(image.base(), other.build(), chat), "%s: join line found for another build", row.label);
+    check(!livemap::find_chat_sites(image.base(), other.build(), chat),
+          std::format("{}: join line found for another build", row.label));
 }
 
 // Every address the scan derives has to lie inside .text, to its last byte: the 5 bytes a hook overwrites
@@ -356,9 +375,10 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
             image.clear(expected_rva(row, name) - was);
             image.plant(kImageSize - byte_count(site.hex), site.hex);
             const bool ok = livemap::find_targets(image.base(), only(table.build()), t, error);
-            EXPECT(ok == inside, "%s: %s hook site %s .text: %s", row.label, name, inside ? "inside" : "past the end of", error.c_str());
+            check(ok == inside,
+                  std::format("{}: {} hook site {} .text: {}", row.label, name, inside ? "inside" : "past the end of", error));
             if (!inside) {
-                EXPECT(error.find(name) != std::string::npos, "%s: %s", row.label, error.c_str());
+                check(error.find(name) != std::string::npos, std::format("{}: {}", row.label, error));
             }
         }
     }
@@ -371,9 +391,10 @@ void check_derived_addresses_stay_in_text(const snapshot::Row& row) {
         image.clear(kAccessorRva);
         image.plant(kImageSize - byte_count(table.site("param_entity").hex), table.site("param_entity").hex);
         const bool ok = livemap::find_targets(image.base(), only(table.build()), t, error);
-        EXPECT(ok == inside, "%s: operand %s .text: %s", row.label, inside ? "ending on the last byte of" : "read past", error.c_str());
+        check(ok == inside,
+              std::format("{}: operand {} .text: {}", row.label, inside ? "ending on the last byte of" : "read past", error));
         if (!inside) {
-            EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
+            check(error.find("param_entity") != std::string::npos, std::format("{}: {}", row.label, error));
         }
     }
 }
@@ -416,7 +437,8 @@ void check_join_sites_stay_in_text(const snapshot::Row& row) {
             at.call_op = call_op;
             at.join_start = kTextEnd - snapshot::kJoinCallOffset - room;
             livemap::ChatSites chat;
-            EXPECT(find_join_sites(row, at, chat) == inside, "%s: %s join call with %zu bytes of .text left", row.label, call_op, room);
+            check(find_join_sites(row, at, chat) == inside,
+                  std::format("{}: {} join call with {} bytes of .text left", row.label, call_op, room));
         }
     }
     Table probe(row);
@@ -426,16 +448,18 @@ void check_join_sites_stay_in_text(const snapshot::Row& row) {
         at.chat_start = kTextEnd - chat_bytes;
         at.chat_offset = chat_bytes - (inside ? kHookBytes : kHookBytes - 1);
         livemap::ChatSites chat;
-        EXPECT(find_join_sites(row, at, chat) == inside, "%s: chat_post hook site %s .text", row.label, inside ? "inside" : "past the end of");
+        check(find_join_sites(row, at, chat) == inside,
+              std::format("{}: chat_post hook site {} .text", row.label, inside ? "inside" : "past the end of"));
     }
     for (const bool inside : {true, false}) {
         JoinLayout at;
         at.join_start = kTextEnd - snapshot::kJoinCallOffset - 2 * kHookBytes;
         at.tag_offset = kTextEnd - at.join_start - sizeof(uint32_t) + (inside ? 0 : 1);
         livemap::ChatSites chat;
-        EXPECT(find_join_sites(row, at, chat) == inside, "%s: join tag %s .text", row.label, inside ? "ending on the last byte of" : "read past");
+        check(find_join_sites(row, at, chat) == inside,
+              std::format("{}: join tag {} .text", row.label, inside ? "ending on the last byte of" : "read past"));
         if (inside) {
-            EXPECT(chat.join_tag == kPlantedTag, "%s: join_tag 0x%x", row.label, chat.join_tag);
+            check(chat.join_tag == kPlantedTag, std::format("{}: join_tag 0x{:x}", row.label, chat.join_tag));
         }
     }
 }
@@ -466,9 +490,10 @@ void check_join_line_variants(const snapshot::Row& row) {
             image.write32(call + 1, static_cast<uint32_t>(row.chat_post + 0x10 - (call + 5)));
         }
         livemap::ChatSites chat;
-        EXPECT(livemap::find_chat_sites(image.base(), shipped(row), chat) == c.accepted, "%s: %s", row.label, c.what);
+        check(livemap::find_chat_sites(image.base(), shipped(row), chat) == c.accepted,
+              std::format("{}: {}", row.label, c.what));
         if (c.accepted) {
-            EXPECT(chat.shared == c.shared && chat.join_call == image.at(call), "%s: %s", row.label, c.what);
+            check(chat.shared == c.shared && chat.join_call == image.at(call), std::format("{}: {}", row.label, c.what));
         }
     }
 }
@@ -490,8 +515,9 @@ int main() {
             plant_build(image, row, false, false);
             livemap::Targets t;
             std::string error;
-            EXPECT(!livemap::find_targets(image.base(), t, error), "%s: patch1 build without the entity id accessor", row.label);
-            EXPECT(error.find("param_entity") != std::string::npos, "%s: %s", row.label, error.c_str());
+            check(!livemap::find_targets(image.base(), t, error),
+                  std::format("{}: patch1 build without the entity id accessor", row.label));
+            check(error.find("param_entity") != std::string::npos, std::format("{}: {}", row.label, error));
         }
     }
     if (failures == 0) {

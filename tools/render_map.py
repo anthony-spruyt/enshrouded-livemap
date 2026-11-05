@@ -198,6 +198,8 @@ def write_tiles(img, out_dir, levels, background, fmt="jpg"):
     not a whole number of tiles, the rest of the top row is `background`."""
     os.makedirs(out_dir, exist_ok=True)
     pil = Image.fromarray(img)
+    webp = fmt == "webp"
+    extension = "webp" if webp else "jpg"
     written = total = 0
     for z in levels:
         size = round(WORLD * 2**z)
@@ -210,11 +212,11 @@ def write_tiles(img, out_dir, levels, background, fmt="jpg"):
                 box = (x * TILE, max(0, top), min(size, (x + 1) * TILE), top + TILE)
                 tile.paste(level_img.crop(box), (0, box[1] - top))
                 buf = io.BytesIO()
-                if fmt == "webp":
+                if webp:
                     tile.save(buf, "WEBP", quality=WEBP_QUALITY, method=6)
                 else:
                     tile.save(buf, "JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
-                with open(os.path.join(out_dir, f"{z}_{x}_{y}.{fmt}"), "wb") as f:
+                with open(os.path.join(out_dir, f"{z}_{x}_{y}.{extension}"), "wb") as f:
                     f.write(buf.getvalue())
                 written += 1
                 total += len(buf.getvalue())

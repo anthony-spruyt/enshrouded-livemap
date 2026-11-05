@@ -32,7 +32,7 @@ size_t readable_span(uintptr_t address, size_t max) {
     size_t total = 0;
     while (total < max) {
         MEMORY_BASIC_INFORMATION info{};
-        if (VirtualQuery(reinterpret_cast<LPCVOID>(address + total), &info, sizeof info) == 0) {
+        if (VirtualQuery(std::bit_cast<LPCVOID>(address + total), &info, sizeof info) == 0) {
             break;
         }
         if (info.State != MEM_COMMIT || (info.Protect & kReadable) == 0 || (info.Protect & PAGE_GUARD) != 0) {

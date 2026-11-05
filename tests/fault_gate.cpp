@@ -26,6 +26,7 @@ constexpr uint8_t kReader[] = {0x48, 0x8B, 0x01, 0x90, 0x90, 0xC3};
 constexpr unsigned kReaderStep = 3;
 
 std::atomic<int> g_skips{0};
+volatile int* g_read_only = nullptr;
 
 using Standin = void (*)(const void*);
 
@@ -45,8 +46,7 @@ void quiet_callback(SafetyHookContext&) {}
 
 void faulting_callback(SafetyHookContext&) {
     livemap::fault::SiteScope scope(kSiteCallback);
-    volatile uintptr_t address = 0;
-    *reinterpret_cast<volatile int*>(address) = 1;
+    *g_read_only = 1;
 }
 
 // Registered after the fault handler, so it sees each fault second and can let the process go on.
@@ -161,7 +161,8 @@ int main(int argc, char** argv) {
         return kHookFailed;
     }
     livemap::log_open(L".", true);
-    if (!livemap::fault::install(livemap::log_handle())) {
+    g_read_only = static_cast<volatile int*>(VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READONLY));
+    if (g_read_only == nullptr || !livemap::fault::install(livemap::log_handle())) {
         return kHookFailed;
     }
     livemap::log("gate: handler installed");

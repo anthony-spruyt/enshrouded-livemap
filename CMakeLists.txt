@@ -32,7 +32,7 @@ set(LIVEMAP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LIVEMAP_BUILDS_JSON}")
 livemap_generate_builds("${LIVEMAP_BUILDS_JSON}" "${LIVEMAP_GENERATED_DIR}/builds_generated.h")
 
-add_library(livemap_core STATIC src/scan.cpp src/finds.cpp src/link.cpp src/text.cpp src/bases.cpp src/a2s.cpp src/discovered.cpp src/explored.cpp)
+add_library(livemap_core STATIC src/scan.cpp src/finds.cpp src/link.cpp src/text.cpp src/bases.cpp src/a2s.cpp src/discovered.cpp src/explored.cpp src/fault.cpp)
 target_include_directories(livemap_core PUBLIC src "${LIVEMAP_GENERATED_DIR}")
 
 # The DLL is named iphlpapi.dll because the server loads it in place of the real one.
@@ -78,6 +78,9 @@ add_test(NAME discovered COMMAND discovered_test)
 add_executable(explored_test tests/explored_test.cpp)
 target_link_libraries(explored_test PRIVATE livemap_core)
 add_test(NAME explored COMMAND explored_test)
+add_executable(fault_test tests/fault_test.cpp)
+target_link_libraries(fault_test PRIVATE livemap_core)
+add_test(NAME fault_line COMMAND fault_test)
 add_executable(ecs_test tests/ecs_test.cpp src/ecs.cpp src/memory.cpp)
 target_compile_definitions(ecs_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 target_compile_options(ecs_test PRIVATE /UNDEBUG)

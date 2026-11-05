@@ -1,6 +1,6 @@
 // Plain assert-based tests for cleaning names from game memory (no framework).
-#include <cstdio>
 #include <print>
+#include <source_location>
 #include <string>
 
 #include "../src/text.h"
@@ -9,31 +9,36 @@ using livemap::text::clean_utf8;
 
 static int failures = 0;
 
-#define EXPECT(cond)                                                                              \
-    do {                                                                                          \
-        if (!(cond)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++failures; } \
-    } while (0)
+static void check(bool ok, std::source_location where = std::source_location::current()) {
+    if (!ok) {
+        std::print("FAIL {}:{}\n", where.file_name(), where.line());
+        ++failures;
+    }
+}
 
 int main() {
-    const std::string fffd = "\xEF\xBF\xBD";
-    EXPECT(clean_utf8("OG Vanilla K") == "OG Vanilla K");
+    const std::string fffd = "\x{EF}\x{BF}\x{BD}";
+    check(clean_utf8("OG Vanilla K") == "OG Vanilla K");
     // Valid UTF-8 stays: Turkish, Kurdish, German letters, CJK, an emoji (4 bytes).
-    EXPECT(clean_utf8("\xC3\x96zg\xC3\xBC\x72") == "\xC3\x96zg\xC3\xBCr");                // Özgür
-    EXPECT(clean_utf8("\xC5\x9E\x65\x76\xC3\xAA") == "\xC5\x9E\x65v\xC3\xAA");             // Şevê
-    EXPECT(clean_utf8("\xE6\x9D\xB1\xE4\xBA\xAC") == "\xE6\x9D\xB1\xE4\xBA\xAC");          // 東京
-    EXPECT(clean_utf8("a\xF0\x9F\x94\xA5" "b") == "a\xF0\x9F\x94\xA5" "b");                 // a🔥b
+    check(clean_utf8("\x{C3}\x{96}zg\x{C3}\x{BC}r") == "\x{C3}\x{96}zg\x{C3}\x{BC}r");                    // Özgür
+    check(clean_utf8("\x{C5}\x{9E}ev\x{C3}\x{AA}") == "\x{C5}\x{9E}ev\x{C3}\x{AA}");                      // Şevê
+    check(clean_utf8("\x{E6}\x{9D}\x{B1}\x{E4}\x{BA}\x{AC}") == "\x{E6}\x{9D}\x{B1}\x{E4}\x{BA}\x{AC}");  // 東京
+    check(clean_utf8("a\x{F0}\x{9F}\x{94}\x{A5}b") == "a\x{F0}\x{9F}\x{94}\x{A5}b");                      // a🔥b
     // The bytes of a pointer read as text: each invalid byte -> U+FFFD.
-    EXPECT(clean_utf8("\xE0\xF0\x84G\xB5u") == fffd + fffd + fffd + "G" + fffd + "u");
+    check(clean_utf8("\x{E0}\x{F0}\x{84}G\x{B5}u") == fffd + fffd + fffd + "G" + fffd + "u");
     // Cut-off sequence, overlong form, UTF-16 surrogate, beyond U+10FFFF.
-    EXPECT(clean_utf8("x\xC3") == "x" + fffd);
-    EXPECT(clean_utf8("\xC0\xAF") == fffd + fffd);
-    EXPECT(clean_utf8("\xED\xA0\x80") == fffd + fffd + fffd);
-    EXPECT(clean_utf8("\xF4\x90\x80\x80") == fffd + fffd + fffd + fffd);
+    check(clean_utf8("x\x{C3}") == "x" + fffd);
+    check(clean_utf8("\x{C0}\x{AF}") == fffd + fffd);
+    check(clean_utf8("\x{ED}\x{A0}\x{80}") == fffd + fffd + fffd);
+    check(clean_utf8("\x{F4}\x{90}\x{80}\x{80}") == fffd + fffd + fffd + fffd);
     // Control characters become spaces, quotes stay (JSON escaping happens later).
-    EXPECT(clean_utf8("a\tb\x7F" "c\"") == "a b c\"");
-    EXPECT(clean_utf8("") == "");
+    check(clean_utf8("a\tb\x{7F}c\"") == "a b c\"");
+    check(clean_utf8("") == "");
 
-    if (failures) std::print("{} failure(s)\n", failures);
-    else std::print("all text tests passed\n");
+    if (failures) {
+        std::print("{} failure(s)\n", failures);
+    } else {
+        std::print("all text tests passed\n");
+    }
     return failures ? 1 : 0;
 }

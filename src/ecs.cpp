@@ -1,12 +1,12 @@
 #include "ecs.h"
 
-#include "memory.h"
-
 #include <windows.h>
 
 #include <array>
 #include <bit>
 #include <cstring>
+
+#include "memory.h"
 
 namespace livemap {
 
@@ -32,8 +32,12 @@ size_t readable_span(uintptr_t address, size_t max) {
     size_t total = 0;
     while (total < max) {
         MEMORY_BASIC_INFORMATION info{};
-        if (VirtualQuery(reinterpret_cast<LPCVOID>(address + total), &info, sizeof info) == 0) break;
-        if (info.State != MEM_COMMIT || (info.Protect & kReadable) == 0 || (info.Protect & PAGE_GUARD) != 0) break;
+        if (VirtualQuery(std::bit_cast<LPCVOID>(address + total), &info, sizeof info) == 0) {
+            break;
+        }
+        if (info.State != MEM_COMMIT || (info.Protect & kReadable) == 0 || (info.Protect & PAGE_GUARD) != 0) {
+            break;
+        }
         uintptr_t end = reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize;
         total = end - address;
     }
@@ -45,11 +49,15 @@ bool find_type_table_at(uintptr_t root, size_t span, int known_index, uint32_t k
     constexpr std::array<uint32_t, 17> kStrides = {4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80, 96, 112, 128};
     for (uint32_t stride : kStrides) {
         uintptr_t need = static_cast<uintptr_t>(known_index) * stride + 4;
-        if (need > span) continue;
+        if (need > span) {
+            continue;
+        }
         for (uintptr_t base = root; base + need <= root + span; base += 4) {
             uint32_t h = 0;
             std::memcpy(&h, std::bit_cast<const void*>(base + static_cast<uintptr_t>(known_index) * stride), sizeof h);
-            if (h != known_hash) continue;
+            if (h != known_hash) {
+                continue;
+            }
             TypeTable t{base, stride};
             if (type_index(t, check[0]) >= 0 && type_index(t, check[1]) >= 0) {
                 out = t;
@@ -97,11 +105,17 @@ uintptr_t entity_component(uintptr_t record, int type_index, uint16_t expect_siz
 }
 
 int type_index(const TypeTable& table, uint32_t hash) {
-    if (table.base == 0) return -1;
+    if (table.base == 0) {
+        return -1;
+    }
     for (int i = 0; i < kTypeCount; ++i) {
         uint32_t h = 0;
-        if (!read_u32(table.base + static_cast<uintptr_t>(i) * table.stride, h)) return -1;
-        if (h == hash) return i;
+        if (!read_u32(table.base + static_cast<uintptr_t>(i) * table.stride, h)) {
+            return -1;
+        }
+        if (h == hash) {
+            return i;
+        }
     }
     return -1;
 }
@@ -109,17 +123,23 @@ int type_index(const TypeTable& table, uint32_t hash) {
 bool find_type_table(uintptr_t registry, int known_index, uint32_t known_hash, const uint32_t check[2],
                      TypeTable& out) {
     constexpr size_t kWindow = 0x4000;
-    if (registry == 0 || known_index < 0 || known_index >= kTypeCount) return false;
+    if (registry == 0 || known_index < 0 || known_index >= kTypeCount) {
+        return false;
+    }
     // Roots: the registry itself, then everything its first 0x400 bytes point at.
     uintptr_t roots[1 + 0x400 / 8];
     size_t root_count = 0;
     roots[root_count++] = registry;
     for (uintptr_t k = 0; k < 0x400; k += 8) {
         uintptr_t p = 0;
-        if (read_ptr(registry + k, p) && p > 0x10000 && (p & 3) == 0 && readable_span(p, 16) == 16) roots[root_count++] = p;
+        if (read_ptr(registry + k, p) && p > 0x10000 && (p & 3) == 0 && readable_span(p, 16) == 16) {
+            roots[root_count++] = p;
+        }
     }
     for (size_t r = 0; r < root_count; ++r) {
-        if (find_type_table_at(roots[r], readable_span(roots[r], kWindow), known_index, known_hash, check, out)) return true;
+        if (find_type_table_at(roots[r], readable_span(roots[r], kWindow), known_index, known_hash, check, out)) {
+            return true;
+        }
     }
     return false;
 }

@@ -3,7 +3,7 @@
 
 This is a fork of [oggii/enshrouded-livemap](https://github.com/oggii/enshrouded-livemap).
 It exists because upstream only accepts the game builds listed in its source and has no CI, so every Enshrouded server update stops the map until someone patches and rebuilds it.
-`main` is upstream's latest release plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `patches/` and `docs/COMPAT-*.md`).
+`main` is upstream's latest release plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `docs/COMPAT-*.md`).
 Upstream's later, unreleased work is reverted on `main` until it is reviewed.
 Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
 Compatibility patches are still written by hand.
@@ -146,13 +146,6 @@ data, `tools/extract_shroud.py`; the Flame level is the first keyword of the ser
 Click a player in the list to follow them (click again or drag the map to stop). Add
 `&follow=<name>` to the link to follow that player whenever they are online.
 
-### Optional: HD map style
-
-On Nexus Mods there is an optional file with a second, colourful map style: an HD map picture
-by Nick (shipped in Aerox912's Sparkweave Minimap, Nexus #143), made sharp with the game's
-relief by `tools/enhance_map.py`. Unzip it over the install; it adds `livemap/tiles-hd` and a
-`maps.json` with both styles. The picture is not part of this repository.
-
 ## Works with Shared XP
 
 Shared XP 1.1.3 or newer. Both mods add a line to the chat after "Player X joined." and can run together; whichever starts
@@ -160,9 +153,16 @@ second adds its hook on top of the first one.
 
 ## Build
 
-`build.cmd` (Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools, CMake, Ninja, Python 3) builds
-`build\iphlpapi.dll`, runs the unit tests and builds `build\livemap_selftest.exe`, which checks a server exe on disk:
-`livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
+With Visual Studio 2026 (MSVC 14.50) or newer with the C++ build tools (x64 Native Tools prompt), CMake, Ninja and Python 3,
+these commands build `build\iphlpapi.dll`, run the unit tests and build `build\livemap_selftest.exe`:
+
+```bat
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure --no-tests=error
+```
+
+The selftest checks a server exe on disk: `livemap_selftest.exe "C:\path\to\enshrouded_server.exe"`.
 
 One of the unit tests runs the Python tools' tests with pytest. Install it once with
 `python -m pip install --require-hashes --no-deps -r tools\requirements-test.txt`.

@@ -3,6 +3,7 @@ marked.
 Usage: python3 framedump.py frames.bin marker-ids.json <addr hex> [before] [after] [--root <dir>]
 Every path must be inside the working directory (or a --root).
 """
+
 import argparse
 import json
 import os
@@ -24,7 +25,8 @@ args.frames = checked(ap, args.frames, args.root)
 args.idfile = checked(ap, args.idfile, args.root)
 path, idfile, addr = args.frames, args.idfile, int(args.addr, 16)
 before, after = int(args.before, 0), int(args.after, 0)
-ids = {int(k): v for k, v in json.load(open(idfile))["ids"].items()}
+with open(idfile) as f:
+    ids = {int(k): v for k, v in json.load(f)["ids"].items()}
 with open(path, "rb") as f:
     while True:
         head = f.read(16)
@@ -37,8 +39,8 @@ with open(path, "rb") as f:
         f.seek(length, 1)
 lo = max(start, (addr - before) & ~0xF)
 hi = min(start + length, addr + after)
-print("region %#x len %#x" % (start, length))
+print(f"region {start:#x} len {length:#x}")
 for row in range(lo, hi, 16):
     words = struct.unpack_from("<4I", data, row - start)
     marks = ["*" + ids[w][9:40] if w in ids else "" for w in words]
-    print("%#x  %s  %s" % (row, " ".join("%08x" % w for w in words), " ".join(m for m in marks if m)))
+    print("{:#x}  {}  {}".format(row, " ".join(f"{w:08x}" for w in words), " ".join(m for m in marks if m)))

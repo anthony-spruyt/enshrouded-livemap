@@ -3,6 +3,10 @@
 #include <cmath>
 #include <cstdio>
 #include <format>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace livemap::explored {
 
@@ -33,8 +37,12 @@ std::string base64(const std::vector<uint8_t>& d) {
     out.reserve((d.size() + 2) / 3 * 4);
     for (size_t i = 0; i < d.size(); i += 3) {
         uint32_t v = static_cast<uint32_t>(d[i]) << 16;
-        if (i + 1 < d.size()) v |= static_cast<uint32_t>(d[i + 1]) << 8;
-        if (i + 2 < d.size()) v |= d[i + 2];
+        if (i + 1 < d.size()) {
+            v |= static_cast<uint32_t>(d[i + 1]) << 8;
+        }
+        if (i + 2 < d.size()) {
+            v |= d[i + 2];
+        }
         out += kAlphabet[(v >> 18) & 63];
         out += kAlphabet[(v >> 12) & 63];
         out += i + 1 < d.size() ? kAlphabet[(v >> 6) & 63] : '=';
@@ -45,22 +53,40 @@ std::string base64(const std::vector<uint8_t>& d) {
 
 bool unbase64(const std::string& t, std::vector<uint8_t>& out) {
     auto val = [](char c) -> int {
-        if (c >= 'A' && c <= 'Z') return c - 'A';
-        if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-        if (c >= '0' && c <= '9') return c - '0' + 52;
-        if (c == '+') return 62;
-        if (c == '/') return 63;
+        if (c >= 'A' && c <= 'Z') {
+            return c - 'A';
+        }
+        if (c >= 'a' && c <= 'z') {
+            return c - 'a' + 26;
+        }
+        if (c >= '0' && c <= '9') {
+            return c - '0' + 52;
+        }
+        if (c == '+') {
+            return 62;
+        }
+        if (c == '/') {
+            return 63;
+        }
         return -1;
     };
-    if (t.size() % 4) return false;
+    if (t.size() % 4) {
+        return false;
+    }
     out.clear();
     for (size_t i = 0; i < t.size(); i += 4) {
         int a = val(t[i]), b = val(t[i + 1]), c = t[i + 2] == '=' ? 0 : val(t[i + 2]), d = t[i + 3] == '=' ? 0 : val(t[i + 3]);
-        if (a < 0 || b < 0 || c < 0 || d < 0) return false;
+        if (a < 0 || b < 0 || c < 0 || d < 0) {
+            return false;
+        }
         uint32_t v = (a << 18) | (b << 12) | (c << 6) | d;
         out.push_back(static_cast<uint8_t>(v >> 16));
-        if (t[i + 2] != '=') out.push_back(static_cast<uint8_t>(v >> 8));
-        if (t[i + 3] != '=') out.push_back(static_cast<uint8_t>(v));
+        if (t[i + 2] != '=') {
+            out.push_back(static_cast<uint8_t>(v >> 8));
+        }
+        if (t[i + 3] != '=') {
+            out.push_back(static_cast<uint8_t>(v));
+        }
     }
     return true;
 }
@@ -74,16 +100,24 @@ bool Store::reveal(const std::string& name, double x, double z) {
     const int cx = static_cast<int>(std::floor(x / kCellMetres)), cz = static_cast<int>(std::floor(z / kCellMetres));
     std::lock_guard lock(mutex_);
     std::vector<uint8_t>& g = grids_[name];
-    if (g.size() != kBytes) g.assign(kBytes, 0);
+    if (g.size() != kBytes) {
+        g.assign(kBytes, 0);
+    }
     bool changed = false;
     for (int dz = -r; dz <= r; ++dz) {
         const int row = cz + dz;
-        if (row < 0 || row >= kCells) continue;
+        if (row < 0 || row >= kCells) {
+            continue;
+        }
         const double mz = (row + 0.5) * kCellMetres - z;
         for (int dx = -r; dx <= r; ++dx) {
             const int col = cx + dx;
-            if (col < 0 || col >= kCells) continue;
-            if (const double mx = (col + 0.5) * kCellMetres - x; mx * mx + mz * mz > kRadiusMetres * kRadiusMetres) continue;
+            if (col < 0 || col >= kCells) {
+                continue;
+            }
+            if (const double mx = (col + 0.5) * kCellMetres - x; mx * mx + mz * mz > kRadiusMetres * kRadiusMetres) {
+                continue;
+            }
             const size_t bit = static_cast<size_t>(row) * kCells + col;
             const uint8_t mask = static_cast<uint8_t>(1u << (bit & 7));
             if (!(g[bit >> 3] & mask)) {
@@ -92,16 +126,22 @@ bool Store::reveal(const std::string& name, double x, double z) {
             }
         }
     }
-    if (changed) ++version_;
+    if (changed) {
+        ++version_;
+    }
     return changed;
 }
 
 bool Store::explored(const std::string& name, double x, double z) {
     const int col = static_cast<int>(std::floor(x / kCellMetres)), row = static_cast<int>(std::floor(z / kCellMetres));
-    if (col < 0 || row < 0 || col >= kCells || row >= kCells) return false;
+    if (col < 0 || row < 0 || col >= kCells || row >= kCells) {
+        return false;
+    }
     std::lock_guard lock(mutex_);
     auto it = grids_.find(name);
-    if (it == grids_.end()) return false;
+    if (it == grids_.end()) {
+        return false;
+    }
     const size_t bit = static_cast<size_t>(row) * kCells + col;
     return (it->second[bit >> 3] >> (bit & 7)) & 1;
 }
@@ -123,26 +163,46 @@ std::string Store::to_json() {
 
 bool Store::from_json(const std::string& t) {
     size_t i = t.find("\"players\"");
-    if (i == std::string::npos || !t.contains(std::format("\"cells\":{}", kCells))) return false;
+    if (i == std::string::npos || !t.contains(std::format("\"cells\":{}", kCells))) {
+        return false;
+    }
     i = t.find('{', i);
-    if (i == std::string::npos) return false;
+    if (i == std::string::npos) {
+        return false;
+    }
     std::map<std::string, std::vector<uint8_t>> loaded;
     for (++i;;) {
-        while (i < t.size() && (t[i] == ' ' || t[i] == ',' || t[i] == '\n' || t[i] == '\r')) ++i;
-        if (i >= t.size()) return false;
-        if (t[i] == '}') break;
-        if (t[i] != '"') return false;
+        while (i < t.size() && (t[i] == ' ' || t[i] == ',' || t[i] == '\n' || t[i] == '\r')) {
+            ++i;
+        }
+        if (i >= t.size()) {
+            return false;
+        }
+        if (t[i] == '}') {
+            break;
+        }
+        if (t[i] != '"') {
+            return false;
+        }
         std::string name;
         for (++i; i < t.size() && t[i] != '"'; ++i) {
-            if (t[i] == '\\' && i + 1 < t.size()) ++i;
+            if (t[i] == '\\' && i + 1 < t.size()) {
+                ++i;
+            }
             name += t[i];
         }
         i = t.find('"', i + 1);  // the value's opening quote (after the colon)
-        if (i == std::string::npos) return false;
+        if (i == std::string::npos) {
+            return false;
+        }
         size_t end = t.find('"', i + 1);
-        if (end == std::string::npos) return false;
+        if (end == std::string::npos) {
+            return false;
+        }
         std::vector<uint8_t> g;
-        if (!unbase64(t.substr(i + 1, end - i - 1), g) || g.size() != kBytes) return false;
+        if (!unbase64(t.substr(i + 1, end - i - 1), g) || g.size() != kBytes) {
+            return false;
+        }
         loaded[name] = std::move(g);
         i = end + 1;
     }

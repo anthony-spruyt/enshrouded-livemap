@@ -4,6 +4,7 @@
 #include <winhttp.h>
 
 #include <array>
+#include <string>
 
 #include "link.h"
 
@@ -31,7 +32,9 @@ std::string get(const wchar_t* host, const wchar_t* path, std::string& error) {
                             &status, &size, WINHTTP_NO_HEADER_INDEX);
         char buf[256];
         DWORD read = 0;
-        while (body.size() < 256 && WinHttpReadData(request, buf, sizeof buf, &read) && read > 0) body.append(buf, read);
+        while (body.size() < 256 && WinHttpReadData(request, buf, sizeof buf, &read) && read > 0) {
+            body.append(buf, read);
+        }
         if (status != 200) {
             error = "HTTP " + std::to_string(status);
             body.clear();
@@ -39,24 +42,35 @@ std::string get(const wchar_t* host, const wchar_t* path, std::string& error) {
     } else {
         error = "request failed (" + std::to_string(GetLastError()) + ")";
     }
-    if (request) WinHttpCloseHandle(request);
-    if (connection) WinHttpCloseHandle(connection);
+    if (request) {
+        WinHttpCloseHandle(request);
+    }
+    if (connection) {
+        WinHttpCloseHandle(connection);
+    }
     WinHttpCloseHandle(session);
-    while (!body.empty() && (body.back() == '\n' || body.back() == '\r' || body.back() == ' ')) body.pop_back();
+    while (!body.empty() && (body.back() == '\n' || body.back() == '\r' || body.back() == ' ')) {
+        body.pop_back();
+    }
     return body;
 }
 
 }  // namespace
 
 std::string detect(std::string& error) {
-    struct Service { const wchar_t* host; const wchar_t* path; };
+    struct Service {
+        const wchar_t* host;
+        const wchar_t* path;
+    };
     const auto services = std::to_array<Service>({
         {L"api.ipify.org", L"/"},
         {L"icanhazip.com", L"/"},
     });
     for (const auto& s : services) {
         std::string why;
-        if (std::string ip = get(s.host, s.path, why); link::valid_ip(ip)) return ip;
+        if (std::string ip = get(s.host, s.path, why); link::valid_ip(ip)) {
+            return ip;
+        }
         error = why.empty() ? "unexpected answer" : why;
     }
     return {};

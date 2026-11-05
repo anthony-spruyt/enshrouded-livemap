@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace livemap::discovered {
 
@@ -26,7 +30,9 @@ void append_escaped(std::string& out, const std::string& s) {
 
 // Minimal reader for the store's own JSON: "name": {"online":b,"at":n,"keys":[n,...]}.
 bool read_string(const std::string& t, size_t& i, std::string& out) {
-    if (i >= t.size() || t[i] != '"') return false;
+    if (i >= t.size() || t[i] != '"') {
+        return false;
+    }
     ++i;
     out.clear();
     while (i < t.size() && t[i] != '"') {
@@ -43,13 +49,17 @@ bool read_string(const std::string& t, size_t& i, std::string& out) {
         }
         ++i;
     }
-    if (i >= t.size()) return false;
+    if (i >= t.size()) {
+        return false;
+    }
     ++i;
     return true;
 }
 
 void skip_ws(const std::string& t, size_t& i) {
-    while (i < t.size() && (t[i] == ' ' || t[i] == '\n' || t[i] == '\r' || t[i] == '\t')) ++i;
+    while (i < t.size() && (t[i] == ' ' || t[i] == '\n' || t[i] == '\r' || t[i] == '\t')) {
+        ++i;
+    }
 }
 
 }  // namespace
@@ -62,7 +72,9 @@ bool Store::update(const std::string& name, std::vector<uint32_t> keys, int64_t 
     const bool was_online = p.online;
     p.online = true;
     if (p.keys == keys) {
-        if (!was_online) ++version_;
+        if (!was_online) {
+            ++version_;
+        }
         return false;
     }
     p.keys = std::move(keys);
@@ -95,7 +107,9 @@ std::string Store::to_json() {
         out += p.online ? "true" : "false";
         out += ",\"at\":" + std::to_string(p.at) + ",\"keys\":[";
         for (size_t i = 0; i < p.keys.size(); ++i) {
-            if (i) out += ',';
+            if (i) {
+                out += ',';
+            }
             out += std::to_string(p.keys[i]);
         }
         out += "]}";
@@ -107,19 +121,31 @@ std::string Store::to_json() {
 bool Store::from_json(const std::string& t) {
     std::map<std::string, Player> loaded;
     size_t i = t.find("\"players\"");
-    if (i == std::string::npos) return false;
+    if (i == std::string::npos) {
+        return false;
+    }
     i = t.find('{', i);
-    if (i == std::string::npos) return false;
+    if (i == std::string::npos) {
+        return false;
+    }
     ++i;
     for (;;) {
         skip_ws(t, i);
-        if (i < t.size() && t[i] == '}') break;
-        if (i < t.size() && t[i] == ',') ++i;
+        if (i < t.size() && t[i] == '}') {
+            break;
+        }
+        if (i < t.size() && t[i] == ',') {
+            ++i;
+        }
         skip_ws(t, i);
         std::string name;
-        if (!read_string(t, i, name)) return false;
+        if (!read_string(t, i, name)) {
+            return false;
+        }
         size_t end = t.find('}', i);
-        if (end == std::string::npos) return false;
+        if (end == std::string::npos) {
+            return false;
+        }
         const std::string body = t.substr(i, end - i);
         Player p;
         if (const size_t at = body.find("\"at\":"); at != std::string::npos) {
@@ -127,16 +153,22 @@ bool Store::from_json(const std::string& t) {
         }
         size_t k = body.find('[');
         size_t kend = body.find(']', k == std::string::npos ? 0 : k);
-        if (k == std::string::npos || kend == std::string::npos) return false;
+        if (k == std::string::npos || kend == std::string::npos) {
+            return false;
+        }
         const char* s = body.c_str() + k + 1;
         const char* stop = body.c_str() + kend;
         while (s < stop) {
             char* next = nullptr;
-            unsigned long v = std::strtoul(s, &next, 10);
-            if (next == s) break;
+            const auto v = std::strtoul(s, &next, 10);
+            if (next == s) {
+                break;
+            }
             p.keys.push_back(static_cast<uint32_t>(v));
             s = next;
-            while (s < stop && (*s == ',' || *s == ' ')) ++s;
+            while (s < stop && (*s == ',' || *s == ' ')) {
+                ++s;
+            }
         }
         std::sort(p.keys.begin(), p.keys.end());
         loaded[name] = std::move(p);

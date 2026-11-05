@@ -14,6 +14,7 @@ Usage:
       --textures <unpack folder>/UiTextureResource --out web/shroud.png --root C:/
 Every path must be inside the working directory (or a --root).
 """
+
 import argparse
 import os
 import sys
@@ -22,7 +23,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import render_map  # noqa: E402
+import render_map
 from paths import add_root_option, checked
 
 SIZE = 2048
@@ -40,12 +41,15 @@ def main():
     args.out = checked(ap, args.out, args.root)
     fog = render_map.load(args.game, args.textures)["fog"]
     step = render_map.WORLD // SIZE
-    level = np.ascontiguousarray(fog[step // 2::step, step // 2::step, 1])
+    level = np.ascontiguousarray(fog[step // 2 :: step, step // 2 :: step, 1])
     assert level.shape == (SIZE, SIZE), level.shape
     Image.fromarray(level, "L").save(args.out, optimize=True)
     values, counts = np.unique(level, return_counts=True)
     print(args.out, os.path.getsize(args.out), "bytes")
-    print("level: share of the world", {int(v): "%.1f %%" % (100 * c / level.size) for v, c in zip(values, counts)})
+    print(
+        "level: share of the world",
+        {int(v): "%.1f %%" % (100 * c / level.size) for v, c in zip(values, counts, strict=False)},
+    )
 
 
 if __name__ == "__main__":

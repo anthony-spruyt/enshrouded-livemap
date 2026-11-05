@@ -22,6 +22,7 @@ Usage (descriptors from `kfc-parser unpack -f tkeen::UiTextureResource`):
       --textures <unpack folder>/UiTextureResource --out web/tiles [--size 2048 --png preview.png] --root C:/
 Every path must be inside the working directory (or a --root).
 """
+
 import argparse
 import io
 import json
@@ -33,54 +34,60 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kfc_content import Kfc, texture  # noqa: E402
+from kfc_content import Kfc, texture
 from paths import add_root_option, checked
 
 MAP_GUID = "01bcbd07-bdbf-41c0-9999-5d58fb1a3aa1"
-WORLD = 10240            # metres; one detail pixel = 1 m
-SEA_FLOOR = 9073         # baseHeight of the flat shroud sea
-HEIGHT_TOP = 31500       # baseHeight that gets the brightest colour (99.5 % of the land is below)
-HEIGHT_GAMMA = 0.5       # < 1 spreads the low land over more of the gradient
+WORLD = 10240  # metres; one detail pixel = 1 m
+SEA_FLOOR = 9073  # baseHeight of the flat shroud sea
+HEIGHT_TOP = 31500  # baseHeight that gets the brightest colour (99.5 % of the land is below)
+HEIGHT_GAMMA = 0.5  # < 1 spreads the low land over more of the gradient
 METRES_PER_UNIT = 0.0517  # baseHeight -> metres (fitted against 3697 POI heights, r = 0.91)
-SHADE_STRENGTH = 1.5     # relief shading: colour *= 1 + strength * (detail - 127) / 127
-BRIGHTNESS = 1.2         # land colour gain
-CONTOURS = ((25, 0.20), (125, 0.55))   # (spacing in metres, opacity)
-CONTOUR_WIDTH = 0.9      # in output pixels
+SHADE_STRENGTH = 1.5  # relief shading: colour *= 1 + strength * (detail - 127) / 127
+BRIGHTNESS = 1.2  # land colour gain
+CONTOURS = ((25, 0.20), (125, 0.55))  # (spacing in metres, opacity)
+CONTOUR_WIDTH = 0.9  # in output pixels
 SHROUD_ALPHA = 0.38
 SHROUD_TEXTURE_METRES = 640  # one repeat of the shroud texture
-SHROUD_OUTLINE = 0.45     # dark line along the zone edge
-OUTSIDE_FADE = 0.7        # land outside the playable world fades into the sea colour
-SHROUD_BORDER = (10, 50)     # zone distance values mapped onto the border gradient
+SHROUD_OUTLINE = 0.45  # dark line along the zone edge
+OUTSIDE_FADE = 0.7  # land outside the playable world fades into the sea colour
+SHROUD_BORDER = (10, 50)  # zone distance values mapped onto the border gradient
 SEA_NOISE = 0.18
 TILE = 512
 JPEG_QUALITY = 84
-WEBP_QUALITY = 91      # --format webp; q91 = SSIM 0.9895 at 91 % of the bytes of JPEG q84 (0.9847)
+WEBP_QUALITY = 91  # --format webp; q91 = SSIM 0.9895 at 91 % of the bytes of JPEG q84 (0.9847)
 
 
 def descriptor(folder, part):
     for name in os.listdir(folder):
-        if name.startswith(MAP_GUID) and name.endswith("_%d.json" % part):
-            return json.load(open(os.path.join(folder, name), encoding="utf-8"))
-    raise FileNotFoundError("map texture part %d not in %s" % (part, folder))
+        if name.startswith(MAP_GUID) and name.endswith(f"_{part}.json"):
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                return json.load(f)
+    raise FileNotFoundError(f"map texture part {part} not in {folder}")
 
 
 def load(game, folder):
     kfc = Kfc(game)
-    tex = lambda part: texture(kfc, descriptor(folder, part))
-    data = {"baseGradient": tex(0)[0, :, :3].astype(np.float32),
-            "isolineGradient": tex(1)[0, :, :3].astype(np.float32),
-            "borderGradient": tex(2)[0, :, 0].astype(np.float32) / 255,
-            "fogNoise": tex(3)[:, :, 0].astype(np.float32) / 255,
-            "shroud": tex(4)[:, :, :3].astype(np.float32),
-            "base": tex(6).astype(np.float32)}
+
+    def tex(part):
+        return texture(kfc, descriptor(folder, part))
+
+    data = {
+        "baseGradient": tex(0)[0, :, :3].astype(np.float32),
+        "isolineGradient": tex(1)[0, :, :3].astype(np.float32),
+        "borderGradient": tex(2)[0, :, 0].astype(np.float32) / 255,
+        "fogNoise": tex(3)[:, :, 0].astype(np.float32) / 255,
+        "shroud": tex(4)[:, :, :3].astype(np.float32),
+        "base": tex(6).astype(np.float32),
+    }
     detail = np.empty((WORLD, WORLD), np.uint8)
     fog = np.empty((WORLD, WORLD, 2), np.uint8)
     for y in range(10):
         for x in range(10):
             part = 7 + 2 * (y * 10 + x)
             d, f = descriptor(folder, part), descriptor(folder, part + 1)
-            assert d["debugName"] == "DetailHeight(%d,%d)" % (x, y), d["debugName"]
-            assert f["debugName"] == "FogZone(%d,%d)" % (x, y), f["debugName"]
+            assert d["debugName"] == f"DetailHeight({x},{y})", d["debugName"]
+            assert f["debugName"] == f"FogZone({x},{y})", f["debugName"]
             rows = slice((9 - y) * 1024, (10 - y) * 1024)
             cols = slice(x * 1024, (x + 1) * 1024)
             detail[rows, cols] = texture(kfc, d)[:, :, 0]
@@ -106,7 +113,7 @@ def area_mean(a, k):
     if k == 1:
         return a.astype(np.float32)
     h, w = a.shape[0] // k, a.shape[1] // k
-    return a[:h * k, :w * k].reshape(h, k, w, k, *a.shape[2:]).astype(np.float32).mean(axis=(1, 3))
+    return a[: h * k, : w * k].reshape(h, k, w, k, *a.shape[2:]).astype(np.float32).mean(axis=(1, 3))
 
 
 def tiled(tex, rows, cols, metres_per_px, repeat_metres):
@@ -130,7 +137,7 @@ def render(data, size, band=512):
     """The whole map as an RGB uint8 array (size x size), north up."""
     k = WORLD // size
     assert k * size == WORLD, "size must divide 10240"
-    mpp = WORLD / size                    # metres per output pixel
+    mpp = WORLD / size  # metres per output pixel
     base = data["base"]
     out = np.empty((size, size, 3), np.uint8)
     for r0 in range(0, size, band):
@@ -138,10 +145,10 @@ def render(data, size, band=512):
         # one extra row above and below for the contour line gradients
         e0, e1 = max(0, r0 - 1), min(size, r1 + 1)
         box = (0, e0 * mpp / 8, 1280, e1 * mpp / 8)
-        H = resample(base, (size, e1 - e0), box)
-        t = (np.clip((H - SEA_FLOOR) / (HEIGHT_TOP - SEA_FLOOR), 0, 1)) ** HEIGHT_GAMMA
-        detail = area_mean(data["detail"][e0 * k:e1 * k], k)
-        fog = data["fog"][e0 * k:e1 * k]
+        height = resample(base, (size, e1 - e0), box)
+        t = (np.clip((height - SEA_FLOOR) / (HEIGHT_TOP - SEA_FLOOR), 0, 1)) ** HEIGHT_GAMMA
+        detail = area_mean(data["detail"][e0 * k : e1 * k], k)
+        fog = data["fog"][e0 * k : e1 * k]
         level = fog[::k, ::k, 1]
         zone = area_mean(fog[..., 0], k)
 
@@ -149,7 +156,7 @@ def render(data, size, band=512):
         col *= np.clip(1 + SHADE_STRENGTH * (detail - 127) / 127, 0.2, 2.5)[..., None] * BRIGHTNESS
 
         # contour lines, anti-aliased by the local height change per pixel
-        metres = H * METRES_PER_UNIT
+        metres = height * METRES_PER_UNIT
         line_col = gradient(data["isolineGradient"], t)
         land = level != 16
         for spacing, alpha in CONTOURS:
@@ -158,7 +165,7 @@ def render(data, size, band=512):
             gy, gx = np.gradient(v)
             per_px = np.sqrt(gx * gx + gy * gy) + 1e-6
             a = np.clip(1 - dist / (per_px * CONTOUR_WIDTH), 0, 1) * alpha
-            a *= np.clip(per_px * 40, 0, 1)   # no lines on flat ground (the sea floor)
+            a *= np.clip(per_px * 40, 0, 1)  # no lines on flat ground (the sea floor)
             a *= land
             col = col * (1 - a[..., None]) + line_col * a[..., None]
 
@@ -177,10 +184,10 @@ def render(data, size, band=512):
             a = (edge / data["borderGradient"].max()) * SHROUD_ALPHA * shroud
             stex = tiled(data["shroud"], rows, cols, mpp, SHROUD_TEXTURE_METRES)
             col = col * (1 - a[..., None]) + stex * a[..., None]
-            line = np.exp(-((zone - SHROUD_BORDER[0]) / 4) ** 2) * SHROUD_OUTLINE * shroud
+            line = np.exp(-(((zone - SHROUD_BORDER[0]) / 4) ** 2)) * SHROUD_OUTLINE * shroud
             col *= (1 - line)[..., None]
 
-        out[r0:r1] = np.clip(col[r0 - e0:r0 - e0 + (r1 - r0)], 0, 255).astype(np.uint8)
+        out[r0:r1] = np.clip(col[r0 - e0 : r0 - e0 + (r1 - r0)], 0, 255).astype(np.uint8)
     return out
 
 
@@ -191,23 +198,25 @@ def write_tiles(img, out_dir, levels, background, fmt="jpg"):
     not a whole number of tiles, the rest of the top row is `background`."""
     os.makedirs(out_dir, exist_ok=True)
     pil = Image.fromarray(img)
+    webp = fmt == "webp"
+    extension = "webp" if webp else "jpg"
     written = total = 0
     for z in levels:
-        size = round(WORLD * 2 ** z)
+        size = round(WORLD * 2**z)
         level_img = pil if size == pil.width else pil.resize((size, size), Image.LANCZOS)
         n = math.ceil(size / TILE)
         for y in range(-n, 0):
-            top = size + y * TILE          # image row of the tile's top edge (may be < 0)
+            top = size + y * TILE  # image row of the tile's top edge (may be < 0)
             for x in range(n):
                 tile = Image.new("RGB", (TILE, TILE), background)
                 box = (x * TILE, max(0, top), min(size, (x + 1) * TILE), top + TILE)
                 tile.paste(level_img.crop(box), (0, box[1] - top))
                 buf = io.BytesIO()
-                if fmt == "webp":
+                if webp:
                     tile.save(buf, "WEBP", quality=WEBP_QUALITY, method=6)
                 else:
                     tile.save(buf, "JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
-                with open(os.path.join(out_dir, "%d_%d_%d.%s" % (z, x, y, fmt)), "wb") as f:
+                with open(os.path.join(out_dir, f"{z}_{x}_{y}.{extension}"), "wb") as f:
                     f.write(buf.getvalue())
                 written += 1
                 total += len(buf.getvalue())
@@ -242,9 +251,9 @@ def main():
         # The average sea at the world's edge fills partial tiles and is the page background
         # (maps.json "background"), so the map has no visible edge.
         border = np.concatenate([img[:, :64].reshape(-1, 3), img[:, -64:].reshape(-1, 3)])
-        sea = tuple(int(round(v)) for v in border.mean(axis=0))
+        sea = tuple(round(v) for v in border.mean(axis=0))
         n, total = write_tiles(img, args.out, range(-5, 1), sea, args.format)
-        print("%d tiles, %.1f MB in %s; background %s" % (n, total / 2 ** 20, args.out, "#%02x%02x%02x" % sea))
+        print(f"{n} tiles, {total / 2**20:.1f} MB in {args.out}; background #{sea[0]:02x}{sea[1]:02x}{sea[2]:02x}")
 
 
 if __name__ == "__main__":

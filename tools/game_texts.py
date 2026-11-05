@@ -8,6 +8,7 @@ arguments BlobArray, genericArguments u32. A LocaTag reference (a guid, e.g. Map
 becomes the id as FNV-1a 32 over the guid's little-endian bytes (checked 2026-10-22: the spire
 template MapMarker_Tower_Capital_FastTravel -> "Revelwood", as the game's map shows it).
 """
+
 import json
 import re
 import struct
@@ -31,15 +32,16 @@ def guid_id(guid):
 
 class GameTexts:
     def __init__(self, game_dir, collection_json, language="En_Us"):
-        d = json.load(open(collection_json, encoding="utf-8"))
-        lang = next(l for l in d["languages"] if l["language"] == language)
+        with open(collection_json, encoding="utf-8") as f:
+            d = json.load(f)
+        lang = next(entry for entry in d["languages"] if entry["language"] == language)
         blob = Kfc(game_dir).read(lang["data"]["hash"])
         rel, count = struct.unpack_from("<iI", blob, 0)
         self.texts = {}
         for i in range(count):
             o = rel + 24 * i
             tid, trel, tlen = struct.unpack_from("<IiI", blob, o)
-            text = blob[o + 4 + trel:o + 4 + trel + tlen].decode("utf-8", "replace")
+            text = blob[o + 4 + trel : o + 4 + trel + tlen].decode("utf-8", "replace")
             # markup the game styles: <location>Woodgard</location>, <npc>Farmer</npc>, ...
             self.texts[tid] = TAG.sub("", text).strip()
 

@@ -5,10 +5,13 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include <cstdio>
+#include <ctime>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include "a2s.h"
-
 #include "config.h"
 #include "log.h"
 #include "proxy.h"
@@ -18,12 +21,6 @@
 #include "announce.h"
 #include "link.h"
 #include "public_ip.h"
-
-#include <mutex>
-
-#include <cstdio>
-#include <ctime>
-#include <thread>
 
 namespace {
 
@@ -58,7 +55,9 @@ void set_link(const std::string& value) {
     {
         SharedLink& link = shared_link();
         std::lock_guard lock(link.mutex);
-        if (link.value == value) return;
+        if (link.value == value) {
+            return;
+        }
         link.value = value;
     }
     livemap::log("map link: %s", value.c_str());
@@ -69,10 +68,14 @@ void start_link(const livemap::Config& config) {
         set_link(livemap::link::make(config.public_url, "", config.port, config.key));
         return;
     }
-    if (!config.public_url.empty()) livemap::log("PublicUrl ignored: it has no scheme (it must start with http:// or https://)");
+    if (!config.public_url.empty()) {
+        livemap::log("PublicUrl ignored: it has no scheme (it must start with http:// or https://)");
+    }
     if (!config.detect_public_address) {
-        livemap::log("map link: unknown (DetectPublicAddress=0 and no usable PublicUrl); open port %d over TCP and share "
-                     "http://<server address>:%d/?key=<Key>", config.port, config.port);
+        livemap::log(
+            "map link: unknown (DetectPublicAddress=0 and no usable PublicUrl); open port %d over TCP and share "
+            "http://<server address>:%d/?key=<Key>",
+            config.port, config.port);
         return;
     }
     livemap::Config c = config;
@@ -94,10 +97,14 @@ void start_link(const livemap::Config& config) {
 bool read_file(const std::wstring& path, std::string& text) {
     text.clear();
     FILE* f = _wfopen(path.c_str(), L"rb");
-    if (!f) return false;
+    if (!f) {
+        return false;
+    }
     char buf[65536];
     size_t n;
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+        text.append(buf, n);
+    }
     std::fclose(f);
     return true;
 }
@@ -117,7 +124,9 @@ bool write_file_atomic(const std::wstring& path, const std::string& text) {
 // the keywords that start with the world's Flame level. -1 when there is no answer.
 int query_flame_level(int port) {
     SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (s == INVALID_SOCKET) return -1;
+    if (s == INVALID_SOCKET) {
+        return -1;
+    }
     DWORD timeout = 2000;
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof timeout);
     sockaddr_in to{};
@@ -131,10 +140,14 @@ int query_flame_level(int port) {
         sendto(s, request.data(), static_cast<int>(request.size()), 0, reinterpret_cast<const sockaddr*>(&to), sizeof to);
         char buf[1400];
         int n = recv(s, buf, sizeof buf, 0);
-        if (n <= 0) break;
+        if (n <= 0) {
+            break;
+        }
         const std::string reply(buf, static_cast<size_t>(n));
         challenge = livemap::a2s::challenge_of(reply);
-        if (!challenge.empty()) continue;  // the server wants its challenge sent back first
+        if (!challenge.empty()) {
+            continue;  // the server wants its challenge sent back first
+        }
         level = livemap::a2s::flame_level(livemap::a2s::keywords_of(reply));
         break;
     }
@@ -169,8 +182,9 @@ DWORD WINAPI start(LPVOID) {
     livemap::log("livemap %s starting: Enabled=%d Port=%d%s real iphlpapi %s", kVersion, config.enabled, config.port,
                  config.port_from_game ? " (auto: the game's queryPort, TCP)" : "", g_real_loaded ? "loaded" : "MISSING");
     if (!livemap::link::key_ok(config.key)) {
-        livemap::log("WARNING: Key in livemap.ini should be 3 to 64 letters, digits, - or _ (and not state, events, "
-                     "finds, icons, index, livemap); other characters can break the link");
+        livemap::log(
+            "WARNING: Key in livemap.ini should be 3 to 64 letters, digits, - or _ (and not state, events, "
+            "finds, icons, index, livemap); other characters can break the link");
     }
     if (!config.enabled) {
         livemap::log("disabled in livemap.ini");
@@ -189,9 +203,14 @@ DWORD WINAPI start(LPVOID) {
     } else {
         livemap::log("finds off in livemap.ini (Finds=0)");
     }
-    if (config.bases) livemap::world::install_bases(targets);
-    else livemap::log("Flame Altars off in livemap.ini (Bases=0)");
-    if (config.chat_probe) livemap::world::enable_chat_probe(targets);
+    if (config.bases) {
+        livemap::world::install_bases(targets);
+    } else {
+        livemap::log("Flame Altars off in livemap.ini (Bases=0)");
+    }
+    if (config.chat_probe) {
+        livemap::world::enable_chat_probe(targets);
+    }
     const std::wstring finds_path = dir + L"\\livemap\\finds.json";
     std::string text;
     if (read_file(finds_path, text)) {
@@ -237,8 +256,11 @@ DWORD WINAPI start(LPVOID) {
         if (now - last_save >= 5'000 && livemap::world::store().version() != saved_version) {
             last_save = now;
             uint64_t version = livemap::world::store().version();
-            if (write_file_atomic(finds_path, livemap::world::store().to_json())) saved_version = version;
-            else livemap::log("finds: could not write livemap\\finds.json (error %lu), will retry", GetLastError());
+            if (write_file_atomic(finds_path, livemap::world::store().to_json())) {
+                saved_version = version;
+            } else {
+                livemap::log("finds: could not write livemap\\finds.json (error %lu), will retry", GetLastError());
+            }
         }
         // Discovered places: read every 5 s, saved the same way when they changed.
         if (config.discovered && now - last_discovered >= 5'000) {
@@ -255,8 +277,12 @@ DWORD WINAPI start(LPVOID) {
             livemap::world::refresh_explored();
             const uint64_t version = livemap::world::explored_store().version();
             const bool due = version != explored_saved && now - last_explored_save >= 30'000;
-            if (due) last_explored_save = now;
-            if (due && write_file_atomic(explored_path, livemap::world::explored_store().to_json())) explored_saved = version;
+            if (due) {
+                last_explored_save = now;
+            }
+            if (due && write_file_atomic(explored_path, livemap::world::explored_store().to_json())) {
+                explored_saved = version;
+            }
         }
         if (config.log_diagnostics && now - last_diag >= 30'000) {
             last_diag = now;

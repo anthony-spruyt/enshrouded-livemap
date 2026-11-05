@@ -1,6 +1,6 @@
 // Plain assert-based tests for reading the Flame level from the server's A2S_INFO reply.
-#include <cstdio>
 #include <print>
+#include <source_location>
 #include <string>
 
 #include "../src/a2s.h"
@@ -9,10 +9,12 @@ using namespace livemap::a2s;
 
 static int failures = 0;
 
-#define EXPECT(cond)                                                                              \
-    do {                                                                                          \
-        if (!(cond)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++failures; } \
-    } while (0)
+static void check(bool ok, std::source_location where = std::source_location::current()) {
+    if (!ok) {
+        std::print("FAIL {}:{}\n", where.file_name(), where.line());
+        ++failures;
+    }
+}
 
 int main() {
     // The live server's reply of 23 Oct 2026 (world at Flame level 3), byte for byte.
@@ -24,23 +26,26 @@ int main() {
         0x31, 0x35, 0x2e, 0x30, 0x00, 0xb1, 0x15, 0x3d, 0x18, 0x30, 0x06, 0xb6, 0x52, 0xcb, 0x40,
         0x01, 0x33, 0x3b, 0x31, 0x32, 0x37, 0x33, 0x30, 0x34, 0x33, 0x3b, 0x31, 0x3b, 0x30, 0x3b,
         0x31, 0x3b, 0x31, 0x3b, 0x31, 0x3b, 0x30, 0x3b, 0x30, 0x00, 0xa4, 0x5d, 0x12, 0x00, 0x00,
-        0x00, 0x00, 0x00
-    };
+        0x00, 0x00, 0x00};
     const std::string live(reinterpret_cast<const char*>(kLive), sizeof kLive);
-    EXPECT(keywords_of(live) == "3;1273043;1;0;1;1;1;0;0");
-    EXPECT(flame_level(keywords_of(live)) == 3);
-    EXPECT(flame_level("10;1273043") == 10);
-    EXPECT(flame_level("") == -1);
-    EXPECT(flame_level("x;1") == -1);
-    EXPECT(flame_level("123;1") == -1);
+    check(keywords_of(live) == "3;1273043;1;0;1;1;1;0;0");
+    check(flame_level(keywords_of(live)) == 3);
+    check(flame_level("10;1273043") == 10);
+    check(flame_level("") == -1);
+    check(flame_level("x;1") == -1);
+    check(flame_level("123;1") == -1);
     // Cut short anywhere: no keywords, no crash.
-    for (size_t n = 0; n < live.size(); ++n) EXPECT(keywords_of(live.substr(0, n)).size() <= 23);
-    EXPECT(keywords_of(live.substr(0, 90)).empty());
+    for (size_t n = 0; n < live.size(); ++n) {
+        check(keywords_of(live.substr(0, n)).size() <= 23);
+    }
+    check(keywords_of(live.substr(0, 90)).empty());
     // Challenge round trip.
     const std::string challenge_reply("\x{ff}\x{ff}\x{ff}\x{ff}A\x{01}\x{02}\x{03}\x{04}", 9);
-    EXPECT(challenge_of(challenge_reply) == std::string("\x01\x02\x03\x04", 4));
-    EXPECT(challenge_of(live).empty());
-    EXPECT(info_request(std::string("\x01\x02\x03\x04", 4)).size() == 4 + 1 + 19 + 1 + 4);
-    if (failures == 0) std::print("a2s: all passed\n");
+    check(challenge_of(challenge_reply) == std::string("\x{01}\x{02}\x{03}\x{04}", 4));
+    check(challenge_of(live).empty());
+    check(info_request(std::string("\x{01}\x{02}\x{03}\x{04}", 4)).size() == 4 + 1 + 19 + 1 + 4);
+    if (failures == 0) {
+        std::print("a2s: all passed\n");
+    }
     return failures == 0 ? 0 : 1;
 }

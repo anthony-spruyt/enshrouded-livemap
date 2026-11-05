@@ -36,7 +36,9 @@ int wmain(int argc, wchar_t** argv) {
     }
     const livemap::Build* row = nullptr;
     for (const livemap::Build& b : livemap::kBuilds) {
-        if (std::strcmp(b.label, t.build) == 0) row = &b;
+        if (std::strcmp(b.label, t.build) == 0) {
+            row = &b;
+        }
     }
     if (row == nullptr) {
         std::printf("INACTIVE: no expected RVAs for server build %s\n", t.build);
@@ -49,7 +51,9 @@ int wmain(int argc, wchar_t** argv) {
         return it == list.end() ? nullptr : std::to_address(it);
     };
     for (const livemap::Named& e : row->expected) {
-        if (std::strcmp(e.name, "param_entity") == 0) continue;
+        if (std::strcmp(e.name, "param_entity") == 0) {
+            continue;
+        }
         uintptr_t livemap::Targets::* const member = livemap::target_member(e.name);
         const uintptr_t at = member == nullptr ? 0 : t.*member;
         const uintptr_t rva = at - reinterpret_cast<uintptr_t>(base);

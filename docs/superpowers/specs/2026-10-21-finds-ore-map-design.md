@@ -42,7 +42,7 @@ pattern is logged once; positions, time, weather and the markers keep working.
 
 **Storage.** `livemap/finds.json` next to the server exe:
 
-```
+```text
 { "version": 12,
   "ore": [ { "x": 3753.2, "y": 843.0, "z": 1420.9, "sort": "copper" | null, "xp": 10, "hits": 14,
              "first": 1792530000, "last": 1792531000, "by": ["OG Vanilla K"] } ],

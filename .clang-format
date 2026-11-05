@@ -1,0 +1,16 @@
+---
+Language: Cpp
+# The source is already in this layout; the Microsoft base with indented namespaces would rewrite every line
+BasedOnStyle: Google
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+PointerAlignment: Left
+DerivePointerAlignment: false
+ColumnLimit: 0
+# winsock2.h must come before windows.h
+SortIncludes: Never
+# cpplint readability/braces wants braces on both sides of an else
+InsertBraces: true
+AlignTrailingComments:
+  Kind: Leave

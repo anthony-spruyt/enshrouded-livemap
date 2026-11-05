@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxsecurity/megalinter/main/megalinter/descriptors/schemas/megalinter-configuration.jsonschema.json
+# Project-specific MegaLinter configuration
+# Extends the base config from repo-operator
+# Add custom linters or overrides below
+
+EXTENDS:
+  - ".mega-linter-base.yml"
+CONFIG_PROPERTIES_TO_APPEND:
+  - "ENABLE_LINTERS"
+  - "ADDITIONAL_EXCLUDED_DIRECTORIES"
+ENABLE_LINTERS:
+  - "CPP_CLANG_FORMAT"
+  - "CPP_CPPCHECK"
+  - "CPP_CPPLINT"
+# Headers would otherwise be parsed as C
+CPP_CPPCHECK_ARGUMENTS:
+  - "--language=c++"

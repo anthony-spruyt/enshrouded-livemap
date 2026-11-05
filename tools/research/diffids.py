@@ -3,6 +3,7 @@ first (and the other way round). Read-only analysis on the host.
 Usage: python3 diffids.py before.bin after.bin marker-ids.json [--root <dir>]
 Every path must be inside the working directory (or a --root).
 """
+
 import argparse
 import json
 import os
@@ -25,7 +26,8 @@ args.before = checked(ap, args.before, args.root)
 args.after = checked(ap, args.after, args.root)
 args.idfile = checked(ap, args.idfile, args.root)
 
-ids_by = {int(k): v for k, v in json.load(open(args.idfile))["ids"].items()}
+with open(args.idfile) as f:
+    ids_by = {int(k): v for k, v in json.load(f)["ids"].items()}
 ids = np.array(sorted(ids_by), dtype=np.uint32)
 
 
@@ -38,7 +40,7 @@ def hits(path):
                 break
             start, length = struct.unpack("<QQ", head)
             data = f.read(length)
-            a = np.frombuffer(data[:(len(data) // 4) * 4], "<u4")
+            a = np.frombuffer(data[: (len(data) // 4) * 4], "<u4")
             for i in np.nonzero(np.isin(a, ids))[0]:
                 out.add((start + 4 * int(i), int(a[i])))
     return out
@@ -46,11 +48,11 @@ def hits(path):
 
 before, after = hits(args.before), hits(args.after)
 new, gone = sorted(after - before), sorted(before - after)
-print("before %d hits, after %d, new %d, gone %d" % (len(before), len(after), len(new), len(gone)))
+print(f"before {len(before)} hits, after {len(after)}, new {len(new)}, gone {len(gone)}")
 for title, rows in (("NEW", new), ("GONE", gone)):
     by_id = defaultdict(list)
     for addr, v in rows:
         by_id[v].append(addr)
-    print("== %s: %d ids" % (title, len(by_id)))
+    print(f"== {title}: {len(by_id)} ids")
     for v, addrs in sorted(by_id.items(), key=lambda kv: kv[1][0])[:60]:
-        print("  %08x  %-70s %s" % (v, ids_by[v][:70], " ".join("%#x" % a for a in addrs[:4])))
+        print(f"  {v:08x}  {ids_by[v][:70]:<70} {' '.join(f'{a:#x}' for a in addrs[:4])}")

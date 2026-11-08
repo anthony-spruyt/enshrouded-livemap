@@ -4,7 +4,7 @@ The iphlpapi.dll of this mod statically links the following libraries. The web p
 livemap folder uses the font Alegreya (see the end of this file); its map art, icons and UI
 graphics come from Enshrouded's own game files, (c) Keen Games.
 
-## SafetyHook (<https://github.com/cursey/safetyhook>), v0.7.0
+## SafetyHook (<https://github.com/cursey/safetyhook>)
 
 ```text
 Boost Software License - Version 1.0 - August 17th, 2003

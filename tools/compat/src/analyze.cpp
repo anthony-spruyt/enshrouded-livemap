@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <format>
 #include <iterator>
+#include <memory>
 #include <ranges>
 #include <span>
 #include <string>
@@ -30,7 +31,7 @@ std::string hex(uint32_t value) {
 
 const SiteHit* hit_named(std::span<const SiteHit> hits, std::string_view site) {
     const auto found = std::ranges::find(hits, site, [](const SiteHit& hit) -> std::string_view { return hit.pattern->site; });
-    return found == hits.end() ? nullptr : &*found;
+    return found == hits.end() ? nullptr : std::to_address(found);
 }
 
 std::optional<uint32_t> operand_of(std::span<const SiteHit> hits, std::string_view name) {
@@ -65,7 +66,7 @@ Problems scan_problems(const BuildRow& row, std::span<const SiteHit> hits) {
         }
     }
     for (const NamedValue& expected : row.expected_operands) {
-        if (const std::optional<uint32_t> value = operand_of(hits, expected.name); !value) {
+        if (const std::optional<uint32_t> value = operand_of(hits, expected.name); !value.has_value()) {
             problems.push_back(std::format("{}: no site reads it, the row lists {}", expected.name, hex(expected.value)));
         } else if (*value != expected.value) {
             problems.push_back(std::format("{}: reads {}, the row lists {}", expected.name, hex(*value), hex(expected.value)));
@@ -142,7 +143,7 @@ std::expected<Loaded, std::string> load_code(const Image& image, const Decoder& 
         masks.emplace_back(hit.match_rva + operand.value, kOperandWidth);
     }
     auto decoded = decode_function(decoder, bytes, Function{region.begin, region.end}, masks);
-    if (decoded.stopped) {
+    if (decoded.stopped.has_value()) {
         return std::unexpected(std::format("the code at {} cannot be decoded past {}", hex(region.begin), hex(*decoded.stopped)));
     }
     return Loaded{region, std::move(decoded.code)};
@@ -159,8 +160,10 @@ void check_join(const Context& c, const SiteHit& join, const Code& code, Problem
         problems.push_back(std::format("{}: {} is not found once, so the call cannot be checked", kJoinSite, kChatSite));
         return;
     }
-    const auto is_chat_call = [&](const Instruction& i) { return i.rva == join.rva && i.bytes[0] == kCallOpcode && i.target == chat->rva; };
-    if (!std::ranges::any_of(code.instructions, is_chat_call)) {
+    if (const auto is_chat_call = [&](const Instruction& i) {
+            return i.rva == join.rva && i.bytes[0] == kCallOpcode && i.target == chat->rva;
+        };
+        !std::ranges::any_of(code.instructions, is_chat_call)) {
         problems.push_back(std::format("{}: the instruction at {} is not a call to {}", kJoinSite, hex(join.rva), kChatSite));
     }
     if (!std::ranges::any_of(c.current.at(join.rva + kCallLength, 1), follows_join_call)) {
@@ -176,7 +179,7 @@ void check_hooks(const Context& c, const SiteHit& now, const Code& code, SiteRep
     report.hook_aligned = true;
     for (const uint32_t point : points) {
         const std::optional<uint32_t> span = hook_span(code.instructions, point);
-        if (!span) {
+        if (!span.has_value()) {
             report.hook_aligned = false;
             problems.push_back(std::format("{}: the hook at {} does not start on an instruction", report.site, hex(point)));
             continue;
@@ -234,10 +237,10 @@ void inspect_site(const Context& c, size_t index, SiteReport& report, Problems& 
 
 Problems collisions(const Catalog& catalog, std::string_view id, std::optional<size_t> own) {
     Problems problems;
-    if (const std::optional<size_t> listed = catalog.row_with_build_id(id); listed && listed != own) {
+    if (const std::optional<size_t> listed = catalog.row_with_build_id(id); listed.has_value() && listed != own) {
         problems.push_back(std::format("the build id {} is already listed by the row {}", id, catalog.rows()[*listed].label));
     }
-    if (const std::optional<size_t> labeled = catalog.row_with_label(id); labeled && labeled != own) {
+    if (const std::optional<size_t> labeled = catalog.row_with_label(id); labeled.has_value() && labeled != own) {
         problems.push_back(std::format("the build id {} is the label of another row", id));
     }
     return problems;
@@ -276,7 +279,7 @@ void judge_known(const Catalog& catalog, const Request& request, const std::vect
     }
     out.verdict = Verdict::Known;
     out.matched_label = row.label;
-    if (!catalog.row_with_build_id(request.build_id)) {
+    if (!catalog.row_with_build_id(request.build_id).has_value()) {
         out.edit.kind = Edit::Kind::Alias;
         out.edit.row = rows[0];
         out.edit.added.build_id = request.build_id;
@@ -350,7 +353,7 @@ std::expected<Analysis, std::string> analyze(const Catalog& catalog, const Reque
         return std::unexpected("both exes are needed");
     }
     const auto base_index = find_base(catalog, request);
-    if (!base_index) {
+    if (!base_index.has_value()) {
         return std::unexpected(base_index.error());
     }
     const BuildRow& base = catalog.rows()[*base_index];
@@ -380,12 +383,13 @@ std::expected<Analysis, std::string> analyze(const Catalog& catalog, const Reque
 }
 
 std::expected<void, std::string> apply_edit(Catalog& catalog, const Edit& edit) {
+    using enum Edit::Kind;
     switch (edit.kind) {
-        case Edit::Kind::Alias:
+        case Alias:
             return catalog.add_alias(edit.row, edit.added.build_id);
-        case Edit::Kind::Append:
+        case Append:
             return catalog.append_row_like(edit.row, edit.added);
-        case Edit::Kind::None:
+        case None:
             break;
     }
     return {};

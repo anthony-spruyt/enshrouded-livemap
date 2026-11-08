@@ -17,6 +17,11 @@ constexpr uint32_t kHighSurrogate = 0xd800;
 constexpr uint32_t kLowSurrogate = 0xdc00;
 constexpr uint32_t kSurrogateEnd = 0xe000;
 
+class JsonError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 bool is_digit(char c) {
     return c >= '0' && c <= '9';
 }
@@ -35,7 +40,7 @@ public:
     }
 
 private:
-    [[noreturn]] void fail(std::string_view what) const { throw std::runtime_error(std::format("offset {}: {}", pos_, what)); }
+    [[noreturn]] void fail(std::string_view what) const { throw JsonError(std::format("offset {}: {}", pos_, what)); }
 
     bool at_end() const { return pos_ >= text_.size(); }
     char peek() const { return at_end() ? '\0' : text_[pos_]; }
@@ -348,21 +353,22 @@ void write_container(const Json& value, size_t indent, std::string& out) {
 }
 
 void write_value(const Json& value, size_t indent, std::string& out) {
+    using enum Json::Kind;
     switch (value.kind()) {
-        case Json::Kind::Null:
+        case Null:
             out += "null";
             break;
-        case Json::Kind::Bool:
+        case Bool:
             out += value.as_bool() ? "true" : "false";
             break;
-        case Json::Kind::Number:
+        case Number:
             out += value.text();
             break;
-        case Json::Kind::String:
+        case String:
             write_string(value.text(), out);
             break;
-        case Json::Kind::Array:
-        case Json::Kind::Object:
+        case Array:
+        case Object:
             write_container(value, indent, out);
             break;
     }
@@ -457,7 +463,7 @@ void Json::set(std::string key, Json value) {
 std::expected<Json, std::string> parse_json(std::string_view text) {
     try {
         return Reader(text).document();
-    } catch (const std::runtime_error& error) {
+    } catch (const JsonError& error) {
         return std::unexpected(std::string(error.what()));
     }
 }

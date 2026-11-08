@@ -59,7 +59,7 @@ Json site_json(const SiteReport& site) {
     out.set("base_rva", optional_hex(site.base_rva));
     out.set("region", region_json(site.region));
     out.set("base_region", region_json(site.base_region));
-    out.set("hook_aligned", site.hook_aligned ? Json::boolean(*site.hook_aligned) : Json::null());
+    out.set("hook_aligned", site.hook_aligned.has_value() ? Json::boolean(*site.hook_aligned) : Json::null());
     out.set("branches_into_hook", branches_json(site.into_hook));
     out.set("difference", difference_json(site.difference));
     return out;
@@ -103,7 +103,7 @@ Json report_json(const Analysis& analysis) {
         reasons.push(Json::string(reason));
     }
     out.set("reasons", std::move(reasons));
-    out.set("undecodable_functions", analysis.undecodable_functions ? Json::number(*analysis.undecodable_functions) : Json::null());
+    out.set("undecodable_functions", analysis.undecodable_functions.has_value() ? Json::number(*analysis.undecodable_functions) : Json::null());
     out.set("operands", operands_json(analysis.operands));
     Json sites = Json::array();
     for (const SiteReport& site : analysis.sites) {
@@ -114,12 +114,13 @@ Json report_json(const Analysis& analysis) {
 }
 
 std::string_view verdict_name(Verdict verdict) {
+    using enum Verdict;
     switch (verdict) {
-        case Verdict::Known:
+        case Known:
             return "known";
-        case Verdict::Easy:
+        case Easy:
             return "easy";
-        case Verdict::Hard:
+        case Hard:
             return "hard";
     }
     return "hard";

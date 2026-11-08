@@ -103,8 +103,10 @@ bool note_table(std::vector<Table>& tables, std::span<const std::byte> bytes, co
     if (!table) {
         return true;
     }
-    const auto collides = [&](const Table& other) { return collide(other, *table); };
-    if (std::ranges::any_of(tables, collides)) {
+    if (const auto collides = [&](const Table& other) {
+            return collide(other, *table);
+        };
+        std::ranges::any_of(tables, collides)) {
         return false;
     }
     if (std::ranges::find(tables, table->rva, &Table::rva) == tables.end()) {
@@ -272,7 +274,7 @@ std::set<size_t> add_tables(const Image& image, size_t index, Discovery& found) 
             continue;
         }
         touched.merge(functions_touching(image.functions(), table->rva, table_end(*table)));
-        found.tables.emplace(table->rva, *table);
+        found.tables.try_emplace(table->rva, *table);
     }
     return touched;
 }
@@ -330,7 +332,7 @@ Decoded decode_function(const Decoder& decoder, std::span<const std::byte> bytes
     Decoded out;
     out.code.range = range;
     uint32_t rva = range.begin;
-    while (rva < range.end && !out.stopped) {
+    while (rva < range.end && !out.stopped.has_value()) {
         const auto table = std::ranges::find(out.code.tables, rva, &Table::rva);
         rva = table != out.code.tables.end() ? rva + static_cast<uint32_t>(table->entries.size()) * kEntryLength : step(decoder, bytes, masks, out, rva);
     }
@@ -396,8 +398,10 @@ BranchMap collect_branches(const Image& image, const Decoder& decoder) {
 
 bool stopped_near(const BranchMap& map, const Image& image, const Function& site) {
     const std::optional<uint32_t> root = image.chain_root(site.begin);
-    const auto in_chain = [&](const Function& f) { return image.chain_root(f.begin) == root; };
-    if (std::ranges::any_of(map.stopped, in_chain)) {
+    if (const auto in_chain = [&](const Function& f) {
+            return image.chain_root(f.begin) == root;
+        };
+        std::ranges::any_of(map.stopped, in_chain)) {
         return true;
     }
     const auto first = std::ranges::upper_bound(map.branches, int64_t{site.begin}, {}, &Branch::target);

@@ -15,6 +15,14 @@ enum class Extra { None,
                    Garbage,
                    JumpIn };
 
+struct JoinLayout {
+    bool lose = false;        // the join line's pattern is gone
+    uint8_t after = 0x44;     // the byte after the join call
+    bool calls_chat = true;   // the join call goes to chat_post
+    bool jumps = false;       // the instruction at the join call is a jmp instead
+    uint32_t tag = 0x1234;
+};
+
 struct ExeLayout {
     uint32_t time_date_stamp = 100;
     uint32_t size_of_image = 0x10000;
@@ -27,11 +35,7 @@ struct ExeLayout {
     bool duplicate_beta = false;  // beta's pattern appears a second time
     bool lose_gamma = false;      // chat_post's pattern is gone
     bool duplicate_gamma = false;  // chat_post's pattern appears a second time
-    bool lose_join = false;       // the join line's pattern is gone
-    uint8_t join_after = 0x44;    // the byte after the join call
-    bool join_calls_chat = true;  // the join call goes to chat_post
-    bool join_jumps = false;      // the instruction at the join call is a jmp instead
-    uint32_t join_tag = 0x1234;
+    JoinLayout join;
     bool alpha_switch = false;    // alpha ends in a jump table, and is twice as long
     uint32_t switch_entry = 0x12;  // where the middle entry of that table goes, as an offset from alpha
     Extra extra = Extra::None;     // a function after the others: Table holds alpha's jump table, Garbage stops decoding, JumpIn jumps and then stops
@@ -160,11 +164,11 @@ inline std::vector<std::byte> build_exe(const ExeLayout& layout) {
         a.emit({0xb8, 0x33, 0x33, 0x33, 0x33, 0x48, 0x89, 0xd9, 0xc3});
     }
     a.pad_to(s.join);
-    const unsigned join_marker = layout.lose_join ? 0x55U : 0x44U;
+    const unsigned join_marker = layout.join.lose ? 0x55U : 0x44U;
     a.emit({0xb8, join_marker, join_marker, join_marker, join_marker, 0xb9});
-    a.imm32(layout.join_tag);
-    a.branch32(layout.join_jumps ? 0xe9 : 0xe8, layout.join_calls_chat ? s.chat : s.outside_function);
-    a.emit({layout.join_after, 0x8b, 0xc0, 0x48, 0x89, 0xc1, 0xc3});
+    a.imm32(layout.join.tag);
+    a.branch32(layout.join.jumps ? 0xe9 : 0xe8, layout.join.calls_chat ? s.chat : s.outside_function);
+    a.emit({layout.join.after, 0x8b, 0xc0, 0x48, 0x89, 0xc1, 0xc3});
     a.pad_to(s.leaf);
     a.emit({0x4c, 0x8b, 0xd9, 0x48, 0x8b, 0x81});
     a.imm32(layout.entity_table);

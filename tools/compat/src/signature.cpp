@@ -35,7 +35,7 @@ std::expected<Signature, std::string> parse_signature(std::string_view text) {
     while (true) {
         const size_t end = text.find(' ', start);
         const auto byte = parse_token(text.substr(start, end == std::string_view::npos ? end : end - start));
-        if (!byte) {
+        if (!byte.has_value()) {
             return std::unexpected(byte.error());
         }
         signature.push_back(*byte);

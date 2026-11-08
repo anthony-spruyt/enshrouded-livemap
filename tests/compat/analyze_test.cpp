@@ -147,7 +147,7 @@ Request request(const Exe& previous, const Exe& current, std::string build_id = 
 }
 
 bool mentions(const Analysis& a, std::string_view fragment) {
-    return std::ranges::any_of(a.reasons, [&](const std::string& reason) { return reason.contains(fragment); });
+    return std::ranges::any_of(a.reasons, [&](std::string_view reason) { return reason.contains(fragment); });
 }
 
 const SiteReport& site(const Analysis& a, std::string_view name) {
@@ -212,10 +212,11 @@ void check_inputs(compat_test::Suite& t) {
 }
 
 void check_known(compat_test::Suite& t) {
+    using enum Verdict;
     const Exe base = exe_of(ExeLayout{});
     const ExeSites s = sites_of(base.layout);
     const Analysis same = run(t, base, base);
-    t.check(same.verdict == Verdict::Known && same.matched_label == "100" && same.reasons.empty(), "the same exe under a new build id is known");
+    t.check(same.verdict == Known && same.matched_label == "100" && same.reasons.empty(), "the same exe under a new build id is known");
     t.check(same.edit.kind == Edit::Kind::Alias && same.edit.row == 0 && same.edit.added.build_id == "200", "and asks for an alias in the row it matched");
     t.check(same.build_id == "200" && same.manifest == "5555" && same.exe.sha256 == base.sha && same.exe.time_date_stamp == 100 && same.exe.size_of_image == 0x10000,
             "the report names the build and the exe");
@@ -225,34 +226,34 @@ void check_known(compat_test::Suite& t) {
     t.check(alpha.mandatory && !site(same, "chat_post").mandatory, "and whether the sigset needs it");
 
     const Analysis listed = run(t, base, base, with_id("100"));
-    t.check(listed.verdict == Verdict::Known && listed.edit.kind == Edit::Kind::None, "a build id the row lists already changes nothing");
-    t.check(run(t, base, base, without_sha()).verdict == Verdict::Known, "a row without a checksum goes by the fingerprint");
+    t.check(listed.verdict == Known && listed.edit.kind == Edit::Kind::None, "a build id the row lists already changes nothing");
+    t.check(run(t, base, base, without_sha()).verdict == Known, "a row without a checksum goes by the fingerprint");
 
     ExeLayout other_bytes_layout;
     other_bytes_layout.outside = 0x40;
     const Exe other_bytes = exe_of(other_bytes_layout);
     const Analysis changed = run(t, base, other_bytes);
-    t.check(changed.verdict == Verdict::Hard && mentions(changed, "checksum") && changed.edit.kind == Edit::Kind::None, "other bytes under the fingerprint of a row are hard");
-    t.check(run(t, base, other_bytes, without_sha()).verdict == Verdict::Known, "unless the row has no checksum to tell");
+    t.check(changed.verdict == Hard && mentions(changed, "checksum") && changed.edit.kind == Edit::Kind::None, "other bytes under the fingerprint of a row are hard");
+    t.check(run(t, base, other_bytes, without_sha()).verdict == Known, "unless the row has no checksum to tell");
 
     ExeLayout moved_layout;
     moved_layout.lead = 0x20;
     const Analysis elsewhere = run(t, base, exe_of(moved_layout), without_sha());
-    t.check(elsewhere.verdict == Verdict::Hard && mentions(elsewhere, "alpha"), "the sites of a row found elsewhere are hard");
+    t.check(elsewhere.verdict == Hard && mentions(elsewhere, "alpha"), "the sites of a row found elsewhere are hard");
 
     const Analysis taken = run(t, base, base, with_id("900"));
-    t.check(taken.verdict == Verdict::Hard && mentions(taken, "already listed") && taken.edit.kind == Edit::Kind::None, "a build id that belongs to another row");
+    t.check(taken.verdict == Hard && mentions(taken, "already listed") && taken.edit.kind == Edit::Kind::None, "a build id that belongs to another row");
 
     ExeLayout twice_layout;
     twice_layout.duplicate_beta = true;
     const Analysis doubled = run(t, base, exe_of(twice_layout), without_sha());
-    t.check(doubled.verdict == Verdict::Hard && mentions(doubled, "beta: 2 matches"), "a site that matches twice under the fingerprint of a row is hard");
+    t.check(doubled.verdict == Hard && mentions(doubled, "beta: 2 matches"), "a site that matches twice under the fingerprint of a row is hard");
     ExeLayout bare_layout;
     bare_layout.lose_gamma = true;
     const Exe bare = exe_of(bare_layout);
     Options bare_options;
     bare_options.catalog = replaced(catalog_text(bare), ", " + entry("chat_post", s.chat), "");
-    t.check(run(t, bare, bare, bare_options).verdict == Verdict::Known, "a site that the exe lacks and the row does not list is no difference");
+    t.check(run(t, bare, bare, bare_options).verdict == Known, "a site that the exe lacks and the row does not list is no difference");
 
     Options other_sigset;
     other_sigset.catalog = replaced(replaced(replaced(catalog_text(base), R"("time_date_stamp": 6)", R"("time_date_stamp": 101)"), R"("0x3000", "sigset": "s")", R"("0x10000", "sigset": "t")"),
@@ -264,7 +265,7 @@ void check_known(compat_test::Suite& t) {
                                                 R"(  ])",
                                                 entry("alpha", s.alpha)));
     const Analysis reverted = run(t, base, exe_of(bumped()), other_sigset);
-    t.check(reverted.verdict == Verdict::Known && reverted.matched_label == "legacy" && reverted.sites.size() == 1, "a row with a sigset of its own is judged by that one");
+    t.check(reverted.verdict == Known && reverted.matched_label == "legacy" && reverted.sites.size() == 1, "a row with a sigset of its own is judged by that one");
     t.check(reverted.edit.kind == Edit::Kind::Alias && reverted.edit.row == 2, "and gets the alias");
 
     const std::string claimed = replaced(replaced(catalog_text(base), R"("time_date_stamp": 5)", R"("time_date_stamp": 101)"), R"("0x2000")", R"("0x10000")");
@@ -272,11 +273,11 @@ void check_known(compat_test::Suite& t) {
     Options claimed_options;
     claimed_options.catalog = claimed;
     const Analysis lone = run(t, base, fresh, claimed_options);
-    t.check(lone.verdict == Verdict::Hard && mentions(lone, "alpha"), "a row that lists no sites for its fingerprint is hard");
+    t.check(lone.verdict == Hard && mentions(lone, "alpha"), "a row that lists no sites for its fingerprint is hard");
     Options crowded_options;
     crowded_options.catalog = replaced(replaced(claimed, R"("time_date_stamp": 6)", R"("time_date_stamp": 101)"), R"("0x3000")", R"("0x10000")");
     const Analysis crowd = run(t, base, fresh, crowded_options);
-    t.check(crowd.verdict == Verdict::Hard && mentions(crowd, "900") && mentions(crowd, "legacy"), "a fingerprint two rows have is hard");
+    t.check(crowd.verdict == Hard && mentions(crowd, "900") && mentions(crowd, "legacy"), "a fingerprint two rows have is hard");
 }
 
 void check_easy(compat_test::Suite& t) {
@@ -315,7 +316,7 @@ void check_easy(compat_test::Suite& t) {
     t.check(plain.verdict == Verdict::Easy && plain.edit.added.expected == std::vector<uint32_t>{old_sites.alpha, old_sites.beta, old_sites.leaf, old_sites.chat}, "a new fingerprint over the same code");
 
     ExeLayout tagged = bumped();
-    tagged.join_tag = 0x5678;
+    tagged.join.tag = 0x5678;
     t.check(run(t, base, exe_of(tagged)).verdict == Verdict::Easy, "a value the code reads as its own is not a difference");
 
     ExeLayout edge = bumped();
@@ -334,9 +335,9 @@ void check_easy(compat_test::Suite& t) {
     t.check(later.verdict == Verdict::Easy && later.base_label == "100" && later.edit.row == 1, "the new row follows the row of the previous exe wherever it is");
 
     ExeLayout jumping = bumped();
-    jumping.join_after = 0xe9;
+    jumping.join.after = 0xe9;
     ExeLayout jumping_base;
-    jumping_base.join_after = 0xe9;
+    jumping_base.join.after = 0xe9;
     t.check(run(t, exe_of(jumping_base), exe_of(jumping)).verdict == Verdict::Easy, "a join call followed by a jump is the other form the hook accepts");
 
     ExeLayout switched_base;
@@ -423,23 +424,23 @@ void check_hard_join(compat_test::Suite& t) {
     const Exe base = exe_of(ExeLayout{});
 
     ExeLayout no_join_base;
-    no_join_base.lose_join = true;
+    no_join_base.join.lose = true;
     const Analysis no_reference = run(t, exe_of(no_join_base), exe_of(bumped()));
     t.check(no_reference.verdict == Verdict::Hard && mentions(no_reference, "join_line"), "a site the previous exe does not have once cannot be compared");
     ExeLayout no_join = bumped();
-    no_join.lose_join = true;
+    no_join.join.lose = true;
     t.check(mentions(run(t, base, exe_of(no_join)), "join_line"), "a site the exe does not have");
 
     ExeLayout elsewhere_base;
-    elsewhere_base.join_calls_chat = false;
+    elsewhere_base.join.calls_chat = false;
     ExeLayout elsewhere = bumped();
-    elsewhere.join_calls_chat = false;
+    elsewhere.join.calls_chat = false;
     const Analysis not_chat = run(t, exe_of(elsewhere_base), exe_of(elsewhere));
     t.check(not_chat.verdict == Verdict::Hard && mentions(not_chat, "join_line"), "a join call that does not go to chat_post is hard");
     ExeLayout jump_base;
-    jump_base.join_jumps = true;
+    jump_base.join.jumps = true;
     ExeLayout jump = bumped();
-    jump.join_jumps = true;
+    jump.join.jumps = true;
     const Analysis jumped = run(t, exe_of(jump_base), exe_of(jump));
     t.check(jumped.verdict == Verdict::Hard && mentions(jumped, "is not a call"), "a jump to chat_post where the join call should be is hard");
     Options at_mov;
@@ -447,24 +448,25 @@ void check_hard_join(compat_test::Suite& t) {
     const Analysis off_call = run(t, base, exe_of(bumped()), at_mov);
     t.check(off_call.verdict == Verdict::Hard && mentions(off_call, "is not a call"), "a join site that is not on the call is hard, whatever else the function calls");
     ExeLayout other_after_base;
-    other_after_base.join_after = 0x48;
+    other_after_base.join.after = 0x48;
     ExeLayout other_after = bumped();
-    other_after.join_after = 0x48;
+    other_after.join.after = 0x48;
     const Analysis odd = run(t, exe_of(other_after_base), exe_of(other_after));
     t.check(odd.verdict == Verdict::Hard && mentions(odd, "join_line"), "a join call followed by anything else is hard");
     ExeLayout changed_after = bumped();
-    changed_after.join_after = 0xe9;
+    changed_after.join.after = 0xe9;
     const Analysis swapped = run(t, base, exe_of(changed_after));
     t.check(swapped.verdict == Verdict::Hard && mentions(swapped, "join_line") && site(swapped, "join_line").difference, "the join function is compared too");
 }
 
 void check_hard_catalog(compat_test::Suite& t) {
+    using enum Verdict;
     const Exe base = exe_of(ExeLayout{});
 
     const Analysis listed = run(t, base, exe_of(bumped()), with_id("900"));
-    t.check(listed.verdict == Verdict::Hard && mentions(listed, "already listed") && listed.edit.kind == Edit::Kind::None, "a build id another row lists");
+    t.check(listed.verdict == Hard && mentions(listed, "already listed") && listed.edit.kind == Edit::Kind::None, "a build id another row lists");
     const Analysis labeled = run(t, base, exe_of(bumped()), with_id("legacy"));
-    t.check(labeled.verdict == Verdict::Hard && mentions(labeled, "label of another row") && labeled.edit.kind == Edit::Kind::None, "a build id that is the label of another row");
+    t.check(labeled.verdict == Hard && mentions(labeled, "label of another row") && labeled.edit.kind == Edit::Kind::None, "a build id that is the label of another row");
 
     const std::string no_expected_operand = replaced(catalog_text(base), R"(,)"
                                                                          "\n"
@@ -474,11 +476,11 @@ void check_hard_catalog(compat_test::Suite& t) {
     Options base_without;
     base_without.catalog = no_expected_operand;
     const Analysis no_base = run(t, base, exe_of(bumped()), base_without);
-    t.check(no_base.verdict == Verdict::Hard && mentions(no_base, "entity_table"), "a base that has no accessor operand to carry over is hard");
+    t.check(no_base.verdict == Hard && mentions(no_base, "entity_table"), "a base that has no accessor operand to carry over is hard");
     Options sigset_without;
     sigset_without.catalog = replaced(no_expected_operand, R"(, "operands": {"entity_table": "0x6"})", "");
     const Analysis no_sigset = run(t, base, exe_of(bumped()), sigset_without);
-    t.check(no_sigset.verdict == Verdict::Hard && mentions(no_sigset, "entity_table"), "and so is a sigset that has no accessor");
+    t.check(no_sigset.verdict == Hard && mentions(no_sigset, "entity_table"), "and so is a sigset that has no accessor");
 }
 
 void check_hard_hooks(compat_test::Suite& t) {
@@ -527,39 +529,40 @@ Analysis judge_extra(compat_test::Suite& t, const ExeLayout& layout) {
 }
 
 void check_branch_map(compat_test::Suite& t) {
+    using enum Verdict;
     const ExeSites s = sites_of(ExeLayout{});
     ExeLayout beyond;
     beyond.extra = Extra::Table;
     const Analysis away = judge_extra(t, beyond);
-    t.check(away.verdict == Verdict::Easy && away.undecodable_functions == 0U, "a jump table in another function whose entries stay clear of the hook is easy");
+    t.check(away.verdict == Easy && away.undecodable_functions == 0U, "a jump table in another function whose entries stay clear of the hook is easy");
     beyond.switch_entry = 2;
     for (const bool chained : {true, false}) {
         beyond.extra_chained = chained;
         const Analysis into = judge_extra(t, beyond);
         const SiteReport& alpha = site(into, "alpha");
-        t.check(into.verdict == Verdict::Hard && alpha.into_hook.size() == 1 && alpha.into_hook[0].from == s.alpha + 0x18 && alpha.into_hook[0].target == s.alpha + 2,
+        t.check(into.verdict == Hard && alpha.into_hook.size() == 1 && alpha.into_hook[0].from == s.alpha + 0x18 && alpha.into_hook[0].target == s.alpha + 2,
                 "a jump table in another function with an entry inside the bytes the hook overwrites is hard");
     }
 
     ExeLayout stray;
     stray.extra = Extra::Garbage;
     const Analysis lone = judge_extra(t, stray);
-    t.check(lone.verdict == Verdict::Easy && lone.undecodable_functions == 1U, "a function that cannot be decoded, tied to no site, leaves the verdict and is counted");
+    t.check(lone.verdict == Easy && lone.undecodable_functions == 1U, "a function that cannot be decoded, tied to no site, leaves the verdict and is counted");
     stray.extra_chained = true;
     const Analysis chunk = judge_extra(t, stray);
-    t.check(chunk.verdict == Verdict::Hard && mentions(chunk, "alpha") && chunk.undecodable_functions == 1U, "a chunk of the hooked function that cannot be decoded is hard");
+    t.check(chunk.verdict == Hard && mentions(chunk, "alpha") && chunk.undecodable_functions == 1U, "a chunk of the hooked function that cannot be decoded is hard");
 
     ExeLayout jumper;
     jumper.extra = Extra::JumpIn;
     const Analysis tied = judge_extra(t, jumper);
-    t.check(tied.verdict == Verdict::Hard && mentions(tied, "alpha") && site(tied, "alpha").into_hook.empty(), "a function that cannot be decoded after a jump into the hooked function is hard");
+    t.check(tied.verdict == Hard && mentions(tied, "alpha") && site(tied, "alpha").into_hook.empty(), "a function that cannot be decoded after a jump into the hooked function is hard");
     jumper.extra_target = 0xc8;
-    t.check(judge_extra(t, jumper).verdict == Verdict::Easy, "one whose jump goes to another function is not");
+    t.check(judge_extra(t, jumper).verdict == Easy, "one whose jump goes to another function is not");
 
     ExeLayout unlisted;
     unlisted.unlist_beta = true;
     const Analysis window = judge_extra(t, unlisted);
-    t.check(window.verdict == Verdict::Hard && mentions(window, "beta") && site(window, "beta").region && site(window, "beta").region->window, "a hook in code the exception table does not list is hard");
+    t.check(window.verdict == Hard && mentions(window, "beta") && site(window, "beta").region && site(window, "beta").region->window, "a hook in code the exception table does not list is hard");
     t.check(!run(t, exe_of(ExeLayout{}), exe_of(ExeLayout{})).undecodable_functions.has_value(), "a known build builds no map");
 }
 

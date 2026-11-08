@@ -91,7 +91,7 @@ inline std::vector<std::byte> build_pe(PeSpec spec) {
         spec.sections.push_back(std::move(pdata));
         const auto is_chained = [](const FunctionSpec& f) { return f.chained_to != 0; };
         if (std::ranges::any_of(spec.functions, is_chained)) {
-            spec.sections.push_back(SectionSpec{".xdata", spec.xdata_rva, chain_info(spec), 0});
+            spec.sections.emplace_back(".xdata", spec.xdata_rva, chain_info(spec), 0);
         }
     }
     uint32_t raw_end = kFirstRawOffset;

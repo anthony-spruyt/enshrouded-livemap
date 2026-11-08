@@ -162,7 +162,7 @@ void check_operand_masks(compat_test::Suite& t) {
 void check_decode_function(compat_test::Suite& t) {
     const auto good = decode_at(bytes_of({0x90, 0x48, 0x89, 0xc8, 0xc3}), 0x2000);
     const auto& stream = good.code.instructions;
-    t.check(!good.stopped && stream.size() == 3 && stream[1].rva == 0x2001 && stream[2].rva == 0x2004, "instructions carry their RVA");
+    t.check(!good.stopped.has_value() && stream.size() == 3 && stream[1].rva == 0x2001 && stream[2].rva == 0x2004, "instructions carry their RVA");
     t.check(good.code.range.begin == 0x2000 && good.code.range.end == 0x2005 && good.code.tables.empty(), "the code keeps its range and holds no table");
     const auto invalid = decode_at(bytes_of({0x90, 0x06, 0xc3}), 0x2000);
     t.check(invalid.stopped == 0x2001U && invalid.code.instructions.size() == 1, "an invalid opcode names the RVA it stops at and keeps what came before");
@@ -253,7 +253,7 @@ void check_jump_tables(compat_test::Suite& t) {
     const auto bytes = switch_function(0x1000, plain);
     const auto decoded = decode_at(bytes);
     const auto& stream = decoded.code.instructions;
-    t.check(!decoded.stopped, "a function that ends in a jump table decodes");
+    t.check(!decoded.stopped.has_value(), "a function that ends in a jump table decodes");
     t.check(stream.size() == 5 && stream.back().rva == 0x100d, "the table is not decoded as code");
     t.check(decoded.code.tables.size() == 1 && decoded.code.tables[0].rva == 0x100e && decoded.code.tables[0].ref == 0x1000, "the table is found where the load points, with the load that reads it");
     t.check(decoded.code.tables.size() == 1 && decoded.code.tables[0].entries == std::vector<uint32_t>({0x100c, 0x100d, 0x100c}), "its entries are the addresses it holds");
@@ -261,17 +261,17 @@ void check_jump_tables(compat_test::Suite& t) {
     t.check(stream.size() > 1 && !stream[1].table_ref, "an instruction that reads no table is no table reference");
 
     const auto high = decode_at(switch_function(0x01234000, plain), 0x01234000);
-    t.check(!high.stopped && high.code.tables.size() == 1 && high.code.tables[0].rva == 0x0123400e && high.code.tables[0].entries == std::vector<uint32_t>({0x0123400c, 0x0123400d, 0x0123400c}),
+    t.check(!high.stopped.has_value() && high.code.tables.size() == 1 && high.code.tables[0].rva == 0x0123400e && high.code.tables[0].entries == std::vector<uint32_t>({0x0123400c, 0x0123400d, 0x0123400c}),
             "addresses of any size are read whole");
     t.check(!high.code.instructions.empty() && high.code.instructions[0].target == 0x0123400e && zeroed(high.code.instructions[0], 3, 4), "and the whole address is cleared from the load");
 
     const Switch twice{.loads = 2};
     const auto shared = decode_at(switch_function(0x1000, twice));
-    t.check(!shared.stopped && shared.code.tables.size() == 1 && shared.code.tables[0].ref == 0x1000 && shared.code.instructions[1].table_ref, "loads of one table share it");
+    t.check(!shared.stopped.has_value() && shared.code.tables.size() == 1 && shared.code.tables[0].ref == 0x1000 && shared.code.instructions[1].table_ref, "loads of one table share it");
 
     const Switch inside{.late_returns = 4};
     const auto middle = decode_at(switch_function(0x1000, inside));
-    t.check(!middle.stopped && middle.code.instructions.size() == 9 && middle.code.instructions.back().rva == 0x1000 + table_offset(inside) + 12 + 3, "decoding goes on after a table in the middle of a function");
+    t.check(!middle.stopped.has_value() && middle.code.instructions.size() == 9 && middle.code.instructions.back().rva == 0x1000 + table_offset(inside) + 12 + 3, "decoding goes on after a table in the middle of a function");
     t.check(middle.code.tables.size() == 1 && middle.code.tables[0].entries.size() == 3, "and the table ends at the first word that is no address of the function");
 
     const Switch overlapping{.loads = 2, .skew = 4};
@@ -280,30 +280,30 @@ void check_jump_tables(compat_test::Suite& t) {
 
     for (const auto& [first, second] : {std::pair{0x10U, 0x18U}, std::pair{0x18U, 0x10U}}) {
         const auto separate = decode_at(bytes_of({0x8b, 0x84, 0x8a, first, 0x10, 0x00, 0x00, 0x8b, 0x84, 0x8a, second, 0x10, 0x00, 0x00, 0xc3, 0xcc, 0x0e, 0x10, 0x00, 0x00, 0xcc, 0xcc, 0xcc, 0xcc, 0x0e, 0x10, 0x00, 0x00}));
-        t.check(!separate.stopped && separate.code.tables.size() == 2 && separate.code.tables[1].rva == 0x1010 + 0x18 - first && separate.code.instructions.size() == 8, "two tables in one function, in either order");
+        t.check(!separate.stopped.has_value() && separate.code.tables.size() == 2 && separate.code.tables[1].rva == 0x1010 + 0x18 - first && separate.code.instructions.size() == 8, "two tables in one function, in either order");
     }
 
     const auto outside = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x01, 0x90, 0x00, 0x00, 0xc3}));
-    t.check(!outside.stopped && outside.code.tables.empty() && outside.code.instructions[0].bytes[4] == std::byte{0x90}, "an indexed load from outside the function reads no table");
+    t.check(!outside.stopped.has_value() && outside.code.tables.empty() && outside.code.instructions[0].bytes[4] == std::byte{0x90}, "an indexed load from outside the function reads no table");
     const auto unindexed = decode_at(bytes_of({0x8b, 0x04, 0xa5, 0x08, 0x10, 0x00, 0x00, 0xc3, 0x0b, 0x10, 0x00, 0x00}));
-    t.check(!unindexed.stopped && unindexed.code.tables.empty() && !unindexed.code.instructions[0].table_ref, "an absolute address read through a scale without an index reads no table");
+    t.check(!unindexed.stopped.has_value() && unindexed.code.tables.empty() && !unindexed.code.instructions[0].table_ref, "an absolute address read through a scale without an index reads no table");
     const auto address_only = decode_at(bytes_of({0x8d, 0x84, 0x8a, 0x08, 0x10, 0x00, 0x00, 0xc3, 0x0b, 0x10, 0x00, 0x00}));
-    t.check(!address_only.stopped && address_only.code.tables.empty(), "an address computed with lea reads nothing");
+    t.check(!address_only.stopped.has_value() && address_only.code.tables.empty(), "an address computed with lea reads nothing");
     const auto itself = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x03, 0x10, 0x00, 0x00, 0xc3}));
-    t.check(!itself.stopped && itself.code.tables.empty() && !itself.code.instructions[0].table_ref, "a load whose address lies at or before its own end reads no table");
+    t.check(!itself.stopped.has_value() && itself.code.tables.empty() && !itself.code.instructions[0].table_ref, "a load whose address lies at or before its own end reads no table");
     const auto inside_load = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x06, 0x10, 0x00, 0x00, 0x10, 0x00, 0x00, 0xc3}));
-    t.check(!inside_load.stopped && inside_load.code.tables.empty(), "a load whose address is its own last byte reads no table");
+    t.check(!inside_load.stopped.has_value() && inside_load.code.tables.empty(), "a load whose address is its own last byte reads no table");
     const auto empty = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x07, 0x10, 0x00, 0x00, 0xc3}));
-    t.check(!empty.stopped && empty.code.tables.empty(), "an address with too few bytes left for an entry reads no table");
+    t.check(!empty.stopped.has_value() && empty.code.tables.empty(), "an address with too few bytes left for an entry reads no table");
     const auto at_end = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x08, 0x10, 0x00, 0x00, 0xc3, 0x0c, 0x10, 0x00, 0x00}));
-    t.check(!at_end.stopped && at_end.code.tables.empty(), "the end of the function is no entry");
+    t.check(!at_end.stopped.has_value() && at_end.code.tables.empty(), "the end of the function is no entry");
     const auto before_start = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x08, 0x10, 0x00, 0x00, 0xc3, 0xff, 0x0f, 0x00, 0x00}));
-    t.check(!before_start.stopped && before_start.code.tables.empty(), "an address before the function is no entry");
+    t.check(!before_start.stopped.has_value() && before_start.code.tables.empty(), "an address before the function is no entry");
     const auto at_start = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x08, 0x10, 0x00, 0x00, 0xc3, 0x00, 0x10, 0x00, 0x00}));
-    t.check(!at_start.stopped && at_start.code.tables.size() == 1 && at_start.code.tables[0].entries == std::vector<uint32_t>({0x1000}), "the first byte of the function is an entry");
+    t.check(!at_start.stopped.has_value() && at_start.code.tables.size() == 1 && at_start.code.tables[0].entries == std::vector<uint32_t>({0x1000}), "the first byte of the function is an entry");
     for (const unsigned sib : {0x0aU, 0x4aU, 0xcaU}) {
         const auto scaled = decode_at(bytes_of({0x8b, 0x84, sib, 0x08, 0x10, 0x00, 0x00, 0xc3, 0x0b, 0x10, 0x00, 0x00}));
-        t.check(!scaled.stopped && scaled.code.tables.empty() && !scaled.code.instructions[0].table_ref, "only a scale of 4 marks a table");
+        t.check(!scaled.stopped.has_value() && scaled.code.tables.empty() && !scaled.code.instructions[0].table_ref, "only a scale of 4 marks a table");
     }
     const auto straddling = decode_at(bytes_of({0x8b, 0x84, 0x8a, 0x08, 0x10, 0x00, 0x00, 0xb8, 0x0c, 0x10, 0x00, 0x00, 0xc3}));
     t.check(straddling.stopped == 0x1000U, "a table that starts inside another instruction stops decoding at the load");

@@ -41,7 +41,7 @@ std::expected<Values, std::string> read_flags(std::span<const std::string_view> 
         if (i + 1 == args.size()) {
             return std::unexpected(std::format("{} needs a value", args[i]));
         }
-        if (!values.emplace(args[i], args[i + 1]).second) {
+        if (!values.try_emplace(std::string(args[i]), args[i + 1]).second) {
             return std::unexpected(std::format("{} is given twice", args[i]));
         }
     }
@@ -141,7 +141,7 @@ std::expected<void, std::string> execute(const CliOptions& options, std::ostream
     if (!current) {
         return std::unexpected(current.error());
     }
-    if (auto cleared = clear_stale_output(options); !cleared) {
+    if (auto cleared = clear_stale_output(options); !cleared.has_value()) {
         return cleared;
     }
     Request request;
@@ -156,7 +156,7 @@ std::expected<void, std::string> execute(const CliOptions& options, std::ostream
     if (!analysis) {
         return std::unexpected(analysis.error());
     }
-    if (auto written = write_text(options.report, write_json(report_json(*analysis))); !written) {
+    if (auto written = write_text(options.report, write_json(report_json(*analysis))); !written.has_value()) {
         return written;
     }
     summarize(*analysis, out);
@@ -199,7 +199,7 @@ int run_cli(std::span<const std::string_view> args, std::ostream& out, std::ostr
         err << std::format("error: {}\n{}", options.error(), kUsage);
         return kExitUsage;
     }
-    if (const auto done = execute(*options, out); !done) {
+    if (const auto done = execute(*options, out); !done.has_value()) {
         err << std::format("error: {}\n", done.error());
         return kExitInput;
     }

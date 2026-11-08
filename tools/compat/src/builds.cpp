@@ -4,6 +4,7 @@
 #include <charconv>
 #include <format>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -150,7 +151,7 @@ private:
 
     uint32_t hex_value(const Json& value, std::string_view key) {
         const std::optional<uint32_t> parsed = value.kind() == Json::Kind::String ? parse_hex(value.text()) : std::nullopt;
-        if (!parsed) {
+        if (!parsed.has_value()) {
             fail(key, "is not a hex number like 0x1f within 32 bits");
             return 0;
         }
@@ -331,7 +332,7 @@ bool is_steam_id(std::string_view text) {
 
 std::expected<Catalog, std::string> Catalog::from_json(Json document) {
     Catalog catalog(std::move(document));
-    if (auto loaded = catalog.reload(); !loaded) {
+    if (auto loaded = catalog.reload(); !loaded.has_value()) {
         return std::unexpected(loaded.error());
     }
     return catalog;
@@ -353,7 +354,7 @@ std::expected<void, std::string> Catalog::reload() {
 
 const SigsetDef* Catalog::sigset(std::string_view name) const {
     const auto found = std::ranges::find(sigsets_, name, &SigsetDef::name);
-    return found == sigsets_.end() ? nullptr : &*found;
+    return found == sigsets_.end() ? nullptr : std::to_address(found);
 }
 
 std::optional<size_t> Catalog::row_with_build_id(std::string_view id) const {
@@ -387,7 +388,7 @@ std::expected<void, std::string> Catalog::add_alias(size_t row, std::string id) 
     if (!is_steam_id(id)) {
         return std::unexpected("a build id has to be a Steam id");
     }
-    if (row_with_build_id(id)) {
+    if (row_with_build_id(id).has_value()) {
         return std::unexpected("the build id is listed already");
     }
     document_.find("builds")->at(row)->find("buildids")->push(Json::string(std::move(id)));
@@ -398,10 +399,10 @@ std::expected<void, std::string> Catalog::append_row_like(size_t like, const New
     if (like >= rows_.size()) {
         return std::unexpected("there is no such row");
     }
-    if (auto fits = check_new_row(rows_[like], added); !fits) {
+    if (auto fits = check_new_row(rows_[like], added); !fits.has_value()) {
         return fits;
     }
-    if (row_with_build_id(added.build_id) || row_with_label(added.build_id)) {
+    if (row_with_build_id(added.build_id).has_value() || row_with_label(added.build_id).has_value()) {
         return std::unexpected("the build id is in the file already, as a build id or a label");
     }
     Json* builds = document_.find("builds");

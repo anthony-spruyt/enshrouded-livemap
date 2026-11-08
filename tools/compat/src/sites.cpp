@@ -1,6 +1,7 @@
 #include "sites.h"
 
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "disasm.h"
@@ -15,7 +16,7 @@ constexpr unsigned kBitsPerByte = 8;
 uint32_t read_u32(std::span<const std::byte> bytes) {
     uint32_t value = 0;
     for (size_t i = 0; i < bytes.size(); ++i) {
-        value |= static_cast<uint32_t>(bytes[i]) << (kBitsPerByte * i);
+        value |= static_cast<uint32_t>(std::to_underlying(bytes[i])) << (kBitsPerByte * i);
     }
     return value;
 }

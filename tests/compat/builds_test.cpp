@@ -264,7 +264,7 @@ void check_new_row(compat_test::Suite& t) {
     const std::string text = write_json(added.document());
     const auto reread = parse_json(text);
     t.check(reread && write_json(*reread) == text, "the written document reads back the same");
-    const std::string before = std::string(kDocument.substr(0, kDocument.find("\n  ]\n}\n")));
+    const auto before = std::string(kDocument.substr(0, kDocument.find("\n  ]\n}\n")));
     t.check(text.starts_with(before + R"(,)"
                                       "\n"
                                       R"(    {)"
@@ -300,11 +300,14 @@ void check_new_row(compat_test::Suite& t) {
 }
 
 void check_new_row_refusals(compat_test::Suite& t) {
-    const auto refused = [&](size_t like, const auto& change, std::string_view why) {
+    const auto refused_row = [&](size_t like, const NewRow& row, std::string_view why) {
         Catalog catalog = load(kDocument);
+        t.check(!catalog.append_row_like(like, row).has_value() && write_json(catalog.document()) == kDocument && catalog.rows().size() == 2, why);
+    };
+    const auto refused = [&](size_t like, const auto& change, std::string_view why) {
         NewRow row = sample();
         change(row);
-        t.check(!catalog.append_row_like(like, row).has_value() && write_json(catalog.document()) == kDocument && catalog.rows().size() == 2, why);
+        refused_row(like, row, why);
     };
     refused(0, [](NewRow& r) { r.build_id = "101"; }, "a build id another row has");
     refused(0, [](NewRow& r) { r.build_id = "77"; }, "a build id that is the label of a row");
@@ -317,7 +320,7 @@ void check_new_row_refusals(compat_test::Suite& t) {
     refused(0, [](NewRow& r) { r.expected.pop_back(); }, "fewer RVAs than the row copied has");
     refused(0, [](NewRow& r) { r.expected_operands.clear(); }, "fewer operands than the row copied has");
     refused(1, [](NewRow& r) { r.expected = {1, 2}; }, "more RVAs than the row copied has");
-    refused(1, [](NewRow&) {}, "operands for a row copied from one without");
+    refused_row(1, sample(), "operands for a row copied from one without");
     Catalog catalog = load(kDocument);
     t.check(!catalog.append_row_like(2, sample()).has_value() && !catalog.append_row_like(7, sample()).has_value(), "a row index past the end");
     t.check(!catalog.add_alias(2, "9").has_value() && !catalog.add_alias(7, "9").has_value(), "an alias for a row past the end");

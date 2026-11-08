@@ -51,7 +51,7 @@ private:
 
 void write_bytes(const std::string& path, const std::vector<std::byte>& bytes) {
     std::vector<char> chars;
-    std::ranges::transform(bytes, std::back_inserter(chars), [](std::byte b) { return static_cast<char>(b); });
+    std::ranges::transform(bytes, std::back_inserter(chars), [](std::byte b) { return static_cast<char>(std::to_underlying(b)); });
     std::ofstream(path, std::ios::binary).write(chars.data(), static_cast<std::streamsize>(chars.size()));
 }
 
@@ -199,7 +199,7 @@ int main() {
     unknown.insert(unknown.end(), {"--verbose", "1"});
     t.check(cli(unknown).code == 2 && cli(unknown).err.contains("--verbose"), "an argument that does not exist exits 2");
     std::vector<std::string> dangling = args("moved.exe", "200", "dangling");
-    dangling.push_back("--depot");
+    dangling.emplace_back("--depot");
     const Run no_value = cli(dangling);
     t.check(no_value.code == 2 && no_value.err.contains("--depot needs a value"), "a flag without a value exits 2");
     std::vector<std::string> twice = args("moved.exe", "200", "twice");

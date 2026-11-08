@@ -8,8 +8,6 @@ namespace livemap::compat {
 
 namespace {
 
-constexpr Registers kAll = 0xffff;
-
 // The Windows x64 convention: four argument registers, and the registers a callee may overwrite.
 constexpr Registers kArguments = register_set({"rcx", "rdx", "r8", "r9"});
 constexpr Registers kVolatile = register_set({"rax", "rcx", "rdx", "r8", "r9", "r10", "r11"});
@@ -22,6 +20,7 @@ struct Node {
     Registers uses = 0;
     Registers defs = 0;
     Registers beyond = 0;  // read by code outside the chain that the instruction leads to
+    bool lost = false;     // leads where the chain cannot be followed
     std::vector<size_t> next;
 };
 
@@ -42,21 +41,23 @@ bool in_chain(std::span<const Code> chain, int64_t rva) {
 void follow(const Graph& graph, std::span<const Code> chain, Node& node, int64_t target) {
     if (const auto at = index_at(graph, target); at.has_value()) {
         node.next.push_back(*at);
+    } else if (in_chain(chain, target)) {
+        node.lost = true;
     } else {
-        node.beyond |= in_chain(chain, target) ? kAll : kTailCalled;
+        node.beyond |= kTailCalled;
     }
 }
 
 void follow_tables(const Graph& graph, Node& node) {
     if (node.code->tables.empty()) {
-        node.beyond |= kAll;
+        node.beyond |= kTailCalled;
     }
     for (const Table& table : node.code->tables) {
         for (const uint32_t entry : table.entries) {
             if (const auto at = index_at(graph, entry); at.has_value()) {
                 node.next.push_back(*at);
             } else {
-                node.beyond |= kAll;
+                node.lost = true;
             }
         }
     }
@@ -87,8 +88,34 @@ void link(const Graph& graph, std::span<const Code> chain, Node& node) {
     if (const auto at = index_at(graph, int64_t{insn.rva} + insn.length); at.has_value()) {
         node.next.push_back(*at);
     } else {
-        node.beyond |= kAll;
+        node.lost = true;
     }
+}
+
+bool falls_through(const Node& from, const Node& to) {
+    const Flow flow = from.insn->flow;
+    return (flow == Flow::Next || flow == Flow::Call || flow == Flow::Branch) && from.insn->rva + from.insn->length == to.insn->rva;
+}
+
+// The nodes that some edge reaches from somewhere other than the instruction just before them.
+std::vector<bool> joined_nodes(const Graph& graph) {
+    std::vector<bool> joined(graph.size(), false);
+    for (size_t from = 0; from < graph.size(); ++from) {
+        for (const size_t to : graph[from].next) {
+            joined[to] = joined[to] || to != from + 1 || !falls_through(graph[from], graph[to]);
+        }
+    }
+    return joined;
+}
+
+// The argument registers that the straight-line code just before the call at `call` wrote: back to the start of its
+// block, a join, a branch or an earlier call.
+Registers set_up_for(const Graph& graph, const std::vector<bool>& joined, size_t call) {
+    Registers written = 0;
+    for (size_t at = call; at > 0 && !joined[at] && falls_through(graph[at - 1], graph[at]) && graph[at - 1].insn->flow == Flow::Next; --at) {
+        written |= graph[at - 1].insn->kills;
+    }
+    return written & kArguments;
 }
 
 Graph build(std::span<const Code> chain) {
@@ -96,12 +123,18 @@ Graph build(std::span<const Code> chain) {
     for (const Code& code : chain) {
         for (const Instruction& insn : code.instructions) {
             const bool call = insn.flow == Flow::Call;
-            graph.push_back(Node{&code, &insn, static_cast<Registers>(insn.reads | (call ? kArguments : 0)), static_cast<Registers>(insn.kills | (call ? kVolatile : 0)), 0, {}});
+            graph.push_back(Node{&code, &insn, insn.reads, static_cast<Registers>(insn.kills | (call ? kVolatile : 0)), 0, false, {}});
         }
     }
     std::ranges::sort(graph, {}, [](const Node& node) { return node.insn->rva; });
     for (Node& node : graph) {
         link(graph, chain, node);
+    }
+    const std::vector<bool> joined = joined_nodes(graph);
+    for (size_t i = 0; i < graph.size(); ++i) {
+        if (graph[i].insn->flow == Flow::Call) {
+            graph[i].uses |= set_up_for(graph, joined, i);
+        }
     }
     return graph;
 }
@@ -124,22 +157,45 @@ std::vector<Registers> solve(const Graph& graph) {
     return live;
 }
 
+bool reaches_lost(const Graph& graph, size_t from) {
+    std::vector<bool> seen(graph.size(), false);
+    std::vector<size_t> pending{from};
+    seen[from] = true;
+    while (!pending.empty()) {
+        const Node& node = graph[pending.back()];
+        pending.pop_back();
+        if (node.lost) {
+            return true;
+        }
+        for (const size_t next : node.next) {
+            if (!seen[next]) {
+                seen[next] = true;
+                pending.push_back(next);
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
-std::optional<Registers> live_before(std::span<const Code> chain, uint32_t rva) {
+std::expected<Registers, Fault> live_before(std::span<const Code> chain, uint32_t rva) {
     const Graph graph = build(chain);
     const auto at = index_at(graph, rva);
     if (!at.has_value()) {
-        return std::nullopt;
+        return std::unexpected(Fault::NoInstruction);
+    }
+    if (reaches_lost(graph, *at)) {
+        return std::unexpected(Fault::Unfollowable);
     }
     return solve(graph)[*at];
 }
 
-std::optional<Registers> in_use_at(std::span<const Code> chain, uint32_t rva) {
+std::expected<Registers, Fault> in_use_at(std::span<const Code> chain, uint32_t rva) {
     using enum Flow;
-    const std::optional<Registers> live = live_before(chain, rva);
+    const std::expected<Registers, Fault> live = live_before(chain, rva);
     if (!live.has_value()) {
-        return std::nullopt;
+        return live;
     }
     Registers used = *live;
     for (const Code& code : chain) {

@@ -165,7 +165,7 @@ inline std::vector<std::byte> build_exe(const ExeLayout& layout) {
     }
     a.pad_to(s.join);
     const unsigned join_marker = layout.join.lose ? 0x55U : 0x44U;
-    a.emit({0xb8, join_marker, join_marker, join_marker, join_marker, 0xb9});
+    a.emit({0xb8, join_marker, join_marker, join_marker, join_marker, 0xba});
     a.imm32(layout.join.tag);
     a.branch32(layout.join.jumps ? 0xe9 : 0xe8, layout.join.calls_chat ? s.chat : s.outside_function);
     a.emit({layout.join.after, 0x8b, 0xc0, 0x48, 0x89, 0xc1, 0xc3});

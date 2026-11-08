@@ -45,8 +45,9 @@ void append(Problems& to, Problems&& more) {
     std::ranges::move(more, std::back_inserter(to));
 }
 
-// Every chunk of the function that holds the site, decoded; the first is the one that holds it.
-std::vector<Code> chain_of(const Context& c, const Loaded& loaded) {
+// Every chunk of the function that holds the site, decoded; the first is the one that holds it. Empty when a chunk cannot
+// be decoded.
+std::optional<std::vector<Code>> chain_of(const Context& c, const Loaded& loaded) {
     std::vector<Code> chain{loaded.code};
     const std::optional<uint32_t> root = c.image.chain_root(loaded.region.begin);
     for (const Function& function : c.image.functions()) {
@@ -54,9 +55,10 @@ std::vector<Code> chain_of(const Context& c, const Loaded& loaded) {
             continue;
         }
         Decoded decoded = decode_function(c.decoder, c.image.at(function.begin, function.end - function.begin), function, {});
-        if (!decoded.stopped.has_value()) {
-            chain.push_back(std::move(decoded.code));
+        if (decoded.stopped.has_value()) {
+            return std::nullopt;
         }
+        chain.push_back(std::move(decoded.code));
     }
     return chain;
 }
@@ -72,15 +74,22 @@ std::map<std::string_view, Registers> reads_at(const SiteHit& hit, uint32_t poin
     return reads;
 }
 
-Problems unused_registers(const Context& c, const SiteHit& hit, std::span<const Code> chain) {
+Problems unused_registers(const Context& c, const SiteHit& hit, const std::optional<std::vector<Code>>& chain) {
     Problems problems;
     for (const uint32_t point : hook_points(hit)) {
-        const std::optional<Registers> used = in_use_at(chain, point);
-        if (!used.has_value()) {
+        const auto reads = reads_at(hit, point, c.row.mining_layout);
+        if (reads.empty()) {
             continue;
         }
-        for (const auto& [function, reads] : reads_at(hit, point, c.row.mining_layout)) {
-            if (const auto unused = static_cast<Registers>(reads & ~*used); unused != 0) {
+        const auto used = chain ? in_use_at(*chain, point) : std::unexpected(Fault::Unfollowable);
+        if (!used.has_value()) {
+            if (used.error() == Fault::Unfollowable) {
+                problems.push_back(std::format("{}: the code from the hook at {} could not be followed", hit.pattern->site, hex(point)));
+            }
+            continue;
+        }
+        for (const auto& [function, wanted] : reads) {
+            if (const auto unused = static_cast<Registers>(wanted & ~*used); unused != 0) {
                 problems.push_back(std::format("{}: {} reads {} of the context at {}, which the code there does not use", hit.pattern->site,
                                                function, register_list(unused), hex(point)));
             }

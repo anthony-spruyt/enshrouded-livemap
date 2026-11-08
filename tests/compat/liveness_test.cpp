@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <initializer_list>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -15,6 +16,7 @@
 using compat_test::bytes_of;
 using livemap::compat::Code;
 using livemap::compat::Decoder;
+using livemap::compat::Fault;
 using livemap::compat::Flow;
 using livemap::compat::Function;
 using livemap::compat::Instruction;
@@ -23,7 +25,6 @@ using livemap::compat::Registers;
 namespace {
 
 constexpr uint32_t kAt = 0x1000;
-constexpr Registers kEverything = 0xffff;
 
 Registers set_of(std::initializer_list<std::string_view> names) {
     Registers set = 0;
@@ -75,6 +76,15 @@ Registers live_at(const std::vector<Code>& chain, uint32_t rva) {
 
 Registers live_at(const std::vector<std::byte>& bytes, uint32_t rva = kAt) {
     return live_at(std::vector{code_at(kAt, bytes)}, rva);
+}
+
+std::optional<Fault> fault_at(const std::vector<Code>& chain, uint32_t rva) {
+    const auto live = livemap::compat::live_before(chain, rva);
+    return live.has_value() ? std::nullopt : std::optional{live.error()};
+}
+
+std::optional<Fault> fault_at(const std::vector<std::byte>& bytes, uint32_t rva = kAt) {
+    return fault_at(std::vector{code_at(kAt, bytes)}, rva);
 }
 
 void check_effects(compat_test::Suite& t) {
@@ -135,8 +145,8 @@ void check_straight_line(compat_test::Suite& t) {
     t.check(live_at(overwritten) == set_of({"rsp"}), "a register written before it is read is dead");
 
     t.check(live_at(bytes_of({0xcc})) == 0, "nothing follows a trap");
-    t.check(!livemap::compat::live_before(std::vector{code_at(kAt, move_and_return)}, kAt + 1).has_value(), "an address inside an instruction has no answer");
-    t.check(!livemap::compat::live_before(std::vector{code_at(kAt, move_and_return)}, kAt + 0x40).has_value(), "nor one outside the code");
+    t.check(fault_at(move_and_return, kAt + 1) == Fault::NoInstruction, "an address inside an instruction has no answer");
+    t.check(fault_at(move_and_return, kAt + 0x40) == Fault::NoInstruction, "nor one outside the code");
 }
 
 void check_branches(compat_test::Suite& t) {
@@ -152,23 +162,38 @@ void check_branches(compat_test::Suite& t) {
 
     // jz lands inside the mov that follows
     const auto inside = bytes_of({0x74, 0x03, 0xb8, 0xc3, 0x00, 0x00, 0x00, 0xc3});
-    t.check(live_at(inside) == kEverything, "a branch into the middle of an instruction could lead anywhere");
+    t.check(fault_at(inside) == Fault::Unfollowable, "a branch into the middle of an instruction cannot be followed");
+    t.check(!fault_at(inside, kAt + 7).has_value(), "code from which the branch is out of reach is fine");
+
+    t.check(fault_at(bytes_of({0x48, 0x89, 0xd8})) == Fault::Unfollowable, "code that runs off its end cannot be followed");
+    t.check(fault_at(bytes_of({0x85, 0xc0, 0x74, 0x00})) == Fault::Unfollowable, "nor can a branch that may fall off its end");
 }
 
 void check_calls(compat_test::Suite& t) {
     const auto then_read = bytes_of({0xe8, 0, 0, 0, 0, 0x48, 0x89, 0xd8, 0xc3});  // call; mov rax,rbx; ret
-    const Registers args = set_of({"rcx", "rdx", "r8", "r9"});
-    t.check(live_at(then_read) == (args | set_of({"rbx", "rsp"})), "a call reads the argument registers, keeps the registers it preserves and overwrites the others");
+    t.check(live_at(then_read) == set_of({"rbx", "rsp"}), "a call reads no argument register that nothing set up, keeps the registers it preserves and overwrites the others");
 
     const auto result = bytes_of({0xe8, 0, 0, 0, 0, 0x48, 0x89, 0xc3, 0xc3});  // call; mov rbx,rax; ret
-    t.check(live_at(result) == (args | set_of({"rsp"})), "the result of a call is not the value from before it");
+    t.check(live_at(result) == set_of({"rsp"}), "the result of a call is not the value from before it");
+
+    const auto set_up = bytes_of({0xb9, 1, 0, 0, 0, 0x4c, 0x89, 0xc2, 0xe8, 0, 0, 0, 0, 0xc3});  // mov ecx,1; mov rdx,r8; call; ret
+    t.check(live_at(set_up, kAt + 8) == set_of({"rcx", "rdx", "rsp"}), "a call reads the argument registers the code before it wrote");
+    t.check(live_at(set_up) == set_of({"r8", "rsp"}), "and the code that wrote them has them dead before");
+
+    const auto joined_in = bytes_of({0x74, 0x05, 0xb9, 1, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0xc3});  // jz call; mov ecx,1; call: ret
+    t.check(live_at(joined_in, kAt + 7) == set_of({"rsp"}), "a write before a point where other code joins is not known to reach the call");
+
+    const auto after_call = bytes_of({0xb9, 1, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0xc3});  // mov ecx,1; call; call; ret
+    t.check(live_at(after_call, kAt + 10) == set_of({"rsp"}), "nor is a write before an earlier call");
+    t.check(live_at(after_call, kAt + 5) == set_of({"rcx", "rsp"}), "which reads it itself");
 }
 
 void check_exits(compat_test::Suite& t) {
     const Registers args = set_of({"rcx", "rdx", "r8", "r9"});
     const auto tail = bytes_of({0xe9, 0xfb, 0x0f, 0x00, 0x00});  // jmp 0x2000
     t.check(live_at(tail) == (args | set_of({"rsp"})), "a jump out of the code is a call that returns for the caller");
-    t.check(live_at(bytes_of({0xff, 0xe0})) == kEverything, "a jump through a register with no table could lead anywhere");
+    t.check(live_at(bytes_of({0xff, 0xe0})) == (args | set_of({"rax", "rsp"})), "a jump through a register with no table leaves the code like a tail call");
+    t.check(live_at(bytes_of({0xff, 0x25, 0, 0, 0, 0})) == (args | set_of({"rsp"})), "so does a jump through memory");
 
     const auto cold = bytes_of({0x48, 0x89, 0xd8, 0xc3});  // mov rax,rbx; ret
     const std::vector chain{code_at(kAt, bytes_of({0xe9, 0xfb, 0x0f, 0x00, 0x00})), code_at(0x2000, cold)};
@@ -184,6 +209,11 @@ void check_tables(compat_test::Suite& t) {
     const std::vector chain{code};
     t.check(live_at(chain, kAt + 0xa) == set_of({"rax", "rbx", "rsp"}), "a jump through a table goes where the table says");
     t.check(live_at(chain, kAt) == set_of({"rbx", "rcx", "rdx", "rsp"}), "and the registers that find the entry are read before it");
+
+    auto crooked = function;
+    crooked[crooked.size() - 4] = std::byte{0x0d};  // the second entry now lands inside the mov
+    const std::vector bad_chain{code_at(kAt, crooked)};
+    t.check(fault_at(bad_chain, kAt + 0xa) == Fault::Unfollowable, "an entry of a table that starts no instruction cannot be followed");
 }
 
 Registers in_use_at(const std::vector<Code>& chain, uint32_t rva) {
@@ -210,7 +240,12 @@ void check_in_use(compat_test::Suite& t) {
 
     const std::vector split{code_at(kAt, bytes_of({0xe9, 0xfb, 0x0f, 0x00, 0x00})), code_at(0x2000, bytes_of({0x48, 0x89, 0xd8, 0xc3}))};
     t.check(in_use_at(split, 0x2000) == live_at(split, 0x2000), "the start of another chunk has none before it");
-    t.check(!livemap::compat::in_use_at(chain, kAt + 1).has_value(), "an address inside an instruction has no answer");
+    const auto used = livemap::compat::in_use_at(chain, kAt + 1);
+    t.check(!used.has_value() && used.error() == Fault::NoInstruction, "an address inside an instruction has no answer");
+
+    const std::vector off_the_end{code_at(kAt, bytes_of({0x48, 0x89, 0xd8}))};
+    const auto lost = livemap::compat::in_use_at(off_the_end, kAt);
+    t.check(!lost.has_value() && lost.error() == Fault::Unfollowable, "code that cannot be followed has no answer either");
 }
 
 }  // namespace

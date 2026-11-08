@@ -59,6 +59,12 @@ std::string hex_bytes(const Bytes& bytes) {
     return text;
 }
 
+// A cold chunk of the function that holds a site: code of its own with its own entry in the exception table.
+struct Chunk {
+    size_t of = 0;  // the index of the body it continues
+    Bytes code;
+};
+
 struct Exe {
     Bytes file;
     std::string sha;
@@ -66,7 +72,7 @@ struct Exe {
     std::vector<Body> bodies;
 };
 
-Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp) {
+Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp, const std::vector<Chunk>& chunks = {}) {
     compat_test::PeSpec spec;
     spec.time_date_stamp = stamp;
     Bytes text(0x1000, std::byte{0xcc});
@@ -76,6 +82,11 @@ Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp) {
         if (bodies[i].listed) {
             spec.functions.emplace_back(begin_of(i), begin_of(i) + static_cast<uint32_t>(bodies[i].code.size()));
         }
+    }
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        const uint32_t begin = begin_of(bodies.size() + i);
+        std::ranges::copy(chunks[i].code, text.begin() + (begin - kTextAt));
+        spec.functions.emplace_back(begin, begin + static_cast<uint32_t>(chunks[i].code.size()), begin_of(chunks[i].of));
     }
     spec.sections.emplace_back(".text", kTextAt, text, 0);
     Exe exe;
@@ -130,6 +141,10 @@ CheckResult run(compat_test::Suite& t, const Exe& exe, const Row& row = {}) {
     return result ? std::move(*result) : CheckResult{};
 }
 
+void passes(compat_test::Suite& t, const CheckResult& result, const std::string& name) {
+    t.check(result.problems.empty(), result.problems.empty() ? name : std::format("{}: {}", name, result.problems.front()));
+}
+
 bool mentions(const CheckResult& result, std::string_view fragment) {
     return std::ranges::any_of(result.problems, [&](std::string_view problem) { return problem.contains(fragment); });
 }
@@ -141,10 +156,10 @@ Bytes registry() { return bytes_of({0x48, 0x89, 0xd1, 0x4c, 0x89, 0xc0}); }     
 Bytes mining() { return bytes_of({0x48, 0x01, 0xd8, 0x48, 0x01, 0xef}); }                     // add rax,rbx; add rdi,rbp
 Bytes chest() { return bytes_of({0x48, 0x01, 0xef, 0x48, 0x8b, 0x44, 0x24, 0x08}); }          // add rdi,rbp; mov rax,[rsp+8]
 Bytes bases() { return bytes_of({0x48, 0x8b, 0x45, 0xf8, 0x48, 0x89, 0xc1}); }                // mov rax,[rbp-8]; mov rcx,rax
-Bytes join_line() { return bytes_of({0xe8, 0, 0, 0, 0, 0x31, 0xc0, 0x31, 0xc9, 0x90}); }       // call; xor eax,eax; xor ecx,ecx; nop
+Bytes join_line() { return bytes_of({0x48, 0x89, 0xc2, 0xe8, 0, 0, 0, 0, 0x31, 0xc0, 0x31, 0xc9, 0x90}); }  // mov rdx,rax; call; xor eax,eax; xor ecx,ecx; nop
 
 std::vector<Body> all_sites() {
-    return {{"player_table", player_table()}, {"movement", movement()}, {"daytime", daytime()}, {"registry", registry()}, {"mining", mining()}, {"chest", chest()}, {"bases", bases()}, {"join_line", join_line()}};
+    return {{"player_table", player_table()}, {"movement", movement()}, {"daytime", daytime()}, {"registry", registry()}, {"mining", mining()}, {"chest", chest()}, {"bases", bases()}, {"join_line", join_line(), 3}};
 }
 
 Exe with(const std::string& site, const Bytes& code, uint32_t offset = 0, bool listed = true) {
@@ -152,6 +167,22 @@ Exe with(const std::string& site, const Bytes& code, uint32_t offset = 0, bool l
     const auto found = std::ranges::find(bodies, site, &Body::site);
     *found = Body{site, code, offset, listed};
     return exe_of(std::move(bodies));
+}
+
+// The site with `head`, then a jump to a cold chunk of its function that holds `cold`.
+Exe with_cold(const std::string& site, const Bytes& head, const Bytes& cold, bool conditional = false) {
+    auto bodies = all_sites();
+    const auto found = std::ranges::find(bodies, site, &Body::site);
+    const auto index = static_cast<size_t>(found - bodies.begin());
+    const uint32_t jump_at = begin_of(index) + static_cast<uint32_t>(head.size());
+    const uint32_t length = conditional ? 6 : 5;
+    const uint32_t disp = begin_of(bodies.size()) - (jump_at + length);
+    Bytes code = plus(head, conditional ? bytes_of({0x0f, 0x84}) : bytes_of({0xe9}));
+    for (unsigned shift = 0; shift < 32; shift += 8) {
+        code.push_back(static_cast<std::byte>(disp >> shift));
+    }
+    *found = Body{site, code, 0, true};
+    return exe_of(std::move(bodies), kStamp, {Chunk{index, cold}});
 }
 
 void check_good(compat_test::Suite& t) {
@@ -199,11 +230,11 @@ void check_branches(compat_test::Suite& t) {
 void check_registers(compat_test::Suite& t) {
     t.check(mentions(run(t, with("bases", bytes_of({0xbd, 1, 0, 0, 0, 0x48, 0x89, 0xe8}))), "rbp"), "a register the code overwrites before it reads it");
     t.check(mentions(run(t, with("player_table", bytes_of({0x48, 0x89, 0xd8, 0x48, 0x89, 0xc1}))), "on_player_table"), "the callback is named");
-    t.check(run(t, with("bases", plus(bytes_of({0x48, 0x89, 0xc1, 0x48, 0x89, 0xc2}), bytes_of({0x48, 0x8b, 0x45, 0xf8})))).problems.empty(), "a register the code reads after the hook counts");
+    passes(t, run(t, with("bases", plus(bytes_of({0x48, 0x89, 0xc1, 0x48, 0x89, 0xc2}), bytes_of({0x48, 0x8b, 0x45, 0xf8})))), "a register the code reads after the hook counts");
     t.check(mentions(run(t, with("registry", bytes_of({0x48, 0x89, 0xd1, 0x48, 0x89, 0xc8}))), "r8"), "one of two registers is not used");
 
     const Exe mining_exe = with("mining", mining());
-    t.check(run(t, mining_exe).problems.empty(), "the registers of the stack record layout");
+    passes(t, run(t, mining_exe), "the registers of the stack record layout");
     Row inline_array;
     inline_array.layout = "inline_array";
     t.check(mentions(run(t, mining_exe, inline_array), "r15"), "the registers of the inline array layout are another set");
@@ -212,11 +243,39 @@ void check_registers(compat_test::Suite& t) {
     t.check(mentions(run(t, mining_exe, unknown), "mining layout"), "a layout that no callback is written for");
 }
 
+void check_following(compat_test::Suite& t) {
+    const Bytes mov_rcx = bytes_of({0x48, 0x89, 0xc1});  // mov rcx,rax
+    const Bytes reads_rbp = bytes_of({0x48, 0x8b, 0x45, 0xf8, 0xc3});  // mov rax,[rbp-8]; ret
+
+    passes(t, run(t, with_cold("bases", mov_rcx, reads_rbp)), "a register the code reads in a cold chunk of its function counts");
+    t.check(mentions(run(t, with_cold("bases", mov_rcx, bytes_of({0x90, 0xc3}))), "rbp"), "a cold chunk that does not read it does not");
+
+    const Bytes undecodable = bytes_of({0x06});
+    const CheckResult stopped = run(t, with_cold("bases", bytes_of({0x48, 0x8b, 0x45, 0xf8, 0x85, 0xc0}), undecodable, true));
+    t.check(mentions(stopped, "could not be followed"), "a cold chunk that cannot be decoded cannot be followed");
+    t.check(mentions(stopped, "could not be decoded"), "and the function around the hook says so");
+
+    t.check(mentions(run(t, with_cold("bases", mov_rcx, bytes_of({0x48, 0x89, 0xd8}))), "could not be followed"), "a cold chunk that runs off its end");
+    t.check(mentions(run(t, with("bases", plus(mov_rcx, bytes_of({0x74, 0x03, 0xb8, 0xc3, 0x00, 0x00, 0x00})))), "could not be followed"), "a branch into the middle of an instruction");
+
+    t.check(mentions(run(t, with("bases", plus(mov_rcx, bytes_of({0xff, 0xe0})))), "rbp"), "a jump through a register with no table is a tail call");
+    t.check(mentions(run(t, with("bases", plus(mov_rcx, bytes_of({0xff, 0x25, 0, 0, 0, 0})))), "rbp"), "a jump through memory is a tail call");
+}
+
+void check_calls(compat_test::Suite& t) {
+    const CheckResult only_rcx = run(t, with("registry", bytes_of({0x48, 0x89, 0xc1, 0xe8, 0, 0, 0, 0})));  // mov rcx,rax; call
+    t.check(mentions(only_rcx, "rdx") && mentions(only_rcx, "r8"), "a call does not read the argument registers that nothing set up");
+
+    const Bytes set_up = bytes_of({0x48, 0x89, 0xc2, 0x49, 0x89, 0xd8, 0xe8, 0, 0, 0, 0});  // mov rdx,rax; mov r8,rbx; call
+    passes(t, run(t, with("registry", set_up, 6)), "a call reads the argument registers the code before it wrote");
+}
+
 void check_unhooked(compat_test::Suite& t) {
     auto bodies = all_sites();
     bodies.emplace_back("param_entity", bytes_of({0x48, 0x89, 0xd8, 0x90, 0x90}));
     const CheckResult result = run(t, exe_of(std::move(bodies)));
-    t.check(result.problems.empty() && result.hooks == 9, "a site with no hook is not inspected");
+    passes(t, result, "a site with no hook is not inspected");
+    t.check(result.hooks == 9, "and has no hooks");
 }
 
 }  // namespace
@@ -228,6 +287,8 @@ int main() {
     check_alignment(t);
     check_branches(t);
     check_registers(t);
+    check_following(t);
+    check_calls(t);
     check_unhooked(t);
     return t.result();
 }

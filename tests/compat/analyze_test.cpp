@@ -89,7 +89,7 @@ constexpr std::string_view kTemplate = R"({
     {"site": "beta", "bytes": "b8 22 22 22 22 48 89 d9", "offset": "0x0", "mandatory": true},
     {"site": "param_entity", "bytes": "4c 8b d9 48 8b 81 ?? ?? ?? ?? 8b 04 ?? c3", "offset": "0x0", "mandatory": true, "operands": {"entity_table": "0x6"}},
     {"site": "chat_post", "bytes": "b8 33 33 33 33 48 89 d9", "offset": "0x0", "mandatory": false},
-    {"site": "join_line", "bytes": "b8 44 44 44 44 b9 ?? ?? ?? ??", "offset": "0xa", "mandatory": false, "operands": {"join_tag": "0x6"}}
+    {"site": "join_line", "bytes": "b8 44 44 44 44 ba ?? ?? ?? ??", "offset": "0xa", "mandatory": false, "operands": {"join_tag": "0x6"}}
   ], "t": [
     {"site": "alpha", "bytes": "b8 11 11 11 11 48 89 d9", "offset": "0x0", "mandatory": true}
   ]},

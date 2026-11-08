@@ -804,55 +804,53 @@ def make_row(label, buildids, sha256, sigset="patch1"):
     }
 
 
-def test_a_sigset_used_by_a_build_with_an_exe_is_covered(tmp_path):
-    hook_check.check_sigset_coverage(builds_file(tmp_path, make_row("a", ["11"], EXE_SHA256)))
+def test_a_build_with_an_exe_needs_no_pin(tmp_path):
+    hook_check.check_row_coverage(builds_file(tmp_path, make_row("a", ["11"], EXE_SHA256)))
 
 
-def test_a_sigset_that_no_build_uses_is_refused(tmp_path):
-    path = builds_file(tmp_path, make_row("a", ["11"], EXE_SHA256), sigsets={"patch1": PATTERNS, "draft": PATTERNS})
-    with pytest.raises(HookCheckError, match="sigset draft"):
-        hook_check.check_sigset_coverage(path)
-
-
-def test_a_sigset_used_only_by_builds_without_an_exe_is_refused(tmp_path):
-    path = builds_file(
-        tmp_path,
-        make_row("a", ["11"], EXE_SHA256),
-        make_row("b", ["12"], None, sigset="draft"),
-        sigsets={"patch1": PATTERNS, "draft": PATTERNS},
-    )
-    with pytest.raises(HookCheckError, match="sigset draft"):
-        hook_check.check_sigset_coverage(path)
+def test_a_build_without_an_exe_that_is_not_pinned_is_refused(tmp_path):
+    path = builds_file(tmp_path, make_row("a", ["11"], EXE_SHA256), make_row("b", ["12"], None))
+    with pytest.raises(HookCheckError, match="build b lists no exe_sha256"):
+        hook_check.check_row_coverage(path)
 
 
 @pytest.fixture
 def pinned(monkeypatch):
-    monkeypatch.setattr(hook_check, "PINNED_SIGSETS", {"old": hook_check.sigset_digest(PATTERNS)})
+    row = make_row("b", ["12"], None)
+    monkeypatch.setattr(hook_check, "PINNED_ROWS", {"b": hook_check.row_digest(row, PATTERNS)})
 
 
-def old_build_files(tmp_path, patterns):
-    rows = (make_row("a", ["11"], EXE_SHA256), make_row("b", ["12"], None, sigset="old"))
-    return builds_file(tmp_path, *rows, sigsets={"patch1": PATTERNS, "old": patterns})
+def shared_sigset_files(tmp_path, patterns=PATTERNS, **changes):
+    rows = (make_row("a", ["11"], EXE_SHA256), {**make_row("b", ["12"], None), **changes})
+    return builds_file(tmp_path, *rows, sigsets={"patch1": patterns})
 
 
-def test_a_pinned_sigset_needs_no_build_with_an_exe(tmp_path, pinned):
-    hook_check.check_sigset_coverage(old_build_files(tmp_path, PATTERNS))
+def test_a_pinned_build_without_an_exe_is_accepted(tmp_path, pinned):
+    hook_check.check_row_coverage(shared_sigset_files(tmp_path))
 
 
-def test_a_pinned_sigset_that_changed_is_refused(tmp_path, pinned):
+def test_a_pinned_build_whose_row_changed_is_refused(tmp_path, pinned):
+    path = shared_sigset_files(tmp_path, buildids=["13"])
+    with pytest.raises(HookCheckError, match="build b lists no exe_sha256, so its row and its sigset cannot change"):
+        hook_check.check_row_coverage(path)
+
+
+def test_a_pinned_build_is_refused_when_its_sigset_changed_although_a_build_with_an_exe_uses_it(tmp_path, pinned):
     changed = [{**PATTERNS[0], "offset": "0x4"}]
-    path = old_build_files(tmp_path, changed)
-    with pytest.raises(HookCheckError, match="sigset old changed"):
-        hook_check.check_sigset_coverage(path)
+    path = shared_sigset_files(tmp_path, patterns=changed)
+    with pytest.raises(HookCheckError, match="build b lists no exe_sha256"):
+        hook_check.check_row_coverage(path)
 
 
-def test_a_pinned_sigset_is_the_same_whatever_the_order_of_its_keys(tmp_path, pinned):
+def test_a_pinned_build_is_the_same_whatever_the_order_of_its_keys(tmp_path, pinned):
     reordered = [dict(reversed(list(PATTERNS[0].items())))]
-    hook_check.check_sigset_coverage(old_build_files(tmp_path, reordered))
+    row = dict(reversed(list(make_row("b", ["12"], None).items())))
+    rows = (make_row("a", ["11"], EXE_SHA256), row)
+    hook_check.check_row_coverage(builds_file(tmp_path, *rows, sigsets={"patch1": reordered}))
 
 
-def test_the_sigsets_of_this_repository_are_covered():
-    hook_check.check_sigset_coverage(Path(__file__).resolve().parents[1] / hook_check.BUILDS_PATH)
+def test_the_builds_of_this_repository_are_covered():
+    hook_check.check_row_coverage(Path(__file__).resolve().parents[1] / hook_check.BUILDS_PATH)
 
 
 def test_rows_with_an_exe_sha256_are_selected_once_per_build_id(tmp_path):
@@ -868,7 +866,7 @@ def test_rows_without_an_exe_sha256_get_a_notice_and_are_not_selected(tmp_path, 
     path = builds_file(tmp_path, make_row("old", ["11"], None), make_row("new", ["21"], EXE_SHA256))
     assert [tag for _, tag in hook_check.select_builds(path)] == ["21"]
     printed = capsys.readouterr().out
-    assert "::notice title=Hook check skipped::build old has no exe_sha256" in printed
+    assert "::notice title=Hook check::build old lists no exe_sha256" in printed
     assert "build new" not in printed
 
 
@@ -885,10 +883,12 @@ def test_build_ids_are_digits_only_before_they_reach_a_url_or_path(bad, tmp_path
         hook_check.select_builds(path)
 
 
-def test_every_selected_build_is_pulled_self_tested_and_compat_checked(tmp_path, selftest, compat):
+def test_every_selected_build_is_pulled_self_tested_and_compat_checked(tmp_path, selftest, compat, monkeypatch):
     other = Image(tag="7654321")
     fake, registry = make_registry(Image(), other)
-    rows = (make_row(LABEL, [TAG, "7654321"], EXE_SHA256), make_row("old", ["99"], None))
+    old = make_row("old", ["99"], None)
+    monkeypatch.setattr(hook_check, "PINNED_ROWS", {"old": hook_check.row_digest(old, PATTERNS)})
+    rows = (make_row(LABEL, [TAG, "7654321"], EXE_SHA256), old)
     run = FakeRun()
     work = tmp_path / "work"
     path = builds_file(tmp_path, *rows)
@@ -920,12 +920,12 @@ def test_a_build_missing_from_the_store_fails_the_whole_check(tmp_path, tools):
         hook_check.check_builds(path, tools, tmp_path / "work", registry, run)
 
 
-def test_an_uncovered_sigset_fails_before_anything_is_pulled(tmp_path, tools):
+def test_a_build_without_an_exe_or_a_pin_fails_before_anything_is_pulled(tmp_path, tools):
     fake, registry = make_registry(Image())
-    path = builds_file(tmp_path, make_row(LABEL, [TAG], EXE_SHA256), sigsets={"patch1": PATTERNS, "draft": PATTERNS})
+    path = builds_file(tmp_path, make_row(LABEL, [TAG], EXE_SHA256), make_row("draft", ["12"], None))
     run = FakeRun()
     requests = len(fake.seen)
-    with pytest.raises(HookCheckError, match="sigset draft"):
+    with pytest.raises(HookCheckError, match="build draft"):
         hook_check.check_builds(path, tools, tmp_path / "work", registry, run)
     assert len(fake.seen) == requests
     assert run.calls == []
@@ -1039,10 +1039,10 @@ def test_main_fails_the_check_and_removes_the_exe_when_the_compat_check_fails(re
     assert not (tmp_path / "runner" / hook_check.WORK_NAME).exists()
 
 
-def test_main_fails_the_check_when_a_sigset_is_covered_by_no_exe(repo, tmp_path, capsys):
+def test_main_fails_the_check_when_a_build_has_no_exe_or_pin(repo, tmp_path, capsys):
     path = repo / "data" / "builds.json"
     doc = json.loads(path.read_text(encoding="utf-8"))
-    doc["sigsets"]["draft"] = PATTERNS
+    doc["builds"].append(make_row("draft", ["12"], None))
     path.write_text(json.dumps(doc), encoding="utf-8")
     run = FakeRun()
     assert hook_check.main(make_env(tmp_path), FakeRegistry(Image()), run, lambda seconds: None) == 1

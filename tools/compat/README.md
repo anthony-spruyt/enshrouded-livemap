@@ -42,15 +42,15 @@ changes a sigset passes only when every check holds. Each problem names the site
 - Each hook starts on a whole instruction, decoded from the start of its function through the exe's `.pdata`.
 - No branch lands inside the bytes a hook overwrites.
 - Every register a callback reads from the context is one the code at the hook uses: the instruction there, the code it
-  leads to, or the instruction just before the hook. The registers each callback reads are listed in
-  `src/callbacks.cpp`; a test keeps that list in step with the callbacks.
+  leads to, or the instruction just before the hook. A call uses an argument register only when the code just before it
+  wrote that register. A hook whose code from there cannot be followed is refused. The registers each callback reads are
+  listed in `src/callbacks.cpp`; a test keeps that list in step with the callbacks.
 - The exe is the one the row lists, and every site the row lists is found once, at the RVA the row lists.
 
 The exit code is `0` when every check holds, `1` when the inputs cannot be judged (an unreadable file, an exe that no row
 describes), `2` for a wrong command line, and `3` when a check failed. The problems go to standard output.
 
-`tools/hook_check.py` runs the check, and also requires every sigset of `data/builds.json` to be used by a row with an
-`exe_sha256` or to match the content pinned in that script.
+`tools/hook_check.py` runs the check on every row that lists an `exe_sha256`, and refuses a change to a row that lists none.
 
 ## Verdicts
 

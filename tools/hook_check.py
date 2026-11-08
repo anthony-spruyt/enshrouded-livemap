@@ -1,6 +1,6 @@
 """Pulls the server exe of every build in data/builds.json that records an exe_sha256 from the private exe store.
 
-It runs the hook self-test and the compat tool's check on each exe, and refuses a sigset that no such exe covers.
+It runs the hook self-test and the compat tool's check on each exe, and refuses a change to a build that lists none.
 Run it from the repository root with GH_TOKEN, GITHUB_ACTOR and RUNNER_TEMP set; ctest runs test_hook_check.py.
 """
 
@@ -52,7 +52,11 @@ WORK_NAME = "exe-hook-check"
 BUILDS_PATH = Path("data") / "builds.json"
 SELFTEST_PATH = Path("build") / "livemap_selftest.exe"
 COMPAT_PATH = Path("build") / "tools" / "compat" / "livemap_compat.exe"
-PINNED_SIGSETS = {"launch": "0c1d2618a33a8e3a42c614e338d78be8e88fc5c4544a6df40cae530b8e912971"}
+PINNED_ROWS = {
+    "25988414": "4e5da307fd9436448b8c1e75278d3f238411ed7ccfa6bf50b47dce3b730ef5ca",
+    "26083076": "023099bde5efd4c6ffa1791c99d156ea9105136b7e45165ad4a274ae3214d290",
+    "26319703": "7ec5bc5e3f155f711d4b1ae5f6e2dd8777d4c074d388d293567b3a16c6b61d21",
+}
 SITE_LINE = re.compile(r"^(\w+)\s+rva 0x[0-9a-f]+$", re.MULTILINE)
 
 
@@ -365,8 +369,8 @@ def select_builds(builds_path):
     for row in json.loads(builds_path.read_text(encoding="utf-8"))["builds"]:
         if row["steam"]["exe_sha256"] is None:
             print(
-                f"::notice title=Hook check skipped::build {row['label']} has no exe_sha256 in data/builds.json, "
-                "so the hook sites are not checked against its executable."
+                f"::notice title=Hook check::build {row['label']} lists no exe_sha256 in data/builds.json, "
+                "so its row and its sigset cannot change."
             )
             continue
         for tag in row["buildids"]:
@@ -378,29 +382,27 @@ def select_builds(builds_path):
     return selected
 
 
-def sigset_digest(patterns):
-    canonical = json.dumps(patterns, sort_keys=True, separators=(",", ":"))
+def row_digest(row, patterns):
+    canonical = json.dumps(row, sort_keys=True, separators=(",", ":")) + json.dumps(
+        patterns, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def check_sigset_coverage(builds_path):
+def check_row_coverage(builds_path):
     document = json.loads(builds_path.read_text(encoding="utf-8"))
-    covered = {row["sigset"] for row in document["builds"] if row["steam"]["exe_sha256"] is not None}
-    for name, patterns in document["sigsets"].items():
-        if name in covered:
+    for row in document["builds"]:
+        if row["steam"]["exe_sha256"] is not None:
             continue
-        if name not in PINNED_SIGSETS:
-            raise HookCheckError(
-                f"sigset {name} is used by no build with an exe_sha256, so no exe is checked against it"
-            )
-        if sigset_digest(patterns) != PINNED_SIGSETS[name]:
-            raise HookCheckError(
-                f"sigset {name} changed: a changed sigset needs a build with an exe_sha256 that uses it"
-            )
+        label = row["label"]
+        if label not in PINNED_ROWS:
+            raise HookCheckError(f"build {label} lists no exe_sha256: a build needs one in data/builds.json")
+        if row_digest(row, document["sigsets"][row["sigset"]]) != PINNED_ROWS[label]:
+            raise HookCheckError(f"build {label} lists no exe_sha256, so its row and its sigset cannot change")
 
 
 def check_builds(builds_path, tools, work, registry, run=subprocess.run):
-    check_sigset_coverage(builds_path)
+    check_row_coverage(builds_path)
     for row, tag in select_builds(builds_path):
         exe = pull_exe(registry, tag, row["steam"]["exe_sha256"], work)
         run_selftest(tools.selftest, exe, row, run)

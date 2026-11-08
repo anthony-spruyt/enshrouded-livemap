@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.9.0...v1.9.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency zyantific/zydis to v4.1.1 ([#26](https://github.com/anthony-spruyt/enshrouded-livemap/issues/26)) ([9d630d7](https://github.com/anthony-spruyt/enshrouded-livemap/commit/9d630d71c58fd8286d76c73e58423573a3dd0f06))
+
 ## [1.9.0](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.8.0...v1.9.0) (2026-11-08)
 
 

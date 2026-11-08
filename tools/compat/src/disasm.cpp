@@ -457,7 +457,7 @@ BranchMap collect_branches(const Image& image, const Decoder& decoder) {
             if (insn.relative) {
                 map.branches.emplace_back(insn.rva, insn.target);
             }
-            if (insn.address && *insn.address >= 0 && image.in_text(static_cast<uint64_t>(*insn.address), 1)) {
+            if (insn.address.has_value() && *insn.address >= 0 && image.in_text(static_cast<uint64_t>(*insn.address), 1)) {
                 map.branches.emplace_back(insn.rva, *insn.address);
             }
         }

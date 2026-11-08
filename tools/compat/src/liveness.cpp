@@ -93,8 +93,9 @@ void link(const Graph& graph, std::span<const Code> chain, Node& node) {
 }
 
 bool falls_through(const Node& from, const Node& to) {
+    using enum Flow;
     const Flow flow = from.insn->flow;
-    return (flow == Flow::Next || flow == Flow::Call || flow == Flow::Branch) && from.insn->rva + from.insn->length == to.insn->rva;
+    return (flow == Next || flow == Call || flow == Branch) && from.insn->rva + from.insn->length == to.insn->rva;
 }
 
 // The nodes that some edge reaches from somewhere other than the instruction just before them.
@@ -159,7 +160,7 @@ std::vector<Registers> solve(const Graph& graph) {
 
 bool reaches_lost(const Graph& graph, size_t from) {
     std::vector<bool> seen(graph.size(), false);
-    std::vector<size_t> pending{from};
+    std::vector pending{from};
     seen[from] = true;
     while (!pending.empty()) {
         const Node& node = graph[pending.back()];

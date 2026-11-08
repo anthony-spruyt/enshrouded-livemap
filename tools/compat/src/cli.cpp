@@ -16,6 +16,7 @@
 
 #include "analyze.h"
 #include "builds.h"
+#include "check.h"
 #include "json.h"
 #include "pe.h"
 #include "report.h"
@@ -29,13 +30,16 @@ constexpr std::string_view kUsage =
     "usage: livemap_compat --builds FILE --previous EXE --exe EXE --build-id ID --manifest ID --depot ID --report FILE [--builds-out FILE]\n";
 constexpr std::array<std::string_view, 7> kRequired{"--builds", "--previous", "--exe", "--build-id", "--manifest", "--depot", "--report"};
 constexpr std::array<std::string_view, 8> kFlags{"--builds", "--previous", "--exe", "--build-id", "--manifest", "--depot", "--report", "--builds-out"};
+constexpr std::string_view kCheckCommand = "check";
+constexpr std::string_view kCheckUsage = "usage: livemap_compat check --builds FILE --exe EXE\n";
+constexpr std::array<std::string_view, 2> kCheckFlags{"--builds", "--exe"};
 
 using Values = std::map<std::string, std::string, std::less<>>;
 
-std::expected<Values, std::string> read_flags(std::span<const std::string_view> args) {
+std::expected<Values, std::string> read_flags(std::span<const std::string_view> args, std::span<const std::string_view> allowed) {
     Values values;
     for (size_t i = 0; i < args.size(); i += 2) {
-        if (std::ranges::find(kFlags, args[i]) == kFlags.end()) {
+        if (std::ranges::find(allowed, args[i]) == allowed.end()) {
             return std::unexpected(std::format("unknown argument {}", args[i]));
         }
         if (i + 1 == args.size()) {
@@ -46,6 +50,15 @@ std::expected<Values, std::string> read_flags(std::span<const std::string_view> 
         }
     }
     return values;
+}
+
+std::expected<void, std::string> require_flags(const Values& values, std::span<const std::string_view> required) {
+    for (const std::string_view flag : required) {
+        if (!values.contains(flag)) {
+            return std::unexpected(std::format("{} is required", flag));
+        }
+    }
+    return {};
 }
 
 std::optional<std::string> value_of(const Values& values, std::string_view flag) {
@@ -166,17 +179,69 @@ std::expected<void, std::string> execute(const CliOptions& options, std::ostream
     return apply_edit(*catalog, analysis->edit).and_then([&catalog, &options] { return write_text(*options.builds_out, write_json(catalog->document())); });
 }
 
-}  // namespace
+struct CheckOptions {
+    std::string builds;
+    std::string exe;
+};
 
-std::expected<CliOptions, std::string> parse_arguments(std::span<const std::string_view> args) {
-    const auto values = read_flags(args);
+std::expected<CheckOptions, std::string> parse_check_arguments(std::span<const std::string_view> args) {
+    const auto values = read_flags(args, kCheckFlags);
     if (!values) {
         return std::unexpected(values.error());
     }
-    for (const std::string_view flag : kRequired) {
-        if (!values->contains(flag)) {
-            return std::unexpected(std::format("{} is required", flag));
-        }
+    if (auto required = require_flags(*values, kCheckFlags); !required.has_value()) {
+        return std::unexpected(required.error());
+    }
+    return CheckOptions{values->at("--builds"), values->at("--exe")};
+}
+
+std::expected<int, std::string> execute_check(const CheckOptions& options, std::ostream& out) {
+    const auto catalog = read_catalog(options.builds);
+    if (!catalog) {
+        return std::unexpected(catalog.error());
+    }
+    const auto exe = read_exe(options.exe);
+    if (!exe) {
+        return std::unexpected(exe.error());
+    }
+    const auto result = check_exe(*catalog, exe->image, exe->sha256);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    if (result->problems.empty()) {
+        out << std::format("ok: row {} ({}), {} hooks checked\n", result->label, result->sigset, result->hooks);
+        return kExitJudged;
+    }
+    out << std::format("failed: row {} ({})\n", result->label, result->sigset);
+    for (const std::string& problem : result->problems) {
+        out << std::format("  {}\n", problem);
+    }
+    return kExitFailed;
+}
+
+int run_check(std::span<const std::string_view> args, std::ostream& out, std::ostream& err) {
+    const auto options = parse_check_arguments(args);
+    if (!options) {
+        err << std::format("error: {}\n{}", options.error(), kCheckUsage);
+        return kExitUsage;
+    }
+    const auto code = execute_check(*options, out);
+    if (!code) {
+        err << std::format("error: {}\n", code.error());
+        return kExitInput;
+    }
+    return *code;
+}
+
+}  // namespace
+
+std::expected<CliOptions, std::string> parse_arguments(std::span<const std::string_view> args) {
+    const auto values = read_flags(args, kFlags);
+    if (!values) {
+        return std::unexpected(values.error());
+    }
+    if (auto required = require_flags(*values, kRequired); !required.has_value()) {
+        return std::unexpected(required.error());
     }
     CliOptions options;
     options.builds = values->at("--builds");
@@ -194,6 +259,9 @@ std::expected<CliOptions, std::string> parse_arguments(std::span<const std::stri
 }
 
 int run_cli(std::span<const std::string_view> args, std::ostream& out, std::ostream& err) {
+    if (!args.empty() && args[0] == kCheckCommand) {
+        return run_check(args.subspan(1), out, err);
+    }
     const auto options = parse_arguments(args);
     if (!options) {
         err << std::format("error: {}\n{}", options.error(), kUsage);

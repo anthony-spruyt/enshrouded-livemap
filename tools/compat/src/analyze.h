@@ -10,6 +10,7 @@
 
 #include "builds.h"
 #include "disasm.h"
+#include "hooks.h"
 #include "pe.h"
 
 namespace livemap::compat {
@@ -19,13 +20,6 @@ enum class Verdict { Known,
                      Hard };
 
 std::string_view verdict_name(Verdict verdict);
-
-// Its function in the exception table, or the bytes of its pattern for code with no entry there.
-struct Region {
-    bool window = false;
-    uint32_t begin = 0;
-    uint32_t end = 0;
-};
 
 // Everything the report says about one pattern of the sigset: positions and counts, never bytes.
 struct SiteReport {

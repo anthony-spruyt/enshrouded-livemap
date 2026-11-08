@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "pe.h"
+#include "registers.h"
 
 namespace livemap::compat {
 
@@ -30,10 +31,22 @@ struct IndexedLoad {
     int64_t address = 0;
 };
 
+// Stop is a trap: nothing follows it.
+enum class Flow { Next,
+                  Call,
+                  Return,
+                  Branch,
+                  Jump,
+                  Indirect,
+                  Stop };
+
 // One instruction with the bytes that depend on where code sits zeroed; a branch or a table load keeps its target as an RVA.
 struct Instruction {
     uint32_t rva = 0;
     uint8_t length = 0;
+    Flow flow = Flow::Next;
+    Registers reads = 0;
+    Registers kills = 0;  // only registers it overwrites whole: a partial write keeps the rest live
     bool relative = false;
     bool table_ref = false;
     int64_t target = 0;

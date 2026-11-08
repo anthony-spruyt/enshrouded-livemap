@@ -19,7 +19,15 @@ enum class Fault {
 // runs off the end of a chunk, cannot be followed: that is a fault.
 std::expected<Registers, Fault> live_before(std::span<const Code> chain, uint32_t rva);
 
-// `live_before`, plus the registers the instruction just before `rva` reads or overwrites when it leads into it.
-std::expected<Registers, Fault> in_use_at(std::span<const Code> chain, uint32_t rva);
+// The registers every path from the instruction at `entry` to the one at `rva` overwrites whole. Only the stack pointer is
+// set at `entry`, a call leaves the registers it preserves and its result, and where paths meet the registers of all of
+// them count. Control that enters from outside the chain, by a branch of `branches` that no jump of the chain explains,
+// brings only the stack pointer, and so does each instruction that neither `entry` nor such a branch leads to. A fault when
+// `entry` starts no instruction.
+std::expected<Registers, Fault> written_before(std::span<const Code> chain, uint32_t entry, uint32_t rva, const BranchMap& branches);
+
+// `live_before`, plus the registers the instruction just before `rva` reads or overwrites when it leads into it, counted
+// only where `written_before` gives them.
+std::expected<Registers, Fault> in_use_at(std::span<const Code> chain, uint32_t entry, uint32_t rva, const BranchMap& branches);
 
 }  // namespace livemap::compat

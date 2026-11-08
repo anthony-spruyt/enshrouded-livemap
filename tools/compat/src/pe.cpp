@@ -26,6 +26,10 @@ constexpr size_t kUnwindCodeSize = 2;
 constexpr uint64_t kUnwindVersionMask = 7;
 constexpr unsigned kUnwindFlagsShift = 3;
 constexpr uint64_t kChainFlag = 4;
+constexpr uint64_t kHandlerFlags = 3;
+constexpr size_t kHandlerSize = 4;
+constexpr size_t kScopeRecordSize = 16;
+constexpr uint32_t kExecuteHandler = 1;
 constexpr size_t kMaxChainLength = 64;
 constexpr size_t kSizeOfImageOffset = 56;
 constexpr size_t kDirectoryCountOffset = 108;
@@ -167,6 +171,90 @@ std::vector<uint32_t> chain_roots(const std::vector<std::byte>& mapped, const st
     return roots;
 }
 
+// The entries with the root of the chain each belongs to.
+class Chains {
+public:
+    Chains(const std::vector<Entry>& entries, const std::vector<uint32_t>& roots) : entries_(entries), roots_(roots) {}
+
+    std::optional<uint32_t> root_at(uint32_t rva) const {
+        const auto next = std::ranges::upper_bound(entries_, rva, {}, [](const Entry& e) { return e.range.begin; });
+        if (next == entries_.begin() || rva >= (next - 1)->range.end) {
+            return std::nullopt;
+        }
+        return roots_[static_cast<size_t>(next - 1 - entries_.begin())];
+    }
+
+    bool holds(uint32_t root, uint32_t begin, uint32_t end) const {
+        return root_at(begin) == root && root_at(end - 1) == root;
+    }
+
+private:
+    const std::vector<Entry>& entries_;
+    const std::vector<uint32_t>& roots_;
+};
+
+std::optional<uint64_t> peek(const std::vector<std::byte>& mapped, uint64_t at, size_t width) {
+    if (at > mapped.size() || width > mapped.size() - at) {
+        return std::nullopt;
+    }
+    return File(mapped).read(at, width, "the exception data");
+}
+
+std::optional<uint32_t> peek_dword(const std::vector<std::byte>& mapped, uint64_t at) {
+    return peek(mapped, at, 4).transform([](uint64_t value) { return static_cast<uint32_t>(value); });
+}
+
+// Where the scope table of a function with a handler starts: after the unwind codes and the handler address.
+std::optional<uint64_t> scope_table_at(const std::vector<std::byte>& mapped, uint32_t unwind) {
+    const auto header = peek(mapped, unwind, 1);
+    const auto codes = peek(mapped, uint64_t{unwind} + kUnwindCountOffset, 1);
+    if (!header || !codes) {
+        return std::nullopt;
+    }
+    const uint64_t flags = *header >> kUnwindFlagsShift;
+    if (const uint64_t version = *header & kUnwindVersionMask; (version != 1 && version != 2) || (flags & kChainFlag) != 0 || (flags & kHandlerFlags) == 0) {
+        return std::nullopt;
+    }
+    return uint64_t{unwind} + kUnwindHeaderSize + (*codes + 1) / 2 * 2 * kUnwindCodeSize + kHandlerSize;
+}
+
+// The jump targets of the scope table in the unwind info of `entry`.
+std::vector<ScopeJump> scope_jumps_of(const std::vector<std::byte>& mapped, const Chains& chains, const Entry& entry, uint32_t root) {
+    const auto table = scope_table_at(mapped, entry.unwind);
+    const auto count = table ? peek(mapped, *table, 4) : std::nullopt;
+    if (!count) {
+        return {};
+    }
+    std::vector<ScopeJump> jumps;
+    for (uint64_t i = 0; i < *count; ++i) {
+        const uint64_t at = *table + 4 + i * kScopeRecordSize;
+        const auto begin = peek_dword(mapped, at);
+        const auto end = peek_dword(mapped, at + 4);
+        const auto handler = peek_dword(mapped, at + 8);
+        const auto target = peek_dword(mapped, at + 12);
+        if (!begin || !end || !handler || !target) {
+            return {};
+        }
+        const bool handled = *handler == kExecuteHandler || chains.root_at(*handler).has_value();
+        if (*begin >= *end || !chains.holds(root, *begin, *end) || !handled || (*target != 0 && !chains.holds(root, *target, *target + 1))) {
+            return {};
+        }
+        if (*target != 0) {
+            jumps.push_back({*begin, *target});
+        }
+    }
+    return jumps;
+}
+
+std::vector<ScopeJump> scope_jumps_in(const std::vector<std::byte>& mapped, const std::vector<Entry>& entries, const std::vector<uint32_t>& roots) {
+    const Chains chains(entries, roots);
+    std::vector<ScopeJump> jumps;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        std::ranges::move(scope_jumps_of(mapped, chains, entries[i], roots[i]), std::back_inserter(jumps));
+    }
+    return jumps;
+}
+
 }  // namespace
 
 std::span<const std::byte> Image::at(uint64_t rva, size_t length) const {
@@ -243,6 +331,7 @@ std::expected<Image, std::string> load_image(std::span<const std::byte> bytes) {
             const uint64_t entry = optional + kDirectoriesOffset + kExceptionDirectory * 8;
             const auto entries = read_entries(image.mapped_, file.read(entry, 4, "the data directories"), file.read(entry + 4, 4, "the data directories"));
             image.roots_ = chain_roots(image.mapped_, entries);
+            image.scope_jumps_ = scope_jumps_in(image.mapped_, entries, image.roots_);
             std::ranges::transform(entries, std::back_inserter(image.functions_), &Entry::range);
         }
         return image;

@@ -17,6 +17,7 @@
 #include "test_support.h"
 
 using compat_test::bytes_of;
+using compat_test::ScopeRecord;
 using livemap::compat::Catalog;
 using livemap::compat::CheckResult;
 
@@ -25,6 +26,8 @@ namespace {
 constexpr uint32_t kTextAt = 0x1000;
 constexpr uint32_t kStride = 0x100;
 constexpr uint32_t kStamp = 7;
+constexpr uint32_t kScopesAt = 0x3000;
+constexpr uint32_t kScopeStride = 0x100;
 constexpr std::string_view kZeroSha = "0000000000000000000000000000000000000000000000000000000000000000";
 
 using Bytes = std::vector<std::byte>;
@@ -35,6 +38,7 @@ struct Body {
     Bytes code;
     uint32_t offset = 0;  // of the hook from the start of the pattern
     bool listed = true;   // in the exception table
+    std::vector<ScopeRecord> scopes;  // the scope table of its unwind info
 };
 
 Bytes plus(Bytes first, const Bytes& more) {
@@ -65,6 +69,14 @@ struct Chunk {
     Bytes code;
 };
 
+// A function of its own, kNeighbourAt bytes after the start of the body it follows.
+struct Neighbour {
+    size_t after = 0;  // the index of the body
+    Bytes code;
+};
+
+constexpr uint32_t kNeighbourAt = 0x40;
+
 struct Exe {
     Bytes file;
     std::string sha;
@@ -72,15 +84,22 @@ struct Exe {
     std::vector<Body> bodies;
 };
 
-Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp, const std::vector<Chunk>& chunks = {}) {
+Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp, const std::vector<Chunk>& chunks = {}, const std::vector<Neighbour>& neighbours = {}) {
     compat_test::PeSpec spec;
     spec.time_date_stamp = stamp;
     Bytes text(0x1000, std::byte{0xcc});
+    Bytes scopes(kScopeStride * bodies.size());
     for (size_t i = 0; i < bodies.size(); ++i) {
         bodies[i].code = function_of(i, bodies[i].code);
         std::ranges::copy(bodies[i].code, text.begin() + (begin_of(i) - kTextAt));
+        uint32_t unwind = 0;
+        if (!bodies[i].scopes.empty()) {
+            const Bytes info = compat_test::scope_info(compat_test::kExceptionHandlerFlag, 0, bodies[i].scopes, static_cast<uint32_t>(bodies[i].scopes.size()));
+            std::ranges::copy(info, scopes.begin() + i * kScopeStride);
+            unwind = kScopesAt + static_cast<uint32_t>(i) * kScopeStride;
+        }
         if (bodies[i].listed) {
-            spec.functions.emplace_back(begin_of(i), begin_of(i) + static_cast<uint32_t>(bodies[i].code.size()));
+            spec.functions.emplace_back(begin_of(i), begin_of(i) + static_cast<uint32_t>(bodies[i].code.size()), 0, unwind);
         }
     }
     for (size_t i = 0; i < chunks.size(); ++i) {
@@ -88,7 +107,13 @@ Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp, const std::vector<
         std::ranges::copy(chunks[i].code, text.begin() + (begin - kTextAt));
         spec.functions.emplace_back(begin, begin + static_cast<uint32_t>(chunks[i].code.size()), begin_of(chunks[i].of));
     }
+    for (const Neighbour& neighbour : neighbours) {
+        const uint32_t begin = begin_of(neighbour.after) + kNeighbourAt;
+        std::ranges::copy(neighbour.code, text.begin() + (begin - kTextAt));
+        spec.functions.emplace_back(begin, begin + static_cast<uint32_t>(neighbour.code.size()));
+    }
     spec.sections.emplace_back(".text", kTextAt, text, 0);
+    spec.sections.emplace_back(".rdata", kScopesAt, scopes, 0);
     Exe exe;
     exe.file = compat_test::build_pe(spec);
     exe.sha = livemap::compat::sha256_hex(exe.file);
@@ -185,6 +210,26 @@ Exe with_cold(const std::string& site, const Bytes& head, const Bytes& cold, boo
     return exe_of(std::move(bodies), kStamp, {Chunk{index, cold}});
 }
 
+// The site with `code` and the records of a scope table in its unwind info.
+Exe with_scopes(const std::string& site, const Bytes& code, uint32_t offset, std::vector<ScopeRecord> scopes) {
+    auto bodies = all_sites();
+    const auto found = std::ranges::find(bodies, site, &Body::site);
+    *found = Body{site, code, offset, true, std::move(scopes)};
+    return exe_of(std::move(bodies));
+}
+
+uint32_t start_of(const std::string& site) {
+    const auto bodies = all_sites();
+    return begin_of(static_cast<size_t>(std::ranges::find(bodies, site, &Body::site) - bodies.begin()));
+}
+
+// The site with a function next to it that holds `code`.
+Exe with_neighbour(const std::string& site, const Bytes& code) {
+    auto bodies = all_sites();
+    const auto index = static_cast<size_t>(std::ranges::find(bodies, site, &Body::site) - bodies.begin());
+    return exe_of(std::move(bodies), kStamp, {}, {Neighbour{index, code}});
+}
+
 void check_good(compat_test::Suite& t) {
     const Exe exe = exe_of(all_sites());
     const CheckResult result = run(t, exe);
@@ -230,11 +275,33 @@ void check_branches(compat_test::Suite& t) {
     t.check(mentions(run(t, with("join_line", after)), "branches land inside"), "a branch into the second hook of the join line");
 }
 
+void check_scope_jumps(compat_test::Suite& t) {
+    const uint32_t movement_at = start_of("movement");
+    t.check(mentions(run(t, with_scopes("movement", movement(), 0, {{movement_at, movement_at + 8, 1, movement_at + 3}})), "branches land inside"),
+            "a jump target of a scope table in the second instruction of the hook");
+    passes(t, run(t, with_scopes("movement", movement(), 0, {{movement_at, movement_at + 8, 1, movement_at}})), "a jump target of a scope table at the first instruction is no problem");
+    passes(t, run(t, with_scopes("movement", movement(), 0, {{movement_at, movement_at + 8, 1, 0}})), "a record with no jump target adds nothing");
+
+    const Bytes hooked = bytes_of({0x48, 0x89, 0xc1, 0x48, 0x89, 0xc2, 0xc3});  // mov rcx,rax; mov rdx,rax; ret
+    const Bytes reached = plus(bytes_of({0xbd, 1, 0, 0, 0, 0x74, 3, 0x48, 0x89, 0xeb}), hooked);  // mov ebp,1; jz over `mov rbx,rbp`
+    const uint32_t jump_at = start_of("bases") + 5;
+    passes(t, run(t, with("bases", reached, 10)), "a register that the code before the hook reads and every path wrote counts");
+    t.check(mentions(run(t, with_scopes("bases", reached, 10, {{jump_at, jump_at + 2, 1, jump_at + 5}})), "rbp"),
+            "not when a scope table can send control to the hook from a state that holds no write");
+}
+
 void check_registers(compat_test::Suite& t) {
     t.check(mentions(run(t, with("bases", bytes_of({0xbd, 1, 0, 0, 0, 0x48, 0x89, 0xe8}))), "rbp"), "a register the code overwrites before it reads it");
     t.check(mentions(run(t, with("player_table", bytes_of({0x48, 0x89, 0xd8, 0x48, 0x89, 0xc1}))), "on_player_table"), "the callback is named");
     passes(t, run(t, with("bases", plus(bytes_of({0x48, 0x89, 0xc1, 0x48, 0x89, 0xc2}), bytes_of({0x48, 0x8b, 0x45, 0xf8})))), "a register the code reads after the hook counts");
     t.check(mentions(run(t, with("registry", bytes_of({0x48, 0x89, 0xd1, 0x48, 0x89, 0xc8}))), "r8"), "one of two registers is not used");
+
+    const Bytes hooked = bytes_of({0x48, 0x89, 0xc1, 0x48, 0x89, 0xc2, 0xc3});  // mov rcx,rax; mov rdx,rax; ret
+    const Bytes one_path = plus(bytes_of({0x85, 0xc0, 0x74, 0x05, 0xbd, 1, 0, 0, 0}), hooked);  // test; jz over `mov ebp,1`
+    t.check(mentions(run(t, with("bases", one_path, 9)), "rbp"), "a register that only one path to the hook writes");
+    const Bytes both_paths = plus(bytes_of({0x85, 0xc0, 0x74, 0x07, 0xbd, 1, 0, 0, 0, 0xeb, 0x05, 0xbd, 2, 0, 0, 0}), hooked);
+    passes(t, run(t, with("bases", both_paths, 16)), "a register that every path to the hook writes");
+    t.check(mentions(run(t, with("bases", plus(bytes_of({0x48, 0x89, 0xe8}), hooked), 3)), "rbp"), "a register the code before the hook reads but nothing wrote");
 
     const Exe mining_exe = with("mining", mining());
     passes(t, run(t, mining_exe), "the registers of the stack record layout");
@@ -265,6 +332,15 @@ void check_following(compat_test::Suite& t) {
     t.check(mentions(run(t, with("bases", plus(mov_rcx, bytes_of({0xff, 0x25, 0, 0, 0, 0})))), "rbp"), "a jump through memory is a tail call");
 }
 
+void check_neighbours(compat_test::Suite& t) {
+    const Bytes nops(0x20, std::byte{0x90});
+    const Bytes undecodable = bytes_of({0x06});
+    passes(t, run(t, with_neighbour("bases", plus(nops, bytes_of({0xc3})))), "a function next to the hook that decodes to its end");
+    t.check(mentions(run(t, with_neighbour("bases", plus(plus(nops, undecodable), nops))), "near the hook"), "a function next to the hook with bytes that cannot be decoded");
+    t.check(mentions(run(t, with_neighbour("bases", undecodable)), "near the hook"), "also when it stops at its first byte");
+    passes(t, run(t, with_neighbour("join_line", plus(plus(Bytes(0x90, std::byte{0x90}), undecodable), nops))), "a function whose undecoded bytes start 0xd0 bytes after the start of the hook's function");
+}
+
 void check_calls(compat_test::Suite& t) {
     const CheckResult only_rcx = run(t, with("registry", bytes_of({0x48, 0x89, 0xc1, 0xe8, 0, 0, 0, 0})));  // mov rcx,rax; call
     t.check(mentions(only_rcx, "rdx") && mentions(only_rcx, "r8"), "a call does not read the argument registers that nothing set up");
@@ -289,8 +365,10 @@ int main() {
     check_inputs(t);
     check_alignment(t);
     check_branches(t);
+    check_scope_jumps(t);
     check_registers(t);
     check_following(t);
+    check_neighbours(t);
     check_calls(t);
     check_unhooked(t);
     return t.result();

@@ -238,7 +238,8 @@ void check_branch_map(compat_test::Suite& t) {
     }
     const Decoder decoder;
     const auto map = livemap::compat::collect_branches(*image, decoder);
-    t.check(map.stopped.size() == 1 && map.stopped[0].begin == 0x1040 && map.stopped[0].end == 0x1043, "the function that stops decoding is listed");
+    t.check(map.stopped.size() == 1 && map.stopped[0].range.begin == 0x1040 && map.stopped[0].range.end == 0x1043, "the function that stops decoding is listed");
+    t.check(map.stopped.size() == 1 && map.stopped[0].at == 0x1041, "with the place where the undecoded bytes start");
     t.check(map.branches.size() == 3, "one call and two jumps");
     t.check(std::ranges::is_sorted(map.branches, {}, &Branch::target), "branches are sorted by target");
     const auto inside = livemap::compat::landings(map, 0x1020, 0x1030);
@@ -400,7 +401,8 @@ void check_branch_map_reach(compat_test::Suite& t) {
         twin.insert(twin.end(), other.begin(), other.end());
         twin.insert(twin.end(), tail.begin(), tail.end());
         const auto crossed = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1015}, twin}}, dwords({0x1013, 0x1014, 0x1013, 0x1014})), decoder);
-        t.check(crossed.stopped.size() == 1 && crossed.stopped[0].begin == 0x1000, "a load of a table from the middle of another one stops the function that holds it, whichever is read first");
+        t.check(crossed.stopped.size() == 1 && crossed.stopped[0].range.begin == 0x1000, "a load of a table from the middle of another one stops the function that holds it, whichever is read first");
+        t.check(crossed.stopped.size() == 1 && crossed.stopped[0].at == 0x1007, "at the load of the table that crosses");
     }
 
     const auto nowhere = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x100e}, table_user(0x7ffffff0)}}), decoder);
@@ -410,7 +412,24 @@ void check_branch_map_reach(compat_test::Suite& t) {
     const auto inside_entries = dwords({0x200c, 0x200d, 0x200c});
     cut.insert(cut.end(), inside_entries.begin(), inside_entries.end());
     const auto straddled = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1010}, cut}, Piece{{0x2000, 0x200e}, table_user(0x1001)}}), decoder);
-    t.check(straddled.stopped.size() == 1 && straddled.stopped[0].begin == 0x1000, "a table that starts inside an instruction stops the function with that instruction");
+    t.check(straddled.stopped.size() == 1 && straddled.stopped[0].range.begin == 0x1000, "a table that starts inside an instruction stops the function with that instruction");
+    t.check(straddled.stopped.size() == 1 && straddled.stopped[0].at == 0x1000, "at that instruction");
+
+    const auto crossed_entries = dwords({0x1013, 0x1014, 0x1013, 0x1014});
+    auto load_then_byte = reads(kDataAt);
+    const auto crossing = reads(kDataAt + 4);
+    load_then_byte.insert(load_then_byte.end(), crossing.begin(), crossing.end());
+    load_then_byte.insert(load_then_byte.end(), tail.begin(), tail.end());
+    load_then_byte.push_back(std::byte{0x06});
+    const auto crossed_first = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1016}, load_then_byte}}, crossed_entries), decoder);
+    t.check(crossed_first.stopped.size() == 1 && crossed_first.stopped[0].at == 0x1007, "a function with a load that crosses a table and later a byte that is no instruction stops at the load");
+
+    auto byte_then_loads = bytes_of({0xb8});
+    append_dword(byte_then_loads, 0x200c);  // the operand is also a one-entry table that the function at 0x2000 reads
+    byte_then_loads.insert(byte_then_loads.end(), load_then_byte.begin(), load_then_byte.end() - 1);
+    const auto crossed_later = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x101a}, byte_then_loads}, Piece{{0x2000, 0x200e}, table_user(0x1001)}}, dwords({0x1018, 0x1019, 0x1018, 0x1019})), decoder);
+    t.check(crossed_later.stopped.size() == 1 && crossed_later.stopped[0].range.begin == 0x1000 && crossed_later.stopped[0].at == 0x1000,
+            "a table that starts inside an instruction ahead of a load that crosses a table stops the function at that instruction");
 }
 
 std::vector<std::byte> jump_to(uint32_t from, uint32_t target) {
@@ -427,6 +446,19 @@ void check_branch_map_addresses(compat_test::Suite& t) {
     const auto map = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1016}, taker}, Piece{{0x1020, 0x1024}, target}}, bytes_of({0, 0, 0, 0})), decoder);
     t.check(map.branches.size() == 1 && map.branches[0].from == 0x1000 && map.branches[0].target == 0x1022, "an address taken with lea into the code lands there, and only that");
     t.check(livemap::compat::landings(map, 0x1020, 0x1024).size() == 1, "and counts as a landing inside the function it points into");
+}
+
+void check_branch_map_scopes(compat_test::Suite& t) {
+    std::vector<std::byte> code(0x10, std::byte{0x90});  // nops, then a return
+    code.push_back(std::byte{0xc3});
+    const auto info = compat_test::scope_info(compat_test::kExceptionHandlerFlag, 0, {{0x1002, 0x1008, 1, 0x100c}}, 1);
+    const Decoder decoder;
+    const auto map = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1011, 0, kDataAt}, code}}, info), decoder);
+    t.check(map.branches.size() == 1 && map.branches[0].from == 0x1002 && map.branches[0].target == 0x100c, "the jump target of a scope is a branch from the start of the code it guards");
+    t.check(!map.branches.empty() && map.branches[0].dispatched, "that the handler dispatches");
+    t.check(livemap::compat::landings(map, 0x1008, 0x1010).size() == 1 && livemap::compat::landings(map, 0x100c, 0x1010).empty(), "it lands strictly inside a span, as any branch does");
+    const auto without = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1011}, code}}), decoder);
+    t.check(without.branches.empty(), "a function with no handler adds none");
 }
 
 void check_stopped_near(compat_test::Suite& t) {
@@ -463,6 +495,39 @@ void check_stopped_near(compat_test::Suite& t) {
     t.check(by_table.stopped.size() == 1, "the table of a function that stops is read as far as it goes");
 }
 
+void check_undecoded_near(compat_test::Suite& t) {
+    const Decoder decoder;
+    const auto fine = bytes_of({0x90, 0xc3});
+    const Function site{0x1200, 0x1210};
+    const auto broken_from = [](uint32_t begin, uint32_t stop, uint32_t end) {  // nops up to `stop`, then a byte that is no instruction
+        std::vector<std::byte> code(stop - begin, std::byte{0x90});
+        code.push_back(std::byte{0x06});
+        code.resize(end - begin, std::byte{0x90});
+        return Piece{{begin, end}, code};
+    };
+    constexpr uint32_t kHookStart = 0x1204;
+    constexpr uint32_t kHookEnd = 0x1209;
+    constexpr uint32_t kWindow = 128;
+    const auto near = [&](const std::vector<Piece>& more) {
+        std::vector pieces{Piece{{0x1200, 0x1210}, fine}};
+        pieces.insert(pieces.end(), more.begin(), more.end());
+        const Image image = image_of(pieces);
+        return livemap::compat::undecoded_near(livemap::compat::collect_branches(image, decoder), image, site, kHookStart, kHookEnd);
+    };
+    t.check(!near({}), "with no function that stops decoding, nothing is undecoded near the hook");
+    t.check(near({broken_from(0x1240, 0x1241, 0x1250)}), "undecoded bytes of another function just after the hook");
+    t.check(near({broken_from(0x11c0, 0x11c1, 0x11d0)}), "and just before it");
+    t.check(near({broken_from(0x1220, 0x1280, 0x12a0)}), "undecoded bytes 0x77 bytes after the hook, in a function that begins 0x17 bytes after it");
+    t.check(!near({broken_from(0x1220, 0x12e0, 0x1300)}), "undecoded bytes 0xd7 bytes after the hook, in a function that begins 0x17 bytes after it");
+    t.check(near({broken_from(0x1240, kHookEnd + kWindow - 1, 0x12a0)}), "undecoded bytes that start 127 bytes after the hook");
+    t.check(!near({broken_from(0x1240, kHookEnd + kWindow, 0x12a0)}), "undecoded bytes that start 128 bytes after the hook");
+    t.check(near({broken_from(0x1100, 0x1101, kHookStart - kWindow + 1)}), "a function that ends 127 bytes before the hook");
+    t.check(!near({broken_from(0x1100, 0x1101, kHookStart - kWindow)}), "a function that ends 128 bytes before the hook");
+    t.check(!near({Piece{{0x1240, 0x1250}, fine}}), "a function near the hook that decodes to its end");
+    t.check(!near({Piece{{0x1240, 0x1250, 0x1200}, bytes_of({0x06})}}), "a chunk of the function around the hook has its own refusal");
+    t.check(near({Piece{{0x1240, 0x1250, 0x1300}, bytes_of({0x06})}, Piece{{0x1300, 0x1310}, fine}}), "a chunk of another function counts");
+}
+
 }  // namespace
 
 int main() {
@@ -478,6 +543,8 @@ int main() {
     check_branch_map_tables(t);
     check_branch_map_reach(t);
     check_branch_map_addresses(t);
+    check_branch_map_scopes(t);
     check_stopped_near(t);
+    check_undecoded_near(t);
     return t.result();
 }

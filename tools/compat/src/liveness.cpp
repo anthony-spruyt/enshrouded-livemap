@@ -12,6 +12,8 @@ namespace {
 constexpr Registers kArguments = register_set({"rcx", "rdx", "r8", "r9"});
 constexpr Registers kVolatile = register_set({"rax", "rcx", "rdx", "r8", "r9", "r10", "r11"});
 constexpr Registers kReturned = register_set({"rax", "rsp"});
+constexpr Registers kResult = register_set({"rax"});
+constexpr Registers kAtEntry = register_set({"rsp"});
 constexpr Registers kTailCalled = kArguments | register_set({"rsp"});
 
 struct Node {
@@ -178,6 +180,98 @@ bool reaches_lost(const Graph& graph, size_t from) {
     return false;
 }
 
+using Predecessors = std::vector<std::vector<size_t>>;
+
+Predecessors predecessors(const Graph& graph) {
+    Predecessors from(graph.size());
+    for (size_t at = 0; at < graph.size(); ++at) {
+        for (const size_t next : graph[at].next) {
+            from[next].push_back(at);
+        }
+    }
+    return from;
+}
+
+// Whether the graph has the edge that a branch of the map stands for: a jump of the chain, or an entry of a table that some
+// indirect jump of the chain reads. A branch that an exception handler dispatches enters from outside the chain.
+bool explained(const Graph& graph, const Predecessors& from, const Branch& branch, size_t to) {
+    using enum Flow;
+    const auto source = index_at(graph, branch.from);
+    if (!source.has_value() || branch.dispatched) {
+        return false;
+    }
+    const Node& node = graph[*source];
+    if (node.insn->flow == Jump || node.insn->flow == Branch) {
+        return true;
+    }
+    return node.insn->table_ref && std::ranges::any_of(from[to], [&](size_t pred) { return graph[pred].insn->flow == Indirect; });
+}
+
+// The nodes that control can reach from outside the chain.
+std::vector<bool> entered_from_outside(const Graph& graph, const Predecessors& from, const BranchMap& branches) {
+    std::vector<bool> outside(graph.size(), false);
+    for (size_t at = 0; at < graph.size(); ++at) {
+        const auto [first, last] = std::ranges::equal_range(branches.branches, int64_t{graph[at].insn->rva}, {}, &Branch::target);
+        outside[at] = std::any_of(first, last, [&](const Branch& branch) { return !explained(graph, from, branch, at); });
+    }
+    return outside;
+}
+
+void mark_reached(const Graph& graph, size_t start, std::vector<bool>& reached) {
+    std::vector pending{start};
+    reached[start] = true;
+    while (!pending.empty()) {
+        const size_t at = pending.back();
+        pending.pop_back();
+        for (const size_t next : graph[at].next) {
+            if (!reached[next]) {
+                reached[next] = true;
+                pending.push_back(next);
+            }
+        }
+    }
+}
+
+// The entry, the nodes entered from outside, and every node that none of them reaches.
+std::vector<bool> starting_points(const Graph& graph, size_t entry, std::vector<bool> roots) {
+    std::vector<bool> reached(graph.size(), false);
+    roots[entry] = true;
+    for (size_t at = 0; at < graph.size(); ++at) {
+        if (roots[at] && !reached[at]) {
+            mark_reached(graph, at, reached);
+        }
+    }
+    for (size_t at = 0; at < graph.size(); ++at) {
+        roots[at] = roots[at] || !reached[at];
+    }
+    return roots;
+}
+
+Registers written_after(const Node& node, Registers before) {
+    if (node.insn->flow != Flow::Call) {
+        return static_cast<Registers>(before | node.insn->kills);
+    }
+    return static_cast<Registers>(((before | node.insn->kills) & ~kVolatile) | kResult);
+}
+
+// What each node can rely on having been written when it starts.
+std::vector<Registers> solve_written(const Graph& graph, const Predecessors& from, const std::vector<bool>& roots) {
+    constexpr Registers kUnknown = 0xffff;
+    std::vector<Registers> before(graph.size(), kUnknown);
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (size_t at = 0; at < graph.size(); ++at) {
+            Registers meet = roots[at] ? kAtEntry : kUnknown;
+            for (const size_t pred : from[at]) {
+                meet &= written_after(graph[pred], before[pred]);
+            }
+            changed = changed || meet != before[at];
+            before[at] = meet;
+        }
+    }
+    return before;
+}
+
 }  // namespace
 
 std::expected<Registers, Fault> live_before(std::span<const Code> chain, uint32_t rva) {
@@ -192,17 +286,36 @@ std::expected<Registers, Fault> live_before(std::span<const Code> chain, uint32_
     return solve(graph)[*at];
 }
 
-std::expected<Registers, Fault> in_use_at(std::span<const Code> chain, uint32_t rva) {
+std::expected<Registers, Fault> written_before(std::span<const Code> chain, uint32_t entry, uint32_t rva, const BranchMap& branches) {
+    const Graph graph = build(chain);
+    const auto at = index_at(graph, rva);
+    if (!at.has_value()) {
+        return std::unexpected(Fault::NoInstruction);
+    }
+    const auto first = index_at(graph, entry);
+    if (!first.has_value()) {
+        return std::unexpected(Fault::Unfollowable);
+    }
+    const Predecessors from = predecessors(graph);
+    const std::vector<bool> roots = starting_points(graph, *first, entered_from_outside(graph, from, branches));
+    return solve_written(graph, from, roots)[*at];
+}
+
+std::expected<Registers, Fault> in_use_at(std::span<const Code> chain, uint32_t entry, uint32_t rva, const BranchMap& branches) {
     using enum Flow;
     const std::expected<Registers, Fault> live = live_before(chain, rva);
     if (!live.has_value()) {
         return live;
     }
+    const std::expected<Registers, Fault> written = written_before(chain, entry, rva, branches);
+    if (!written.has_value()) {
+        return written;
+    }
     Registers used = *live;
     for (const Code& code : chain) {
         for (const Instruction& insn : code.instructions) {
             if (insn.rva + insn.length == rva && (insn.flow == Next || insn.flow == Call || insn.flow == Branch)) {
-                used = static_cast<Registers>(used | insn.reads | insn.kills);
+                used = static_cast<Registers>(used | ((insn.reads | insn.kills) & *written));
             }
         }
     }

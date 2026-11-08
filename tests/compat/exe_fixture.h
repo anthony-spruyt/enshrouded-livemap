@@ -41,6 +41,7 @@ struct ExeLayout {
     Extra extra = Extra::None;     // a function after the others: Table holds alpha's jump table, Garbage stops decoding, JumpIn jumps and then stops
     bool extra_chained = false;    // that function is a chunk of alpha
     uint32_t extra_target = 0x10;  // where JumpIn jumps, as an offset from alpha
+    uint32_t extra_pad = 0;        // padding before that function, after the others
     bool unlist_beta = false;      // beta has no entry in the exception table
 };
 
@@ -72,7 +73,7 @@ inline ExeSites sites_of(const ExeLayout& layout) {
     s.leaf = s.join + kFunctionSize;
     s.other = s.leaf + kFunctionSize;
     s.outside_function = s.other + kFunctionSize;
-    s.extra = s.outside_function + kFunctionSize;
+    s.extra = s.outside_function + kFunctionSize + layout.extra_pad;
     return s;
 }
 
@@ -184,7 +185,7 @@ inline std::vector<std::byte> build_exe(const ExeLayout& layout) {
     if (layout.duplicate_gamma) {
         a.emit({0xb8, 0x33, 0x33, 0x33, 0x33, 0x48, 0x89, 0xd9});
     }
-    a.pad_to(s.outside_function + kFunctionSize);
+    a.pad_to(s.extra);
     if (layout.extra == Extra::Table) {
         a.imm32(s.alpha + 0x12);
         a.imm32(s.alpha + layout.switch_entry);

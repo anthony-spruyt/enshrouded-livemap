@@ -14,6 +14,8 @@
 #include "test_support.h"
 
 using compat_test::bytes_of;
+using livemap::compat::Branch;
+using livemap::compat::BranchMap;
 using livemap::compat::Code;
 using livemap::compat::Decoder;
 using livemap::compat::Fault;
@@ -25,6 +27,7 @@ using livemap::compat::Registers;
 namespace {
 
 constexpr uint32_t kAt = 0x1000;
+const BranchMap kNoBranches{};
 
 Registers set_of(std::initializer_list<std::string_view> names) {
     Registers set = 0;
@@ -216,8 +219,21 @@ void check_tables(compat_test::Suite& t) {
     t.check(fault_at(bad_chain, kAt + 0xa) == Fault::Unfollowable, "an entry of a table that starts no instruction cannot be followed");
 }
 
-Registers in_use_at(const std::vector<Code>& chain, uint32_t rva) {
-    const auto used = livemap::compat::in_use_at(chain, rva);
+Registers written_at(const std::vector<Code>& chain, uint32_t rva, const BranchMap& branches = kNoBranches, uint32_t entry = kAt) {
+    const auto written = livemap::compat::written_before(chain, entry, rva, branches);
+    if (!written.has_value()) {
+        std::cout << "the test address is no instruction\n";
+        std::exit(2);
+    }
+    return *written;
+}
+
+Registers written_at(const std::vector<std::byte>& bytes, uint32_t rva, const BranchMap& branches = kNoBranches) {
+    return written_at(std::vector{code_at(kAt, bytes)}, rva, branches);
+}
+
+Registers in_use_at(const std::vector<Code>& chain, uint32_t rva, const BranchMap& branches = kNoBranches, uint32_t entry = kAt) {
+    const auto used = livemap::compat::in_use_at(chain, entry, rva, branches);
     if (!used.has_value()) {
         std::cout << "the test address is no instruction\n";
         std::exit(2);
@@ -225,12 +241,92 @@ Registers in_use_at(const std::vector<Code>& chain, uint32_t rva) {
     return *used;
 }
 
+void check_written(compat_test::Suite& t) {
+    const auto straight = bytes_of({0x48, 0x89, 0xd8, 0xb9, 1, 0, 0, 0, 0x90});  // mov rax,rbx; mov ecx,1; nop
+    t.check(written_at(straight, kAt) == set_of({"rsp"}), "the entry of a function holds the stack pointer and nothing else");
+    t.check(written_at(straight, kAt + 8) == set_of({"rax", "rcx", "rsp"}), "the registers written on the way are written");
+
+    const auto narrow = bytes_of({0xb3, 1, 0x90});  // mov bl,1; nop
+    t.check(written_at(narrow, kAt + 2) == set_of({"rsp"}), "a write of 8 bits leaves the register unwritten");
+
+    // test eax,eax; jz else; mov ebx,1; mov ecx,1; jmp join; else: mov ebx,2; join: ret
+    const auto fork = bytes_of({0x85, 0xc0, 0x74, 0x0c, 0xbb, 1, 0, 0, 0, 0xb9, 1, 0, 0, 0, 0xeb, 0x05, 0xbb, 2, 0, 0, 0, 0xc3});
+    t.check(written_at(fork, kAt + 21) == set_of({"rbx", "rsp"}), "where two paths meet only the registers both wrote are written");
+    t.check(written_at(fork, kAt + 9) == set_of({"rbx", "rsp"}), "a path keeps what it wrote");
+    const BranchMap own_jumps{{Branch{kAt + 2, kAt + 16}, Branch{kAt + 14, kAt + 21}}, {}};
+    t.check(written_at(fork, kAt + 21, own_jumps) == set_of({"rbx", "rsp"}), "the jumps of the chain itself add no other way in");
+
+    // mov ebx,1; test eax,eax; jz join; nop; join: ret
+    const auto skip = bytes_of({0xbb, 1, 0, 0, 0, 0x85, 0xc0, 0x74, 0x01, 0x90, 0xc3});
+    const BranchMap jumped{{Branch{kAt + 7, kAt + 10}}, {}};
+    t.check(written_at(skip, kAt + 10, jumped) == set_of({"rbx", "rsp"}), "a jump of the chain that the map lists keeps what was written");
+    const BranchMap dispatched{{Branch{kAt + 7, kAt + 10, true}}, {}};
+    t.check(written_at(skip, kAt + 10, dispatched) == set_of({"rsp"}), "control that a handler hands back, from the code of a jump, still brings only the stack pointer");
+
+    // mov eax,[rdx+rcx*4+table]; add rax,rdx; jmp rax; 100c: mov rax,rbx; ret; 1010: ret; 1011: table of two entries
+    const auto switched = joined({bytes_of({0x8b, 0x84, 0x8a, 0x11, 0x10, 0x00, 0x00, 0x48, 0x01, 0xd0, 0xff, 0xe0, 0x48, 0x89, 0xd8, 0xc3, 0xc3}), bytes_of({0x0c, 0x10, 0, 0, 0x10, 0x10, 0, 0})});
+    const BranchMap entries{{Branch{kAt, kAt + 0xc}, Branch{kAt, kAt + 0x10}}, {}};
+    t.check(written_at(switched, kAt + 0xc, entries) == set_of({"rax", "rsp"}), "an entry of a table that a jump of the chain reads keeps what was written");
+
+    // mov eax,[rdx+rcx*4+table]; mov ebx,1; 100c: nop; ret; 100e: table of two entries
+    const auto unread = joined({bytes_of({0x8b, 0x84, 0x8a, 0x0e, 0x10, 0x00, 0x00, 0xbb, 1, 0, 0, 0, 0x90, 0xc3}), bytes_of({0x0c, 0x10, 0, 0, 0x0d, 0x10, 0, 0})});
+    const BranchMap unread_entry{{Branch{kAt, kAt + 0xc}}, {}};
+    t.check(code_at(kAt, unread).tables.size() == 1, "the test function holds a table");
+    t.check(written_at(unread, kAt + 0xc) == set_of({"rax", "rbx", "rsp"}), "an instruction that only the code before it leads to has what that code wrote");
+    t.check(written_at(unread, kAt + 0xc, unread_entry) == set_of({"rsp"}), "an entry of a table that no jump of the chain reads brings only the stack pointer");
+
+    // mov ebx,1; loop: mov ecx,1; test eax,eax; jnz loop; ret
+    const auto loop = bytes_of({0xbb, 1, 0, 0, 0, 0xb9, 1, 0, 0, 0, 0x85, 0xc0, 0x75, 0xf7, 0xc3});
+    t.check(written_at(loop, kAt + 5) == set_of({"rbx", "rsp"}), "a loop head has what the entry wrote, not what the loop writes");
+    t.check(written_at(loop, kAt + 14) == set_of({"rbx", "rcx", "rsp"}), "and after the loop both");
+
+    const auto call = bytes_of({0xbb, 1, 0, 0, 0, 0xb9, 1, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0x90});  // mov ebx,1; mov ecx,1; call; nop
+    t.check(written_at(call, kAt + 15) == set_of({"rax", "rbx", "rsp"}), "a call keeps the registers it preserves and the result, and the others hold nothing");
+
+    const auto dead = bytes_of({0xc3, 0xbb, 1, 0, 0, 0, 0x90, 0xc3});  // ret; mov ebx,1; nop; ret
+    t.check(written_at(dead, kAt + 1) == set_of({"rsp"}), "code that nothing reaches is entered with the stack pointer only");
+    t.check(written_at(dead, kAt + 6) == set_of({"rsp"}), "and so is every later instruction of it");
+    const auto spin = bytes_of({0xbb, 1, 0, 0, 0, 0xc3, 0xb9, 1, 0, 0, 0, 0xeb, 0xf9});  // mov ebx,1; ret; again: mov ecx,1; jmp again
+    t.check(written_at(spin, kAt + 6) == set_of({"rsp"}), "also a loop that nothing reaches");
+    t.check(written_at(spin, kAt + 11) == set_of({"rsp"}), "at every instruction of it");
+
+    const auto two = bytes_of({0xbb, 1, 0, 0, 0, 0xb9, 1, 0, 0, 0, 0x90});  // mov ebx,1; mov ecx,1; nop
+    const BranchMap elsewhere{{Branch{0x3000, kAt + 5}}, {}};
+    t.check(written_at(two, kAt + 5, elsewhere) == set_of({"rsp"}), "a branch from another function brings nothing in");
+    t.check(written_at(two, kAt + 10, elsewhere) == set_of({"rcx", "rsp"}), "but the code after it goes on from there");
+    const BranchMap taken{{Branch{kAt, kAt + 5}}, {}};
+    t.check(written_at(two, kAt + 5, taken) == set_of({"rsp"}), "nor does an address another instruction forms");
+    const auto called = bytes_of({0xbb, 1, 0, 0, 0, 0xb9, 1, 0, 0, 0, 0xe8, 0xf6, 0xff, 0xff, 0xff, 0x90});  // mov ebx,1; again: mov ecx,1; call again; nop
+    const BranchMap recursion{{Branch{kAt + 10, kAt + 5}}, {}};
+    t.check(written_at(called, kAt + 5, recursion) == set_of({"rsp"}), "nor does a call to the middle of the chain");
+
+    const std::vector split{code_at(kAt, bytes_of({0xbb, 1, 0, 0, 0, 0xe9, 0xf6, 0x0f, 0x00, 0x00})), code_at(0x2000, bytes_of({0x90, 0xc3}))};  // mov ebx,1; jmp 0x2000
+    t.check(written_at(split, 0x2000) == set_of({"rbx", "rsp"}), "another chunk of the chain is entered from the jump that leads there");
+    t.check(written_at(split, 0x2000, kNoBranches, 0x2000) == set_of({"rsp"}), "and the entry is the one named");
+
+    const auto missing = livemap::compat::written_before(std::vector{code_at(kAt, straight)}, kAt, kAt + 1, kNoBranches);
+    t.check(!missing.has_value() && missing.error() == Fault::NoInstruction, "an address inside an instruction has no answer");
+    const auto no_entry = livemap::compat::written_before(std::vector{code_at(kAt, straight)}, kAt + 1, kAt, kNoBranches);
+    t.check(!no_entry.has_value() && no_entry.error() == Fault::Unfollowable, "nor has a function whose entry starts no instruction");
+}
+
 void check_in_use(compat_test::Suite& t) {
     const auto store_then_clear = bytes_of({0x89, 0x47, 0x08, 0x31, 0xc9, 0xc3});  // mov [rdi+8],eax; xor ecx,ecx; ret
     const std::vector chain{code_at(kAt, store_then_clear)};
     t.check(live_at(store_then_clear, kAt + 3) == set_of({"rax", "rsp"}), "after the store only the result register and the stack pointer are live");
-    t.check(in_use_at(chain, kAt + 3) == set_of({"rax", "rdi", "rsp"}), "a register the instruction just before touches is in use");
+    t.check(in_use_at(chain, kAt + 3) == live_at(store_then_clear, kAt + 3), "a register the instruction just before touches is not in use when nothing wrote it");
     t.check(in_use_at(chain, kAt) == live_at(store_then_clear), "the first instruction has none before it");
+
+    const auto written_first = bytes_of({0xbf, 1, 0, 0, 0, 0x48, 0x89, 0x5f, 0x08, 0x31, 0xc9, 0xc3});  // mov edi,1; mov [rdi+8],rbx; xor ecx,ecx; ret
+    const std::vector set_up{code_at(kAt, written_first)};
+    t.check(in_use_at(set_up, kAt + 9) == set_of({"rax", "rdi", "rsp"}), "a register the instruction before touches is in use once the code wrote it");
+
+    // test eax,eax; jz else; mov edi,1; jmp join; else: mov edi,2; join: xor ecx,ecx; ret
+    const auto both_write = bytes_of({0x85, 0xc0, 0x74, 0x07, 0xbf, 1, 0, 0, 0, 0xeb, 0x05, 0xbf, 2, 0, 0, 0, 0x31, 0xc9, 0xc3});
+    t.check(in_use_at({code_at(kAt, both_write)}, kAt + 16) == set_of({"rax", "rdi", "rsp"}), "also when every path to the hook wrote it");
+    // test eax,eax; jz join; mov edi,1; join: xor ecx,ecx; ret
+    const auto one_writes = bytes_of({0x85, 0xc0, 0x74, 0x05, 0xbf, 1, 0, 0, 0, 0x31, 0xc9, 0xc3});
+    t.check(in_use_at({code_at(kAt, one_writes)}, kAt + 9) == set_of({"rax", "rsp"}), "but not when a path to the hook skips the write");
 
     const auto after_jump = bytes_of({0xff, 0xe7, 0x31, 0xc9, 0xc3});  // jmp rdi; xor ecx,ecx; ret
     t.check(in_use_at({code_at(kAt, after_jump)}, kAt + 2) == live_at(after_jump, kAt + 2), "an instruction that never falls through lends nothing to the next");
@@ -240,11 +336,11 @@ void check_in_use(compat_test::Suite& t) {
 
     const std::vector split{code_at(kAt, bytes_of({0xe9, 0xfb, 0x0f, 0x00, 0x00})), code_at(0x2000, bytes_of({0x48, 0x89, 0xd8, 0xc3}))};
     t.check(in_use_at(split, 0x2000) == live_at(split, 0x2000), "the start of another chunk has none before it");
-    const auto used = livemap::compat::in_use_at(chain, kAt + 1);
+    const auto used = livemap::compat::in_use_at(chain, kAt, kAt + 1, kNoBranches);
     t.check(!used.has_value() && used.error() == Fault::NoInstruction, "an address inside an instruction has no answer");
 
     const std::vector off_the_end{code_at(kAt, bytes_of({0x48, 0x89, 0xd8}))};
-    const auto lost = livemap::compat::in_use_at(off_the_end, kAt);
+    const auto lost = livemap::compat::in_use_at(off_the_end, kAt, kAt, kNoBranches);
     t.check(!lost.has_value() && lost.error() == Fault::Unfollowable, "code that cannot be followed has no answer either");
 }
 
@@ -252,6 +348,7 @@ void check_in_use(compat_test::Suite& t) {
 
 int main() {
     compat_test::Suite t;
+    check_written(t);
     check_in_use(t);
     check_effects(t);
     check_flow(t);

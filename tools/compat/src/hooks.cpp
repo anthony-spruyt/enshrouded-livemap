@@ -98,6 +98,9 @@ HookInspection inspect_hooks(const Image& image, const BranchMap& branches, cons
             continue;
         }
         std::ranges::copy(landings(branches, point, point + *span), std::back_inserter(found.into_hook));
+        if (!loaded.region.window && undecoded_near(branches, image, Function{loaded.region.begin, loaded.region.end}, point, point + *span)) {
+            found.problems.push_back(std::format("{}: code near the hook at {} could not be decoded", site, hex(point)));
+        }
     }
     if (!found.into_hook.empty()) {
         found.problems.push_back(std::format("{}: {} branches land inside the bytes the hook overwrites", site, found.into_hook.size()));

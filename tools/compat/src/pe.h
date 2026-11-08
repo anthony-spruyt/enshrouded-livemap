@@ -16,6 +16,12 @@ struct Function {
     uint32_t end = 0;
 };
 
+// Where a structured exception handler gives control back: the code of the scope that starts at `begin` resumes at `target`.
+struct ScopeJump {
+    uint32_t begin = 0;
+    uint32_t target = 0;
+};
+
 // A PE32+ file laid out the way the loader maps it, so every address is an RVA into one buffer.
 class Image {
 public:
@@ -37,6 +43,8 @@ public:
     // The first function of the chain of unwind info that the function holding `rva` belongs to: the cold chunks of a
     // function share its root. Nothing when no function holds `rva`.
     std::optional<uint32_t> chain_root(uint32_t rva) const;
+    // The jump targets of the scope tables that follow the handlers in the unwind info, in the order of the functions.
+    const std::vector<ScopeJump>& scope_jumps() const { return scope_jumps_; }
 
 private:
     friend std::expected<Image, std::string> load_image(std::span<const std::byte> file);
@@ -47,6 +55,7 @@ private:
     std::vector<std::byte> mapped_;
     std::vector<Function> functions_;
     std::vector<uint32_t> roots_;
+    std::vector<ScopeJump> scope_jumps_;
 };
 
 // Parses the file as the loader would map it; the error says what is wrong with the file.

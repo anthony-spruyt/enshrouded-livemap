@@ -6,6 +6,7 @@ It exists because upstream only accepts the game builds listed in its source and
 `main` is upstream's latest release plus the community compatibility patches for newer server builds (written by goakiller900 on [upstream issue 1](https://github.com/oggii/enshrouded-livemap/issues/1); see `docs/COMPAT-*.md`).
 Upstream's later, unreleased work is reverted on `main` until it is reviewed.
 Releases are cut by release-please; GitHub Actions builds, tests and publishes them and checks them against the game executable.
+Only feat, fix, perf and refactor commits release. A PR that changes what ships (`src/`, `cmake/`, build lines in `CMakeLists.txt`, `data/builds.json`, `package/`, `web/`, `tools/compat/`) uses one of them; CI, test, docs and sync changes use ci, test, docs or chore.
 Compatibility patches are still written by hand.
 
 The Enshrouded dedicated server builds this fork supports are listed in `data/builds.json`.

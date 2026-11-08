@@ -419,6 +419,16 @@ std::vector<std::byte> jump_to(uint32_t from, uint32_t target) {
     return code;
 }
 
+void check_branch_map_addresses(compat_test::Suite& t) {
+    // lea rax,[rip+0x1b] to the middle of the next function; lea rcx,[rip+..] to data; mov rdx,[rip+0xd] reads the same address; ret
+    const auto taker = bytes_of({0x48, 0x8d, 0x05, 0x1b, 0x00, 0x00, 0x00, 0x48, 0x8d, 0x0d, 0xf2, 0x2f, 0x00, 0x00, 0x48, 0x8b, 0x15, 0x0d, 0x00, 0x00, 0x00, 0xc3});
+    const auto target = bytes_of({0x90, 0x90, 0x90, 0xc3});
+    const Decoder decoder;
+    const auto map = livemap::compat::collect_branches(image_of({Piece{{0x1000, 0x1016}, taker}, Piece{{0x1020, 0x1024}, target}}, bytes_of({0, 0, 0, 0})), decoder);
+    t.check(map.branches.size() == 1 && map.branches[0].from == 0x1000 && map.branches[0].target == 0x1022, "an address taken with lea into the code lands there, and only that");
+    t.check(livemap::compat::landings(map, 0x1020, 0x1024).size() == 1, "and counts as a landing inside the function it points into");
+}
+
 void check_stopped_near(compat_test::Suite& t) {
     const Decoder decoder;
     const auto broken = bytes_of({0x90, 0x06});
@@ -467,6 +477,7 @@ int main() {
     check_branch_map(t);
     check_branch_map_tables(t);
     check_branch_map_reach(t);
+    check_branch_map_addresses(t);
     check_stopped_near(t);
     return t.result();
 }

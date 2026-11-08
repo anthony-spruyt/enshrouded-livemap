@@ -223,6 +223,9 @@ void check_branches(compat_test::Suite& t) {
     const Bytes lands_at = bytes_of({0x48, 0x89, 0xd8, 0x48, 0x8b, 0x4c, 0x24, 0x08, 0x85, 0xc0, 0x75, 0xf4});
     t.check(!mentions(run(t, with("movement", lands_at)), "branches land inside"), "a branch to the first instruction is no problem");
 
+    const Bytes taken = plus(movement(), bytes_of({0x48, 0x8d, 0x15, 0xf4, 0xff, 0xff, 0xff}));  // lea rdx,[rip-12]: the second instruction
+    t.check(mentions(run(t, with("movement", taken)), "branches land inside"), "an address taken with lea into the hook");
+
     const Bytes after = plus(bytes_of({0xe8, 0, 0, 0, 0, 0x31, 0xc0, 0x31, 0xc9, 0x90, 0x85, 0xc0}), bytes_of({0x75, 0xf9}));
     t.check(mentions(run(t, with("join_line", after)), "branches land inside"), "a branch into the second hook of the join line");
 }

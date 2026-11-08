@@ -87,6 +87,16 @@ void note_effects(Instruction& insn, const ZydisDecodedInstruction& decoded, std
     }
 }
 
+std::optional<int64_t> rip_address(const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands, uint32_t rva) {
+    if (decoded.mnemonic != ZYDIS_MNEMONIC_LEA) {
+        return std::nullopt;
+    }
+    const auto found = std::ranges::find_if(operands.first(decoded.operand_count_visible), [](const ZydisDecodedOperand& operand) {
+        return operand.type == ZYDIS_OPERAND_TYPE_MEMORY && operand.mem.base == ZYDIS_REGISTER_RIP;
+    });
+    return found == operands.begin() + decoded.operand_count_visible ? std::nullopt : std::optional<int64_t>{int64_t{rva} + decoded.length + found->mem.disp.value};
+}
+
 Flow flow_of(const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands) {
     using enum Flow;
     switch (decoded.mnemonic) {
@@ -375,6 +385,7 @@ std::optional<Instruction> Decoder::decode(std::span<const std::byte> code, uint
     insn.rva = rva;
     insn.length = decoded.length;
     insn.indexed = indexed_load(decoded, operands);
+    insn.address = rip_address(decoded, operands, rva);
     insn.flow = flow_of(decoded, operands);
     note_effects(insn, decoded, operands);
     std::copy_n(code.begin(), decoded.length, insn.bytes.begin());
@@ -445,6 +456,9 @@ BranchMap collect_branches(const Image& image, const Decoder& decoder) {
         for (const Instruction& insn : found.scans[i].instructions) {
             if (insn.relative) {
                 map.branches.emplace_back(insn.rva, insn.target);
+            }
+            if (insn.address && *insn.address >= 0 && image.in_text(static_cast<uint64_t>(*insn.address), 1)) {
+                map.branches.emplace_back(insn.rva, *insn.address);
             }
         }
         if (found.scans[i].stopped || found.conflicted[i]) {

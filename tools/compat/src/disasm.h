@@ -50,6 +50,7 @@ struct Instruction {
     bool relative = false;
     bool table_ref = false;
     int64_t target = 0;
+    std::optional<int64_t> address;  // the RVA a rip-relative lea forms: where a handler hands control back
     std::optional<IndexedLoad> indexed;
     std::array<std::byte, kMaxInstructionLength> bytes{};
 };
@@ -112,7 +113,8 @@ struct BranchMap {
     std::vector<Function> stopped;  // functions whose decoding stopped early, sorted by begin
 };
 
-// Every call and jump with a relative target in the functions of the exception table, and every entry of their jump tables.
+// Every call and jump with a relative target in the functions of the exception table, every address they form with a
+// rip-relative lea that points into .text, and every entry of their jump tables.
 // A table is read wherever the load points, and its entries count when they lie in the chain of the function that loads it.
 BranchMap collect_branches(const Image& image, const Decoder& decoder);
 

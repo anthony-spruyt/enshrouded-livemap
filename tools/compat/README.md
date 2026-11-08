@@ -66,7 +66,8 @@ describes), `2` for a wrong command line, and `3` when a check failed. The probl
 Comparison works on decoded instructions. Relative branch targets and RIP-relative displacements are normalized, and the
 bytes the DLL reads as values of its own (the pattern operands) are left out. A jump table that sits inside a function is
 compared as offsets from the start of the function. For the hook check the tool collects the branch targets of the whole
-exe, including the entries of the jump tables it reads, so a branch from another function counts.
+exe, including the entries of the jump tables it reads and the addresses of `.text` that a RIP-relative `lea` forms, so a
+branch from another function counts.
 
 ## Report
 

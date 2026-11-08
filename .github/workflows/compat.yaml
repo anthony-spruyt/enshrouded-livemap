@@ -1,0 +1,203 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+
+name: Compat
+run-name: Check the server build ${{ inputs.build_id }}
+
+# Renaming this file, its inputs, the livemap-compat artifact or its report.json and builds.json breaks the automation that dispatches it.
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Steam build id of the public server build
+        required: true
+        type: string
+      manifest_gid:
+        description: Manifest gid of depot 2278521 for that build
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  compat:
+    name: Judge the build against the last supported one
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      MANIFEST_GID: ${{ inputs.manifest_gid }}
+      IMAGE: ghcr.io/anthony-spruyt/enshrouded-server-exe
+      APP_ID: "2278520"
+      DEPOT_ID: "2278521"
+      EXE_NAME: enshrouded_server.exe
+      DEPOTDOWNLOADER_URL: https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip
+      DEPOTDOWNLOADER_SHA256: a999dec66b4850fc961bd50366696d23c2d0fad7b18790e6a5647b2f19097a53
+    steps:
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_ID" =~ ^[1-9][0-9]{0,11}$ ]] || { echo "::error::build_id must be 1 to 12 digits without a leading zero."; exit 1; }
+          [[ "$MANIFEST_GID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "::error::manifest_gid must be 1 to 20 digits without a leading zero."; exit 1; }
+          echo "judging build ${BUILD_ID}, manifest ${MANIFEST_GID}"
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the compat tool
+        run: |
+          set -euo pipefail
+          cmake -S tools/compat -B "${RUNNER_TEMP}/build" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "${RUNNER_TEMP}/build" --parallel
+
+      - name: Test the compat tool
+        run: ctest --test-dir "${RUNNER_TEMP}/build" --output-on-failure --no-tests=error
+
+      - name: Confirm the build is Steam's public build
+        run: |
+          set -euo pipefail
+          info="${RUNNER_TEMP}/steam-info.json"
+          curl -fsS --retry 3 --max-time 30 -o "$info" "https://api.steamcmd.net/v1/info/${APP_ID}" \
+            || { echo "::error::The Steam info API is unreachable, so build ${BUILD_ID} cannot be confirmed as the public build."; exit 1; }
+          jq -e '.status == "success"' "$info" > /dev/null \
+            || { echo "::error::The Steam info API did not report success."; exit 1; }
+          public_build=$(jq -r --arg app "$APP_ID" '.data[$app].depots.branches.public.buildid // empty' "$info")
+          public_gid=$(jq -r --arg app "$APP_ID" --arg depot "$DEPOT_ID" '.data[$app].depots[$depot].manifests.public.gid // empty' "$info")
+          [[ "$public_build" =~ ^[0-9]{1,12}$ ]] || { echo "::error::The Steam info API has no readable public build id."; exit 1; }
+          [[ "$public_gid" =~ ^[0-9]{1,20}$ ]] || { echo "::error::The Steam info API has no readable public manifest gid for depot ${DEPOT_ID}."; exit 1; }
+          echo "Steam public build ${public_build}, depot ${DEPOT_ID} public manifest ${public_gid}"
+          [[ "$public_build" == "$BUILD_ID" ]] || { echo "::error::build_id ${BUILD_ID} is not Steam's public build (${public_build})."; exit 1; }
+          [[ "$public_gid" == "$MANIFEST_GID" ]] || { echo "::error::manifest_gid ${MANIFEST_GID} is not depot ${DEPOT_ID}'s public manifest (${public_gid})."; exit 1; }
+
+      - name: Pick the last supported build
+        id: previous
+        run: |
+          set -euo pipefail
+          picked=$(jq -c '[.builds[] | select(.steam.exe_sha256 != null) | {label, tag: (.buildids | map(tonumber) | max | tostring), sha256: .steam.exe_sha256}] | max_by(.tag | tonumber)' data/builds.json)
+          [[ "$picked" != null ]] || { echo "::error::data/builds.json has no build with an exe_sha256 to compare against."; exit 1; }
+          label=$(jq -r '.label' <<< "$picked")
+          tag=$(jq -r '.tag' <<< "$picked")
+          sha256=$(jq -r '.sha256' <<< "$picked")
+          [[ "$tag" =~ ^[1-9][0-9]{0,11}$ ]] || { echo "::error::The newest recorded build id is not a plain build id."; exit 1; }
+          [[ "$sha256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::The exe_sha256 of build ${tag} is not a sha256."; exit 1; }
+          echo "last supported build: ${label} (store tag ${tag})"
+          {
+            echo "label=${label}"
+            echo "tag=${tag}"
+            echo "sha256=${sha256}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch DepotDownloader
+        run: |
+          set -euo pipefail
+          tools="${RUNNER_TEMP}/tools"
+          mkdir -p "$tools"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 -o "${tools}/dd.zip" "$DEPOTDOWNLOADER_URL"
+          echo "${DEPOTDOWNLOADER_SHA256}  ${tools}/dd.zip" | sha256sum --check --status \
+            || { echo "::error::The DepotDownloader zip does not match its pinned sha256."; exit 1; }
+          unzip -q -o "${tools}/dd.zip" DepotDownloader -d "$tools"
+          chmod u+x "${tools}/DepotDownloader"
+
+      - name: Download only the new server exe
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/steam"
+          mkdir -p "${work}/server"
+          printf '%s\n' "$EXE_NAME" > "${work}/filelist.txt"
+          timeout 900 "${RUNNER_TEMP}/tools/DepotDownloader" \
+            -app "$APP_ID" -depot "$DEPOT_ID" -manifest "$MANIFEST_GID" \
+            -filelist "${work}/filelist.txt" -dir "${work}/server" \
+            || { echo "::error::The anonymous Steam download of ${EXE_NAME} (app ${APP_ID}, depot ${DEPOT_ID}, manifest ${MANIFEST_GID}) failed."; exit 1; }
+          exe="${work}/server/${EXE_NAME}"
+          [[ -f "$exe" ]] || { echo "::error::DepotDownloader exited 0 but wrote no ${EXE_NAME}."; exit 1; }
+          actual=$(sha256sum "$exe" | cut -d ' ' -f 1)
+          echo "downloaded ${EXE_NAME}: sha256 ${actual}, $(stat -c %s "$exe") bytes"
+
+          rows=$(jq -c --arg id "$BUILD_ID" '[.builds[] | select(any(.buildids[]; . == $id)) | .steam.exe_sha256 | select(. != null)] | unique' data/builds.json)
+          recorded=$(jq 'length' <<< "$rows")
+          if [[ "$recorded" -gt 1 ]]; then
+            echo "::error::data/builds.json lists build ${BUILD_ID} with more than one exe_sha256."
+            exit 1
+          elif [[ "$recorded" -eq 1 ]]; then
+            expected=$(jq -r '.[0]' <<< "$rows")
+            [[ "$actual" == "$expected" ]] || { echo "::error::${EXE_NAME} sha256 is ${actual}, but data/builds.json records ${expected} for build ${BUILD_ID}."; exit 1; }
+            echo "the sha256 matches data/builds.json"
+          else
+            echo "data/builds.json has no exe_sha256 for build ${BUILD_ID}"
+          fi
+
+      - name: Pull the last supported exe from the exe store
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_TAG: ${{ steps.previous.outputs.tag }}
+          PREVIOUS_SHA256: ${{ steps.previous.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
+          docker pull --quiet "${IMAGE}:${PREVIOUS_TAG}" > /dev/null \
+            || { echo "::error::The exe store could not provide build ${PREVIOUS_TAG}: the tag is missing or the package is not readable."; exit 1; }
+          folder="${RUNNER_TEMP}/previous"
+          mkdir -p "$folder"
+          container=$(docker create "${IMAGE}:${PREVIOUS_TAG}" "/${EXE_NAME}")
+          docker cp "${container}:/${EXE_NAME}" "${folder}/${EXE_NAME}"
+          docker rm "$container" > /dev/null
+          docker logout ghcr.io > /dev/null
+          actual=$(sha256sum "${folder}/${EXE_NAME}" | cut -d ' ' -f 1)
+          echo "pulled ${EXE_NAME} of build ${PREVIOUS_TAG}: sha256 ${actual}, $(stat -c %s "${folder}/${EXE_NAME}") bytes"
+          [[ "$actual" == "$PREVIOUS_SHA256" ]] || { echo "::error::The stored ${EXE_NAME} of build ${PREVIOUS_TAG} does not match the exe_sha256 in data/builds.json (${PREVIOUS_SHA256})."; exit 1; }
+          echo "the sha256 matches data/builds.json"
+
+      - name: Judge the build
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/compat-out"
+          mkdir -p "$out"
+          "${RUNNER_TEMP}/build/livemap_compat" \
+            --builds data/builds.json \
+            --previous "${RUNNER_TEMP}/previous/${EXE_NAME}" \
+            --exe "${RUNNER_TEMP}/steam/server/${EXE_NAME}" \
+            --build-id "$BUILD_ID" --manifest "$MANIFEST_GID" --depot "$DEPOT_ID" \
+            --report "${out}/report.json" --builds-out "${out}/builds.json"
+
+      - name: Check what the artifact will hold
+        id: artifact
+        env:
+          PREVIOUS_LABEL: ${{ steps.previous.outputs.label }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/compat-out"
+          limit=262144
+          result=$(jq -er '.result' "${out}/report.json") || { echo "::error::report.json is not a report."; exit 1; }
+          case "$result" in
+            known | easy) want=$'./builds.json\n./report.json' ;;
+            hard) want='./report.json' ;;
+            *) echo "::error::report.json has an unknown result."; exit 1 ;;
+          esac
+          have=$(cd "$out" && find . -mindepth 1 | sort)
+          [[ "$have" == "$want" ]] || { echo "::error::The output holds the wrong files for the ${result} result."; exit 1; }
+          while IFS= read -r file; do
+            [[ "$(stat -c %s "${out}/${file}")" -le "$limit" ]] || { echo "::error::${file} is larger than ${limit} bytes."; exit 1; }
+            jq -e 'type == "object"' "${out}/${file}" > /dev/null || { echo "::error::${file} is not a JSON object."; exit 1; }
+          done <<< "$have"
+          jq -e --arg id "$BUILD_ID" --arg gid "$MANIFEST_GID" --arg base "$PREVIOUS_LABEL" '.build_id == $id and .manifest == $gid and .base.label == $base' "${out}/report.json" > /dev/null \
+            || { echo "::error::report.json is not about build ${BUILD_ID} against build ${PREVIOUS_LABEL}."; exit 1; }
+          echo "result: ${result}; files: $(tr '\n' ' ' <<< "$have")"
+
+      - name: Upload the report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: livemap-compat
+          path: ${{ runner.temp }}/compat-out
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Delete the exes and the registry login
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP}/steam" "${RUNNER_TEMP}/previous"
+          docker image ls --quiet --no-trunc "$IMAGE" | sort -u | xargs -r docker image rm --force > /dev/null || echo "::warning::The exe image could not be removed from the runner."
+          docker logout ghcr.io > /dev/null || echo "::warning::The registry login could not be removed from the runner."

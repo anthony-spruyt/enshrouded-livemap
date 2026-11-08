@@ -40,7 +40,7 @@ bool in_chain(std::span<const Code> chain, int64_t rva) {
 }
 
 void follow(const Graph& graph, std::span<const Code> chain, Node& node, int64_t target) {
-    if (const auto at = index_at(graph, target)) {
+    if (const auto at = index_at(graph, target); at.has_value()) {
         node.next.push_back(*at);
     } else {
         node.beyond |= in_chain(chain, target) ? kAll : kTailCalled;
@@ -53,7 +53,7 @@ void follow_tables(const Graph& graph, Node& node) {
     }
     for (const Table& table : node.code->tables) {
         for (const uint32_t entry : table.entries) {
-            if (const auto at = index_at(graph, entry)) {
+            if (const auto at = index_at(graph, entry); at.has_value()) {
                 node.next.push_back(*at);
             } else {
                 node.beyond |= kAll;
@@ -63,27 +63,28 @@ void follow_tables(const Graph& graph, Node& node) {
 }
 
 void link(const Graph& graph, std::span<const Code> chain, Node& node) {
+    using enum Flow;
     const Instruction& insn = *node.insn;
     switch (insn.flow) {
-        case Flow::Return:
+        case Return:
             node.beyond |= kReturned;
             return;
-        case Flow::Stop:
+        case Stop:
             return;
-        case Flow::Indirect:
+        case Indirect:
             follow_tables(graph, node);
             return;
-        case Flow::Jump:
+        case Jump:
             follow(graph, chain, node, insn.target);
             return;
-        case Flow::Branch:
+        case Branch:
             follow(graph, chain, node, insn.target);
             break;
-        case Flow::Call:
-        case Flow::Next:
+        case Call:
+        case Next:
             break;
     }
-    if (const auto at = index_at(graph, int64_t{insn.rva} + insn.length)) {
+    if (const auto at = index_at(graph, int64_t{insn.rva} + insn.length); at.has_value()) {
         node.next.push_back(*at);
     } else {
         node.beyond |= kAll;
@@ -128,21 +129,22 @@ std::vector<Registers> solve(const Graph& graph) {
 std::optional<Registers> live_before(std::span<const Code> chain, uint32_t rva) {
     const Graph graph = build(chain);
     const auto at = index_at(graph, rva);
-    if (!at) {
+    if (!at.has_value()) {
         return std::nullopt;
     }
     return solve(graph)[*at];
 }
 
 std::optional<Registers> in_use_at(std::span<const Code> chain, uint32_t rva) {
+    using enum Flow;
     const std::optional<Registers> live = live_before(chain, rva);
-    if (!live) {
+    if (!live.has_value()) {
         return std::nullopt;
     }
     Registers used = *live;
     for (const Code& code : chain) {
         for (const Instruction& insn : code.instructions) {
-            if (insn.rva + insn.length == rva && (insn.flow == Flow::Next || insn.flow == Flow::Call || insn.flow == Flow::Branch)) {
+            if (insn.rva + insn.length == rva && (insn.flow == Next || insn.flow == Call || insn.flow == Branch)) {
                 used = static_cast<Registers>(used | insn.reads | insn.kills);
             }
         }

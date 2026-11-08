@@ -74,7 +74,7 @@ Exe exe_of(std::vector<Body> bodies, uint32_t stamp = kStamp) {
         bodies[i].code = function_of(i, bodies[i].code);
         std::ranges::copy(bodies[i].code, text.begin() + (begin_of(i) - kTextAt));
         if (bodies[i].listed) {
-            spec.functions.push_back({begin_of(i), begin_of(i) + static_cast<uint32_t>(bodies[i].code.size())});
+            spec.functions.emplace_back(begin_of(i), begin_of(i) + static_cast<uint32_t>(bodies[i].code.size()));
         }
     }
     spec.sections.emplace_back(".text", kTextAt, text, 0);
@@ -214,7 +214,7 @@ void check_registers(compat_test::Suite& t) {
 
 void check_unhooked(compat_test::Suite& t) {
     auto bodies = all_sites();
-    bodies.push_back({"param_entity", bytes_of({0x48, 0x89, 0xd8, 0x90, 0x90})});
+    bodies.emplace_back("param_entity", bytes_of({0x48, 0x89, 0xd8, 0x90, 0x90}));
     const CheckResult result = run(t, exe_of(std::move(bodies)));
     t.check(result.problems.empty() && result.hooks == 9, "a site with no hook is not inspected");
 }

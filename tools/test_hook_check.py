@@ -718,6 +718,11 @@ def compat(tmp_path):
     return path
 
 
+@pytest.fixture
+def tools(selftest, compat):
+    return hook_check.Tools(selftest, compat)
+
+
 def test_compat_check_runs_on_the_extracted_exe_and_the_builds_file_with_a_timeout(compat, tmp_path):
     run = FakeRun()
     builds = tmp_path / "builds.json"
@@ -836,8 +841,9 @@ def test_a_pinned_sigset_needs_no_build_with_an_exe(tmp_path, pinned):
 
 def test_a_pinned_sigset_that_changed_is_refused(tmp_path, pinned):
     changed = [{**PATTERNS[0], "offset": "0x4"}]
+    path = old_build_files(tmp_path, changed)
     with pytest.raises(HookCheckError, match="sigset old changed"):
-        hook_check.check_sigset_coverage(old_build_files(tmp_path, changed))
+        hook_check.check_sigset_coverage(path)
 
 
 def test_a_pinned_sigset_is_the_same_whatever_the_order_of_its_keys(tmp_path, pinned):
@@ -897,30 +903,30 @@ def test_every_selected_build_is_pulled_self_tested_and_compat_checked(tmp_path,
     assert not [seen for seen in fake.seen if "/99" in seen[0]]
 
 
-def test_a_failed_compat_check_fails_the_whole_check(tmp_path, selftest, compat):
+def test_a_failed_compat_check_fails_the_whole_check(tmp_path, tools):
     _, registry = make_registry(Image(), Image(tag="7654321"))
     path = builds_file(tmp_path, make_row(LABEL, [TAG, "7654321"], EXE_SHA256))
     run = FakeRun(returncode=3, stdout=FAILED_COMPAT_OUTPUT, only="compat")
     with pytest.raises(HookCheckError, match="livemap_compat check exited with 3"):
-        hook_check.check_builds(path, hook_check.Tools(selftest, compat), tmp_path / "work", registry, run)
+        hook_check.check_builds(path, tools, tmp_path / "work", registry, run)
     assert len(run.calls) == 2
 
 
-def test_a_build_missing_from_the_store_fails_the_whole_check(tmp_path, selftest, compat):
+def test_a_build_missing_from_the_store_fails_the_whole_check(tmp_path, tools):
     _, registry = make_registry(Image())
     path = builds_file(tmp_path, make_row(LABEL, [TAG, "7654321"], EXE_SHA256))
     run = FakeRun()
     with pytest.raises(HookCheckError, match="no exe for build 7654321"):
-        hook_check.check_builds(path, hook_check.Tools(selftest, compat), tmp_path / "work", registry, run)
+        hook_check.check_builds(path, tools, tmp_path / "work", registry, run)
 
 
-def test_an_uncovered_sigset_fails_before_anything_is_pulled(tmp_path, selftest, compat):
+def test_an_uncovered_sigset_fails_before_anything_is_pulled(tmp_path, tools):
     fake, registry = make_registry(Image())
     path = builds_file(tmp_path, make_row(LABEL, [TAG], EXE_SHA256), sigsets={"patch1": PATTERNS, "draft": PATTERNS})
     run = FakeRun()
     requests = len(fake.seen)
     with pytest.raises(HookCheckError, match="sigset draft"):
-        hook_check.check_builds(path, hook_check.Tools(selftest, compat), tmp_path / "work", registry, run)
+        hook_check.check_builds(path, tools, tmp_path / "work", registry, run)
     assert len(fake.seen) == requests
     assert run.calls == []
 

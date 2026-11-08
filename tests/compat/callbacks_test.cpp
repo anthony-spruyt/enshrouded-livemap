@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -34,15 +35,18 @@ std::string read_file(const std::string& path) {
     return text.str();
 }
 
+using RegistersByName = std::map<std::string, Registers, std::less<>>;
+using Names = std::set<std::string, std::less<>>;
+
 // The registers each callback of the source reads from its context, by function name.
-std::map<std::string, Registers> registers_in_source() {
-    std::map<std::string, Registers> found;
+RegistersByName registers_in_source() {
+    RegistersByName found;
     const std::regex header(R"(void (on_\w+)\(SafetyHookContext&[^)]*\) \{\n)");
     const std::regex use(R"(ctx\.(r\w+))");
     for (const std::string_view file : {"world.cpp", "announce.cpp"}) {
         const std::string text = read_file(std::string(LIVEMAP_SOURCE_DIR) + "/" + std::string(file));
         for (std::sregex_iterator it(text.begin(), text.end(), header), end; it != end; ++it) {
-            const size_t body = static_cast<size_t>(it->position() + it->length());
+            const auto body = static_cast<size_t>(it->position() + it->length());
             const std::string code = text.substr(body, text.find("\n}\n", body) - body);
             Registers reads = 0;
             for (std::sregex_iterator hit(code.begin(), code.end(), use); hit != std::sregex_iterator(); ++hit) {
@@ -67,7 +71,7 @@ livemap::compat::Catalog catalog() {
 void check_against_source(compat_test::Suite& t) {
     const auto source = registers_in_source();
     t.check(!source.empty(), "the source has callbacks");
-    std::map<std::string, Registers> table;
+    RegistersByName table;
     for (const Callback& callback : livemap::compat::callbacks()) {
         table[std::string(callback.function)] |= callback.reads;
     }
@@ -82,8 +86,8 @@ void check_against_source(compat_test::Suite& t) {
 
 void check_against_data(compat_test::Suite& t) {
     const auto data = catalog();
-    std::set<std::string> sites;
-    std::set<std::string> layouts;
+    Names sites;
+    Names layouts;
     for (const auto& sigset : data.sigsets()) {
         for (const auto& pattern : sigset.patterns) {
             sites.insert(pattern.site);
@@ -92,11 +96,11 @@ void check_against_data(compat_test::Suite& t) {
     for (const auto& row : data.rows()) {
         layouts.insert(row.mining_layout);
     }
-    std::set<std::string> hooked;
+    Names hooked;
     for (const Callback& callback : livemap::compat::callbacks()) {
-        hooked.insert(std::string(callback.site));
-        t.check(sites.contains(std::string(callback.site)), std::string(callback.site) + " is a site of a sigset");
-        t.check(callback.layout.empty() || layouts.contains(std::string(callback.layout)), std::string(callback.layout) + " is a mining layout of a build");
+        hooked.emplace(callback.site);
+        t.check(sites.contains(callback.site), std::string(callback.site) + " is a site of a sigset");
+        t.check(callback.layout.empty() || layouts.contains(callback.layout), std::string(callback.layout) + " is a mining layout of a build");
     }
     for (const std::string& site : sites) {
         t.check(hooked.contains(site) || site == "param_entity" || site == "chat_post", site + " is hooked or read by the DLL without a hook");

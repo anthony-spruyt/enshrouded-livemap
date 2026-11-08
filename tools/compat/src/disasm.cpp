@@ -88,25 +88,26 @@ void note_effects(Instruction& insn, const ZydisDecodedInstruction& decoded, std
 }
 
 Flow flow_of(const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands) {
+    using enum Flow;
     switch (decoded.mnemonic) {
         case ZYDIS_MNEMONIC_INT3:
         case ZYDIS_MNEMONIC_UD2:
         case ZYDIS_MNEMONIC_HLT:
-            return Flow::Stop;
+            return Stop;
         default:
             break;
     }
     switch (decoded.meta.category) {
         case ZYDIS_CATEGORY_CALL:
-            return Flow::Call;
+            return Call;
         case ZYDIS_CATEGORY_RET:
-            return Flow::Return;
+            return Return;
         case ZYDIS_CATEGORY_COND_BR:
-            return Flow::Branch;
+            return Branch;
         case ZYDIS_CATEGORY_UNCOND_BR:
-            return operands[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE ? Flow::Jump : Flow::Indirect;
+            return operands[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE ? Jump : Indirect;
         default:
-            return Flow::Next;
+            return Next;
     }
 }
 

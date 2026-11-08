@@ -29,7 +29,7 @@ Registers set_of(std::initializer_list<std::string_view> names) {
     Registers set = 0;
     for (const std::string_view name : names) {
         const auto bit = livemap::compat::register_named(name);
-        if (!bit) {
+        if (!bit.has_value()) {
             std::cout << "the test names no register '" << name << "'\n";
             std::exit(2);
         }
@@ -49,7 +49,7 @@ Instruction first_of(const std::vector<std::byte>& bytes) {
 
 Code code_at(uint32_t begin, const std::vector<std::byte>& bytes) {
     const auto decoded = livemap::compat::decode_function(Decoder{}, bytes, Function{begin, begin + static_cast<uint32_t>(bytes.size())}, {});
-    if (decoded.stopped) {
+    if (decoded.stopped.has_value()) {
         std::cout << "the test code does not decode\n";
         std::exit(2);
     }
@@ -66,7 +66,7 @@ std::vector<std::byte> joined(std::initializer_list<std::vector<std::byte>> part
 
 Registers live_at(const std::vector<Code>& chain, uint32_t rva) {
     const auto live = livemap::compat::live_before(chain, rva);
-    if (!live) {
+    if (!live.has_value()) {
         std::cout << "the test address is no instruction\n";
         std::exit(2);
     }
@@ -114,15 +114,16 @@ void check_effects(compat_test::Suite& t) {
 }
 
 void check_flow(compat_test::Suite& t) {
-    t.check(first_of(bytes_of({0x90})).flow == Flow::Next, "nop goes on");
-    t.check(first_of(bytes_of({0xe8, 0, 0, 0, 0})).flow == Flow::Call, "call");
-    t.check(first_of(bytes_of({0xc3})).flow == Flow::Return, "ret");
-    t.check(first_of(bytes_of({0x74, 0x05})).flow == Flow::Branch, "a conditional jump");
-    t.check(first_of(bytes_of({0xeb, 0x05})).flow == Flow::Jump, "a relative jump");
-    t.check(first_of(bytes_of({0xff, 0xe0})).flow == Flow::Indirect, "a jump through a register");
-    t.check(first_of(bytes_of({0xff, 0x25, 0, 0, 0, 0})).flow == Flow::Indirect, "a jump through memory");
-    t.check(first_of(bytes_of({0xcc})).flow == Flow::Stop, "int3");
-    t.check(first_of(bytes_of({0x0f, 0x0b})).flow == Flow::Stop, "ud2");
+    using enum Flow;
+    t.check(first_of(bytes_of({0x90})).flow == Next, "nop goes on");
+    t.check(first_of(bytes_of({0xe8, 0, 0, 0, 0})).flow == Call, "call");
+    t.check(first_of(bytes_of({0xc3})).flow == Return, "ret");
+    t.check(first_of(bytes_of({0x74, 0x05})).flow == Branch, "a conditional jump");
+    t.check(first_of(bytes_of({0xeb, 0x05})).flow == Jump, "a relative jump");
+    t.check(first_of(bytes_of({0xff, 0xe0})).flow == Indirect, "a jump through a register");
+    t.check(first_of(bytes_of({0xff, 0x25, 0, 0, 0, 0})).flow == Indirect, "a jump through memory");
+    t.check(first_of(bytes_of({0xcc})).flow == Stop, "int3");
+    t.check(first_of(bytes_of({0x0f, 0x0b})).flow == Stop, "ud2");
 }
 
 void check_straight_line(compat_test::Suite& t) {
@@ -187,7 +188,7 @@ void check_tables(compat_test::Suite& t) {
 
 Registers in_use_at(const std::vector<Code>& chain, uint32_t rva) {
     const auto used = livemap::compat::in_use_at(chain, rva);
-    if (!used) {
+    if (!used.has_value()) {
         std::cout << "the test address is no instruction\n";
         std::exit(2);
     }

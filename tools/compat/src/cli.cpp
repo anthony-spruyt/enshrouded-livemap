@@ -226,7 +226,7 @@ int run_check(std::span<const std::string_view> args, std::ostream& out, std::os
         return kExitUsage;
     }
     const auto code = execute_check(*options, out);
-    if (!code) {
+    if (!code.has_value()) {
         err << std::format("error: {}\n", code.error());
         return kExitInput;
     }

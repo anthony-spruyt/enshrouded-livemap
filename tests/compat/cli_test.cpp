@@ -109,6 +109,29 @@ std::string text_of(const Json& value, std::string_view key) {
     return found == nullptr ? "<missing>" : found->text();
 }
 
+void check_command(compat_test::Suite& t, Workspace& dir, const std::string& builds, const std::string& listed_sha256) {
+    const auto check = [&](std::string_view builds_name, std::string_view exe) {
+        return cli({"check", "--builds", dir.file(builds_name), "--exe", dir.file(exe)});
+    };
+    const Run passed = check("builds.json", "previous.exe");
+    t.check(passed.code == 0 && passed.out.starts_with("ok: row 100") && passed.err.empty(), "a check that finds nothing exits 0 and names the row");
+    std::string unlisted = builds;
+    unlisted.replace(unlisted.find(listed_sha256), 64, std::string(64, '0'));
+    write_text(dir.file("unlisted.json"), unlisted);
+    const Run failed = check("unlisted.json", "previous.exe");
+    t.check(failed.code == 3 && failed.out.starts_with("failed: row 100") && failed.out.contains("checksum") && failed.err.empty(), "a check that finds a problem exits 3 and lists it");
+    const Run unknown_exe = check("builds.json", "moved.exe");
+    t.check(unknown_exe.code == 1 && unknown_exe.err.contains("fingerprint"), "an exe that no row describes exits 1");
+    t.check(check("builds.json", "absent.exe").code == 1 && check("builds.json", "garbage.exe").code == 1, "an exe that cannot be read exits 1");
+    write_text(dir.file("broken.json"), "{");
+    t.check(check("absent.json", "previous.exe").code == 1 && check("broken.json", "previous.exe").code == 1, "a builds file that cannot be read exits 1");
+    const Run bare = cli({"check"});
+    t.check(bare.code == 2 && bare.err.contains("--builds is required") && bare.err.contains("usage: livemap_compat check"), "a check without arguments exits 2 with its usage");
+    t.check(cli({"check", "--builds", dir.file("builds.json")}).err.contains("--exe is required"), "and one without the exe names it");
+    const Run stray = cli({"check", "--builds", dir.file("builds.json"), "--exe", dir.file("previous.exe"), "--report", dir.file("x.json")});
+    t.check(stray.code == 2 && stray.err.contains("--report"), "a check refuses the arguments of the analysis");
+}
+
 }  // namespace
 
 int main() {
@@ -220,24 +243,6 @@ int main() {
     bad_manifest[9] = "";
     t.check(cli(bad_manifest).code == 2, "a manifest that is not an id exits 2");
 
-    const auto check = [&](std::string_view builds_name, std::string_view exe) {
-        return cli({"check", "--builds", dir.file(builds_name), "--exe", dir.file(exe)});
-    };
-    const Run passed = check("builds.json", "previous.exe");
-    t.check(passed.code == 0 && passed.out.starts_with("ok: row 100") && passed.err.empty(), "a check that finds nothing exits 0 and names the row");
-    std::string unlisted = builds;
-    unlisted.replace(unlisted.find(livemap::compat::sha256_hex(old_file)), 64, std::string(64, '0'));
-    write_text(dir.file("unlisted.json"), unlisted);
-    const Run failed = check("unlisted.json", "previous.exe");
-    t.check(failed.code == 3 && failed.out.starts_with("failed: row 100") && failed.out.contains("checksum") && failed.err.empty(), "a check that finds a problem exits 3 and lists it");
-    const Run unknown_exe = check("builds.json", "moved.exe");
-    t.check(unknown_exe.code == 1 && unknown_exe.err.contains("fingerprint"), "an exe that no row describes exits 1");
-    t.check(check("builds.json", "absent.exe").code == 1 && check("builds.json", "garbage.exe").code == 1, "an exe that cannot be read exits 1");
-    t.check(check("absent.json", "previous.exe").code == 1 && check("broken.json", "previous.exe").code == 1, "a builds file that cannot be read exits 1");
-    const Run bare = cli({"check"});
-    t.check(bare.code == 2 && bare.err.contains("--builds is required") && bare.err.contains("usage: livemap_compat check"), "a check without arguments exits 2 with its usage");
-    t.check(cli({"check", "--builds", dir.file("builds.json")}).err.contains("--exe is required"), "and one without the exe names it");
-    const Run stray = cli({"check", "--builds", dir.file("builds.json"), "--exe", dir.file("previous.exe"), "--report", dir.file("x.json")});
-    t.check(stray.code == 2 && stray.err.contains("--report"), "a check refuses the arguments of the analysis");
+    check_command(t, dir, builds, livemap::compat::sha256_hex(old_file));
     return t.result();
 }

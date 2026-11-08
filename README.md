@@ -15,12 +15,12 @@ HD map users: take the HD asset from upstream's latest release. This fork does n
 
 ### Game patches and the update robot
 
-A new server build goes through these steps. For now, a person starts the first two by hand.
+A new server build goes through these steps. For now, a person runs each step by hand.
 
-1. `exe-capture.yaml` saves the server exe of each supported build to the exe store, while Steam still serves it.
+1. `exe-capture.yaml` saves the new build's server exe to the exe store. It takes the same two inputs as `compat.yaml` and only accepts Steam's current public build, so run it before the next patch ships. The next build is judged against this exe.
 2. `compat.yaml` judges the new build against the last supported one.
-3. A PR that changes only `data/builds.json` runs the `data-only` check and the boot test. The check passes when that file is the only change and it is valid against its schema. The boot test starts the real server with the built DLL and checks that the map comes up.
-4. release-please then releases.
+3. A PR that changes only `data/builds.json` runs the `data-only` check and the boot test. The check runs only when that file is the only change, and passes when it is valid against its schema. The boot test starts the real server with the built DLL and checks that the map comes up.
+4. release-please opens a release PR. Merging it cuts the release.
 
 The robot that chains these steps on its own is still being built (see [spruyt-labs issue 4105](https://github.com/anthony-spruyt/spruyt-labs/issues/4105)).
 
@@ -44,13 +44,13 @@ The artifact never holds game files.
 
 The `result` in `report.json` is one of:
 
-- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id is new, so `builds.json` adds it to that row.
-- `easy`: every hook site matches once, and the code around each is the same as in the last supported build, apart from addresses. `builds.json` gets a new row.
+- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id is new, so `builds.json` adds it to that row. If the build id is listed already, the file is unchanged and there is nothing to commit.
+- `easy`: every pattern matches once, and the code around each site is the same as in the last supported build, apart from addresses. `builds.json` gets a new row.
 - `hard`: anything else. There is no `builds.json`. `report.json` lists each site that differs and how, and a person writes the patch.
 
 `tools/compat/README.md` has the exact checks.
 
-Each build the robot handles gets one comment on the pinned [tracking issue](https://github.com/anthony-spruyt/enshrouded-livemap/issues/28): the result, links to the runs and the release, and how long each step took.
+Once the robot runs, each build it handles gets one comment on the pinned [tracking issue](https://github.com/anthony-spruyt/enshrouded-livemap/issues/28): the result, links to the runs and the release, and how long each step took.
 
 The text below is upstream's.
 

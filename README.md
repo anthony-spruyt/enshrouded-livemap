@@ -13,6 +13,45 @@ The Enshrouded dedicated server builds this fork supports are listed in `data/bu
 
 HD map users: take the HD asset from upstream's latest release. This fork does not build one.
 
+### Game patches and the update robot
+
+A new server build goes through these steps. For now, a person runs each step by hand.
+
+1. `exe-capture.yaml` saves the new build's server exe to the exe store. It takes the same two inputs as `compat.yaml` and only accepts Steam's current public build, so run it before the next patch ships. The next build is judged against this exe.
+2. `compat.yaml` judges the new build against the last supported one.
+3. A PR that changes only `data/builds.json` runs the `data-only` check and the boot test. The check runs only when that file is the only change, and passes when it is valid against its schema. The boot test starts the real server with the built DLL and checks that the map comes up.
+4. release-please opens a release PR. Merging it cuts the release.
+
+The robot that chains these steps on its own is still being built (see [spruyt-labs issue 4105](https://github.com/anthony-spruyt/spruyt-labs/issues/4105)).
+
+To run `compat.yaml` by hand, open the Actions tab, pick "Compat" and press "Run workflow".
+Or run `gh workflow run compat.yaml -f build_id=<id> -f manifest_gid=<gid>`.
+It takes two inputs:
+
+- `build_id`: Steam's public build id of the server (app 2278520).
+- `manifest_gid`: the public manifest gid of depot 2278521 for that build.
+
+Read both on [SteamDB](https://steamdb.info/app/2278520/depots/), or from Steam's info API:
+
+```sh
+curl -fsS https://api.steamcmd.net/v1/info/2278520 | jq '.data["2278520"].depots | {build_id: .branches.public.buildid, manifest_gid: .["2278521"].manifests.public.gid}'
+```
+
+The job refuses a build that is not Steam's current public one.
+It uploads the `livemap-compat` artifact. The artifact holds `report.json`, and, when the result is `known` or `easy`, the `builds.json` to commit in a PR.
+Copy that file to `data/builds.json` and open the PR titled `fix(builds): add server build <id>` for a `known` build or `fix(builds): support server build <id>` for an `easy` one. Only a release ships the new build, so the type must be `fix`.
+The artifact never holds game files.
+
+The `result` in `report.json` is one of:
+
+- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id is new, so `builds.json` adds it to that row. If the build id is listed already, the file is unchanged and there is nothing to commit.
+- `easy`: every pattern matches once, and the code around each site is the same as in the last supported build, apart from addresses. `builds.json` gets a new row.
+- `hard`: anything else. There is no `builds.json`. `report.json` lists each site that differs and how, and a person writes the patch.
+
+`tools/compat/README.md` has the exact checks.
+
+Once the robot runs, each build it handles gets one comment on the pinned [tracking issue](https://github.com/anthony-spruyt/enshrouded-livemap/issues/28): the result, links to the runs and the release, and how long each step took.
+
 The text below is upstream's.
 
 # Enshrouded Live Map

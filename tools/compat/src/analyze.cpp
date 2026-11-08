@@ -191,6 +191,7 @@ void judge_known(const Catalog& catalog, const Request& request, const std::vect
         out.edit.kind = Edit::Kind::Alias;
         out.edit.row = rows[0];
         out.edit.added.build_id = request.build_id;
+        out.edit.added.manifest = request.manifest;
     }
 }
 
@@ -294,7 +295,7 @@ std::expected<void, std::string> apply_edit(Catalog& catalog, const Edit& edit) 
     using enum Edit::Kind;
     switch (edit.kind) {
         case Alias:
-            return catalog.add_alias(edit.row, edit.added.build_id);
+            return catalog.add_alias(edit.row, edit.added.build_id, edit.added.manifest);
         case Append:
             return catalog.append_row_like(edit.row, edit.added);
         case None:

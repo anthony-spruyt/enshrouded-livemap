@@ -111,6 +111,7 @@
           "enum": ["inline_array", "stack_record"]
         },
         "steam": {
+          "description": "The depot and manifest of the newest id in buildids, which the boot test downloads for the newest row, and the sha256 that CI checks the download and the exe store against.",
           "type": "object",
           "required": ["depot", "manifest", "exe_sha256"],
           "additionalProperties": false,

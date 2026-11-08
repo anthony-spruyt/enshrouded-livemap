@@ -44,7 +44,7 @@ The artifact never holds game files.
 
 The `result` in `report.json` is one of:
 
-- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id is new, so `builds.json` adds it to that row. If the build id is listed already, the file is unchanged and there is nothing to commit.
+- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id and its manifest are new, so `builds.json` adds the id to that row and sets the row's manifest to the new build's: Steam serves only its current public build, and the boot test downloads the manifest the row lists. If the build id is listed already, the file is unchanged and there is nothing to commit.
 - `easy`: every pattern matches once, and the code around each site is the same as in the last supported build, apart from addresses. `builds.json` gets a new row.
 - `hard`: anything else. There is no `builds.json`. `report.json` lists each site that differs and how, and a person writes the patch.
 

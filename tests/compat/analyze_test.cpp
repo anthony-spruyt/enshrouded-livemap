@@ -218,6 +218,7 @@ void check_known(compat_test::Suite& t) {
     const Analysis same = run(t, base, base);
     t.check(same.verdict == Known && same.matched_label == "100" && same.reasons.empty(), "the same exe under a new build id is known");
     t.check(same.edit.kind == Edit::Kind::Alias && same.edit.row == 0 && same.edit.added.build_id == "200", "and asks for an alias in the row it matched");
+    t.check(same.edit.added.manifest == "5555", "with the manifest of the new build, the one Steam serves now");
     t.check(same.build_id == "200" && same.manifest == "5555" && same.exe.sha256 == base.sha && same.exe.time_date_stamp == 100 && same.exe.size_of_image == 0x10000,
             "the report names the build and the exe");
     t.check(same.base_label == "100" && same.base_sigset == "s" && same.sites.size() == 5, "the base and a site for each pattern");
@@ -576,6 +577,8 @@ void check_edit(compat_test::Suite& t) {
 
     const Analysis known = run(t, base, base, with_id("300"));
     t.check(livemap::compat::apply_edit(catalog, known.edit).has_value() && catalog.row_with_build_id("300") == 0U, "a known build adds an alias to its row");
+    const livemap::compat::BuildRow& aliased = catalog.rows()[0];
+    t.check(aliased.manifest == "5555" && aliased.depot == "7" && aliased.exe_sha256 == base.sha, "and the manifest of the new build to that row, which keeps its depot and checksum");
 
     const size_t rows = catalog.rows().size();
     const std::string before = livemap::compat::write_json(catalog.document());

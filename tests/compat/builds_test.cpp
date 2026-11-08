@@ -232,21 +232,28 @@ size_t count_of(std::string_view text, std::string_view needle) {
 
 void check_alias(compat_test::Suite& t) {
     Catalog alias = load(kDocument);
-    t.check(alias.add_alias(0, "102").has_value(), "an alias is accepted");
+    t.check(alias.add_alias(0, "102", "8888").has_value(), "an alias is accepted");
     t.check(alias.rows()[0].build_ids.size() == 3 && alias.rows()[0].build_ids[2] == "102", "the alias joins the typed row");
-    t.check(write_json(alias.document()) == replaced(kDocument, R"("101")"
-                                                                "\n",
-                                                     R"("101",)"
-                                                     "\n"
-                                                     R"(        "102")"
-                                                     "\n"),
+    t.check(alias.rows()[0].manifest == "8888" && alias.rows()[0].depot == "2278521" && alias.rows()[0].exe_sha256 == "aa", "the row takes the manifest of the alias, the one Steam serves, and keeps its depot and checksum");
+    t.check(write_json(alias.document()) == replaced(replaced(kDocument, R"("101")"
+                                                                         "\n",
+                                                              R"("101",)"
+                                                              "\n"
+                                                              R"(        "102")"
+                                                              "\n"),
+                                                     "7782830484557676320", "8888"),
             "and the document, and nothing else changes");
 
     Catalog twice = load(kDocument);
-    t.check(!twice.add_alias(0, "101").has_value() && !twice.add_alias(0, "50").has_value(), "an id the file already has is refused, in this row or another");
-    t.check(!twice.add_alias(0, "0").has_value() && !twice.add_alias(0, "12x").has_value() && !twice.add_alias(0, "").has_value(), "an id that is no Steam id is refused");
-    t.check(!twice.add_alias(0, "999999999999999999999").has_value() && write_json(twice.document()) == kDocument, "a refused alias changes nothing, and 21 digits are too many");
-    t.check(twice.add_alias(0, "99999999999999999999").has_value(), "20 digits are a Steam id");
+    t.check(!twice.add_alias(0, "101", "8888").has_value() && !twice.add_alias(0, "50", "8888").has_value(), "an id the file already has is refused, in this row or another");
+    t.check(!twice.add_alias(0, "0", "8888").has_value() && !twice.add_alias(0, "12x", "8888").has_value() && !twice.add_alias(0, "", "8888").has_value(), "an id that is no Steam id is refused");
+    t.check(!twice.add_alias(0, "999999999999999999999", "8888").has_value() && write_json(twice.document()) == kDocument, "a refused alias changes nothing, and 21 digits are too many");
+    t.check(!twice.add_alias(0, "103", "0").has_value() && !twice.add_alias(0, "103", "12x").has_value() && !twice.add_alias(0, "103", "").has_value(), "a manifest that is no Steam id is refused");
+    t.check(!twice.add_alias(0, "103", "999999999999999999999").has_value() && write_json(twice.document()) == kDocument, "and then neither the id nor the manifest is written");
+    t.check(twice.add_alias(0, "99999999999999999999", "99999999999999999999").has_value(), "20 digits are a Steam id");
+
+    Catalog bare = load(kDocument);
+    t.check(bare.add_alias(1, "51", "8888").has_value() && bare.rows()[1].manifest == "8888" && !bare.rows()[1].depot.has_value(), "a row that lists no manifest gets one, and nothing else of its Steam block");
 }
 
 void check_new_row(compat_test::Suite& t) {
@@ -323,7 +330,7 @@ void check_new_row_refusals(compat_test::Suite& t) {
     refused_row(1, sample(), "operands for a row copied from one without");
     Catalog catalog = load(kDocument);
     t.check(!catalog.append_row_like(2, sample()).has_value() && !catalog.append_row_like(7, sample()).has_value(), "a row index past the end");
-    t.check(!catalog.add_alias(2, "9").has_value() && !catalog.add_alias(7, "9").has_value(), "an alias for a row past the end");
+    t.check(!catalog.add_alias(2, "9", "8").has_value() && !catalog.add_alias(7, "9", "8").has_value(), "an alias for a row past the end");
 }
 
 void check_lookups(compat_test::Suite& t) {

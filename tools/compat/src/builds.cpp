@@ -381,17 +381,19 @@ std::vector<size_t> Catalog::rows_with_fingerprint(uint32_t time_date_stamp, uin
     return found;
 }
 
-std::expected<void, std::string> Catalog::add_alias(size_t row, std::string id) {
+std::expected<void, std::string> Catalog::add_alias(size_t row, std::string id, std::string manifest) {
     if (row >= rows_.size()) {
         return std::unexpected("there is no such row");
     }
-    if (!is_steam_id(id)) {
-        return std::unexpected("a build id has to be a Steam id");
+    if (!is_steam_id(id) || !is_steam_id(manifest)) {
+        return std::unexpected("a build id and a manifest have to be Steam ids");
     }
     if (row_with_build_id(id).has_value()) {
         return std::unexpected("the build id is listed already");
     }
-    document_.find("builds")->at(row)->find("buildids")->push(Json::string(std::move(id)));
+    Json& build = *document_.find("builds")->at(row);
+    build.find("buildids")->push(Json::string(std::move(id)));
+    build.find("steam")->set("manifest", Json::string(std::move(manifest)));
     return reload();
 }
 

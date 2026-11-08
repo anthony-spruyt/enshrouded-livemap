@@ -78,8 +78,8 @@ public:
     std::optional<size_t> row_with_label(std::string_view label) const;
     std::vector<size_t> rows_with_fingerprint(uint32_t time_date_stamp, uint32_t size_of_image) const;
 
-    // Lists one more build id for the row.
-    std::expected<void, std::string> add_alias(size_t row, std::string id);
+    // Lists one more build id for the row, and the manifest of that build as the row's: Steam serves only the newest build.
+    std::expected<void, std::string> add_alias(size_t row, std::string id, std::string manifest);
     // Appends a row that is the row `like` with the new fingerprint, build id, manifest, checksum and found values.
     std::expected<void, std::string> append_row_like(size_t like, const NewRow& added);
 

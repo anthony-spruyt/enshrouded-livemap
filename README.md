@@ -39,7 +39,7 @@ curl -fsS https://api.steamcmd.net/v1/info/2278520 | jq '.data["2278520"].depots
 
 The job refuses a build that is not Steam's current public one.
 It uploads the `livemap-compat` artifact. The artifact holds `report.json`, and, when the result is `known` or `easy`, the `builds.json` to commit in a PR.
-Copy that file to `data/builds.json` and open the PR with a commit type that releases, as described above.
+Copy that file to `data/builds.json` and open the PR titled `fix(builds): add server build <id>` for a `known` build or `fix(builds): support server build <id>` for an `easy` one. Only a release ships the new build, so the type must be `fix`.
 The artifact never holds game files.
 
 The `result` in `report.json` is one of:

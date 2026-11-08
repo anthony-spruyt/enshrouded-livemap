@@ -124,8 +124,8 @@ def test_the_exes_and_the_registry_login_are_removed_even_after_a_failure():
     assert "docker logout" in cleanup[0]
 
 
-def test_no_script_holds_an_input_expression():
-    scripts = [run_script(step) for step in steps() if re.search(r"^ {8}run:", step, re.MULTILINE)]
-    assert scripts
-    assert all(scripts)
-    assert not [script for script in scripts if re.search(INPUT_EXPRESSION, script)]
+def test_inputs_reach_scripts_only_through_env():
+    allowed = re.compile(r"^(run-name: .*| {6}[A-Z_]+: \$\{\{ inputs\.\w+ \}\})$")
+    lines = [line for line in workflow().splitlines() if re.search(INPUT_EXPRESSION, line)]
+    assert lines
+    assert all(allowed.match(line) for line in lines)

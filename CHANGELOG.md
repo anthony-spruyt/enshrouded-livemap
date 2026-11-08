@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.9.0...v1.9.1) (2026-11-08)
+
+
+### Dependencies
+
+* bump devcontainer image and revise agent and orchestration rules ([99c8eed](https://github.com/anthony-spruyt/enshrouded-livemap/commit/99c8eedf1f6d2ff13b9ea5039e59ff3b3b89e015))
+
 ## [1.9.0](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.8.0...v1.9.0) (2026-11-08)
 
 

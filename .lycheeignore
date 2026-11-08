@@ -11,6 +11,9 @@ https://code.visualstudio.com/.*
 # VS Code Marketplace (intermittent 503s)
 https://marketplace.visualstudio.com/
 
+# SteamDB returns 403 to automated link checkers
+https://steamdb\.info/app/2278520/depots/
+
 # LAN server URLs use private .lan domains with shell variable substitution
 .*\.lan/.*
 

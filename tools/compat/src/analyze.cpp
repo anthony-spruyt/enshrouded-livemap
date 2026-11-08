@@ -10,69 +10,21 @@
 #include <utility>
 #include <vector>
 
+#include "callbacks.h"
 #include "disasm.h"
+#include "hooks.h"
 #include "sites.h"
 
 namespace livemap::compat {
 
 namespace {
 
-constexpr std::string_view kJoinSite = "join_line";
 constexpr std::string_view kChatSite = "chat_post";
 constexpr std::string_view kAccessorOperand = "entity_table";
-constexpr uint32_t kCallLength = 5;
 constexpr std::byte kCallOpcode{0xe8};
 
-using Problems = std::vector<std::string>;
-
-std::string hex(uint32_t value) {
-    return std::format("0x{:x}", value);
-}
-
-const SiteHit* hit_named(std::span<const SiteHit> hits, std::string_view site) {
-    const auto found = std::ranges::find(hits, site, [](const SiteHit& hit) -> std::string_view { return hit.pattern->site; });
-    return found == hits.end() ? nullptr : std::to_address(found);
-}
-
-std::optional<uint32_t> operand_of(std::span<const SiteHit> hits, std::string_view name) {
-    for (const SiteHit& hit : hits) {
-        for (const NamedValue& operand : hit.operands) {
-            if (operand.name == name) {
-                return operand.value;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-bool lists(std::span<const NamedValue> values, std::string_view name) {
-    return std::ranges::any_of(values, [&](const NamedValue& value) { return value.name == name; });
-}
-
-// What differs between the row and the sites an exe has: nothing when the exe is the build the row describes.
-Problems scan_problems(const BuildRow& row, std::span<const SiteHit> hits) {
-    Problems problems;
-    for (const NamedValue& expected : row.expected) {
-        const SiteHit* hit = hit_named(hits, expected.name);
-        if (const size_t matches = hit == nullptr ? 0 : hit->matches; matches != 1) {
-            problems.push_back(std::format("{}: {} matches, the row lists {}", expected.name, matches, hex(expected.value)));
-        } else if (hit->rva != expected.value) {
-            problems.push_back(std::format("{}: found at {}, the row lists {}", expected.name, hex(hit->rva), hex(expected.value)));
-        }
-    }
-    for (const SiteHit& hit : hits) {
-        if (hit.matches == 1 && hit.pattern->site != kJoinSite && !lists(row.expected, hit.pattern->site)) {
-            problems.push_back(std::format("{}: found at {}, the row does not list it", hit.pattern->site, hex(hit.rva)));
-        }
-    }
-    for (const NamedValue& expected : row.expected_operands) {
-        if (const std::optional<uint32_t> value = operand_of(hits, expected.name); !value.has_value()) {
-            problems.push_back(std::format("{}: no site reads it, the row lists {}", expected.name, hex(expected.value)));
-        } else if (*value != expected.value) {
-            problems.push_back(std::format("{}: reads {}, the row lists {}", expected.name, hex(*value), hex(expected.value)));
-        }
-    }
-    return problems;
+void append(Problems& to, Problems&& more) {
+    std::ranges::move(more, std::back_inserter(to));
 }
 
 std::string joined(const Problems& problems) {
@@ -127,28 +79,6 @@ struct Context {
     const BranchMap& branches;
 };
 
-struct Loaded {
-    Region region;
-    Code code;
-};
-
-// The function that holds the site, or for code the exception table does not list, the bytes of the pattern.
-std::expected<Loaded, std::string> load_code(const Image& image, const Decoder& decoder, const SiteHit& hit) {
-    const Function* function = image.function_at(hit.rva);
-    const Region region = function != nullptr ? Region{false, function->begin, function->end}
-                                              : Region{true, hit.match_rva, hit.match_rva + static_cast<uint32_t>(hit.pattern->signature.size())};
-    const std::span<const std::byte> bytes = image.at(region.begin, region.end - region.begin);
-    std::vector<Range> masks;
-    for (const NamedValue& operand : hit.pattern->operands) {
-        masks.emplace_back(hit.match_rva + operand.value, kOperandWidth);
-    }
-    auto decoded = decode_function(decoder, bytes, Function{region.begin, region.end}, masks);
-    if (decoded.stopped.has_value()) {
-        return std::unexpected(std::format("the code at {} cannot be decoded past {}", hex(region.begin), hex(*decoded.stopped)));
-    }
-    return Loaded{region, std::move(decoded.code)};
-}
-
 bool follows_join_call(std::byte next) {
     return next == std::byte{0x44} || next == std::byte{0xe9};
 }
@@ -171,29 +101,11 @@ void check_join(const Context& c, const SiteHit& join, const Code& code, Problem
     }
 }
 
-void check_hooks(const Context& c, const SiteHit& now, const Code& code, SiteReport& report, Problems& problems) {
-    std::vector points{now.rva};
-    if (report.site == kJoinSite) {
-        points.push_back(now.rva + kCallLength);
-    }
-    report.hook_aligned = true;
-    for (const uint32_t point : points) {
-        const std::optional<uint32_t> span = hook_span(code.instructions, point);
-        if (!span.has_value()) {
-            report.hook_aligned = false;
-            problems.push_back(std::format("{}: the hook at {} does not start on an instruction", report.site, hex(point)));
-            continue;
-        }
-        std::ranges::copy(landings(c.branches, point, point + *span), std::back_inserter(report.into_hook));
-    }
-    if (!report.into_hook.empty()) {
-        problems.push_back(std::format("{}: {} branches land inside the bytes the hook overwrites", report.site, report.into_hook.size()));
-    }
-    if (report.region->window) {
-        problems.push_back(std::format("{}: the exception table does not list the code around the hook", report.site));
-    } else if (stopped_near(c.branches, c.current, Function{report.region->begin, report.region->end})) {
-        problems.push_back(std::format("{}: code tied to the function around the hook could not be decoded", report.site));
-    }
+void check_hooks(const Context& c, const SiteHit& now, const Loaded& loaded, SiteReport& report, Problems& problems) {
+    HookInspection found = inspect_hooks(c.current, c.branches, now, loaded);
+    report.hook_aligned = found.aligned;
+    report.into_hook = std::move(found.into_hook);
+    append(problems, std::move(found.problems));
 }
 
 bool is_accessor(const PatternDef& pattern) {
@@ -214,7 +126,7 @@ void compare_site(const Context& c, const SiteHit& now, const SiteHit& before, S
         problems.push_back(std::format("{}: differs from the previous build at {} ({})", report.site, hex(report.difference->rva), report.difference->kind));
     }
     if (!is_accessor(*now.pattern)) {
-        check_hooks(c, now, current->code, report, problems);
+        check_hooks(c, now, *current, report, problems);
     }
     if (report.site == kJoinSite) {
         check_join(c, now, current->code, problems);
@@ -248,10 +160,6 @@ Problems collisions(const Catalog& catalog, std::string_view id, std::optional<s
 
 ExeInfo exe_info(const Image& image, std::string_view sha256) {
     return ExeInfo{image.time_date_stamp(), image.size_of_image(), std::string(sha256)};
-}
-
-void append(Problems& to, Problems&& more) {
-    std::ranges::move(more, std::back_inserter(to));
 }
 
 void judge_known(const Catalog& catalog, const Request& request, const std::vector<size_t>& rows, std::span<const SiteHit> before, Analysis& out) {

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "pe.h"
+#include "registers.h"
 
 namespace livemap::compat {
 
@@ -30,13 +31,26 @@ struct IndexedLoad {
     int64_t address = 0;
 };
 
+// Stop is a trap: nothing follows it.
+enum class Flow { Next,
+                  Call,
+                  Return,
+                  Branch,
+                  Jump,
+                  Indirect,
+                  Stop };
+
 // One instruction with the bytes that depend on where code sits zeroed; a branch or a table load keeps its target as an RVA.
 struct Instruction {
     uint32_t rva = 0;
     uint8_t length = 0;
+    Flow flow = Flow::Next;
+    Registers reads = 0;
+    Registers kills = 0;  // only registers it overwrites whole: a partial write keeps the rest live
     bool relative = false;
     bool table_ref = false;
     int64_t target = 0;
+    std::optional<int64_t> address;  // the RVA a rip-relative lea forms: where a handler hands control back
     std::optional<IndexedLoad> indexed;
     std::array<std::byte, kMaxInstructionLength> bytes{};
 };
@@ -99,7 +113,8 @@ struct BranchMap {
     std::vector<Function> stopped;  // functions whose decoding stopped early, sorted by begin
 };
 
-// Every call and jump with a relative target in the functions of the exception table, and every entry of their jump tables.
+// Every call and jump with a relative target in the functions of the exception table, every address they form with a
+// rip-relative lea that points into .text, and every entry of their jump tables.
 // A table is read wherever the load points, and its entries count when they lie in the chain of the function that loads it.
 BranchMap collect_branches(const Image& image, const Decoder& decoder);
 

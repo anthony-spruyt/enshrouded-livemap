@@ -26,9 +26,13 @@ endif()
 add_library(livemap_compat_core STATIC
     src/analyze.cpp
     src/builds.cpp
+    src/callbacks.cpp
+    src/check.cpp
     src/cli.cpp
     src/disasm.cpp
+    src/hooks.cpp
     src/json.cpp
+    src/liveness.cpp
     src/pe.cpp
     src/report.cpp
     src/sha256.cpp
@@ -50,12 +54,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 set(LIVEMAP_COMPAT_TESTS "${CMAKE_CURRENT_LIST_DIR}/../../tests/compat")
-foreach(name IN ITEMS analyze builds cli disasm json pe report sha256 signature sites)
+foreach(name IN ITEMS analyze builds callbacks check cli disasm json liveness pe report sha256 signature sites)
     add_executable(compat_${name}_test "${LIVEMAP_COMPAT_TESTS}/${name}_test.cpp")
     target_link_libraries(compat_${name}_test PRIVATE livemap_compat_core)
     target_include_directories(compat_${name}_test PRIVATE "${LIVEMAP_COMPAT_TESTS}")
     add_test(NAME compat_${name} COMMAND compat_${name}_test)
 endforeach()
-foreach(name IN ITEMS builds json)
+foreach(name IN ITEMS builds callbacks json)
     target_compile_definitions(compat_${name}_test PRIVATE LIVEMAP_BUILDS_JSON="${CMAKE_CURRENT_LIST_DIR}/../../data/builds.json")
 endforeach()
+target_compile_definitions(compat_callbacks_test PRIVATE LIVEMAP_SOURCE_DIR="${CMAKE_CURRENT_LIST_DIR}/../../src")
+target_include_directories(compat_callbacks_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../..)

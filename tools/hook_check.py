@@ -1,5 +1,6 @@
 """Pulls the server exe of every build in data/builds.json that records an exe_sha256 from the private exe store.
 
+It runs the hook self-test and the compat tool's check on each exe, and refuses a change to a build that lists none.
 Run it from the repository root with GH_TOKEN, GITHUB_ACTOR and RUNNER_TEMP set; ctest runs test_hook_check.py.
 """
 
@@ -45,11 +46,17 @@ MAX_JSON_BYTES = 1 << 20
 MAX_LAYER_BYTES = 1 << 30
 REGULAR_FILE_TYPES = (tarfile.REGTYPE, tarfile.AREGTYPE)
 CHUNK_BYTES = 1 << 20
-SELFTEST_TIMEOUT = 120
+TOOL_TIMEOUT = 120
 BUILD_ID = re.compile(r"\d{1,12}", re.ASCII)
 WORK_NAME = "exe-hook-check"
 BUILDS_PATH = Path("data") / "builds.json"
 SELFTEST_PATH = Path("build") / "livemap_selftest.exe"
+COMPAT_PATH = Path("build") / "tools" / "compat" / "livemap_compat.exe"
+PINNED_ROWS = {
+    "25988414": "4e5da307fd9436448b8c1e75278d3f238411ed7ccfa6bf50b47dce3b730ef5ca",
+    "26083076": "023099bde5efd4c6ffa1791c99d156ea9105136b7e45165ad4a274ae3214d290",
+    "26319703": "7ec5bc5e3f155f711d4b1ae5f6e2dd8777d4c074d388d293567b3a16c6b61d21",
+}
 SITE_LINE = re.compile(r"^(\w+)\s+rva 0x[0-9a-f]+$", re.MULTILINE)
 
 
@@ -68,6 +75,15 @@ class Reply:
     status: int
     headers: object
     stream: object
+
+
+@dataclass(frozen=True)
+class Tools:
+    selftest: Path
+    compat: Path
+
+
+TOOLS = Tools(SELFTEST_PATH, COMPAT_PATH)
 
 
 class Registry:
@@ -291,28 +307,42 @@ def copy_hashed(source, out):
     return hasher.hexdigest(), total
 
 
-def run_selftest(selftest, exe, row, run=subprocess.run):
-    label = row["label"]
-    if not selftest.is_file():
-        raise HookCheckError(f"{selftest} was not built")
-    command = [str(selftest), str(exe)]
+def run_tool(name, program, arguments, label, run):
+    if not program.is_file():
+        raise HookCheckError(f"{program} was not built")
     env = {key: value for key, value in os.environ.items() if key != "GH_TOKEN"}
     try:
-        result = run(command, capture_output=True, text=True, errors="replace", timeout=SELFTEST_TIMEOUT, env=env)
+        result = run(
+            [str(program), *arguments], capture_output=True, text=True, errors="replace", timeout=TOOL_TIMEOUT, env=env
+        )
     except subprocess.TimeoutExpired as exc:
-        raise HookCheckError(f"livemap_selftest timed out after {SELFTEST_TIMEOUT} seconds (build {label})") from exc
+        raise HookCheckError(f"{name} timed out after {TOOL_TIMEOUT} seconds (build {label})") from exc
     except OSError as exc:
-        raise HookCheckError(f"livemap_selftest could not start ({type(exc).__name__})") from exc
+        raise HookCheckError(f"{name} could not start ({type(exc).__name__})") from exc
     print(result.stdout, end="")
     print(result.stderr, end="")
     if result.returncode != 0:
-        raise HookCheckError(f"livemap_selftest exited with {result.returncode} (build {label})")
-    if not re.search(rf"^server build {re.escape(label)}$", result.stdout, flags=re.MULTILINE):
+        raise HookCheckError(f"{name} exited with {result.returncode} (build {label})")
+    return result.stdout
+
+
+def run_compat_check(compat, exe, builds_path, row, run=subprocess.run):
+    label = row["label"]
+    arguments = ["check", "--builds", str(builds_path), "--exe", str(exe)]
+    stdout = run_tool("livemap_compat check", compat, arguments, label, run)
+    if not re.search(rf"^ok: row {re.escape(label)} ", stdout, flags=re.MULTILINE):
+        raise HookCheckError(f"livemap_compat check did not report row {label}")
+
+
+def run_selftest(selftest, exe, row, run=subprocess.run):
+    label = row["label"]
+    stdout = run_tool("livemap_selftest", selftest, [str(exe)], label, run)
+    if not re.search(rf"^server build {re.escape(label)}$", stdout, flags=re.MULTILINE):
         raise HookCheckError(f"livemap_selftest did not report server build {label}")
-    if "OK: all hook sites found" not in result.stdout:
+    if "OK: all hook sites found" not in stdout:
         raise HookCheckError(f"livemap_selftest did not report that all hook sites were found (build {label})")
     expected = [name for name in row["expected"] if name != "param_entity"]
-    found = SITE_LINE.findall(result.stdout)
+    found = SITE_LINE.findall(stdout)
     if sorted(found) != sorted(expected):
         missing = ", ".join(sorted(set(expected) - set(found)))
         unexpected = ", ".join(sorted(set(found) - set(expected)))
@@ -339,8 +369,8 @@ def select_builds(builds_path):
     for row in json.loads(builds_path.read_text(encoding="utf-8"))["builds"]:
         if row["steam"]["exe_sha256"] is None:
             print(
-                f"::notice title=Hook check skipped::build {row['label']} has no exe_sha256 in data/builds.json, "
-                "so the hook sites are not checked against its executable."
+                f"::notice title=Hook check::build {row['label']} lists no exe_sha256 in data/builds.json, "
+                "so its row and its sigset cannot change."
             )
             continue
         for tag in row["buildids"]:
@@ -352,10 +382,31 @@ def select_builds(builds_path):
     return selected
 
 
-def check_builds(builds_path, selftest, work, registry, run=subprocess.run):
+def row_digest(row, patterns):
+    canonical = json.dumps(row, sort_keys=True, separators=(",", ":")) + json.dumps(
+        patterns, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def check_row_coverage(builds_path):
+    document = json.loads(builds_path.read_text(encoding="utf-8"))
+    for row in document["builds"]:
+        if row["steam"]["exe_sha256"] is not None:
+            continue
+        label = row["label"]
+        if label not in PINNED_ROWS:
+            raise HookCheckError(f"build {label} lists no exe_sha256: a build needs one in data/builds.json")
+        if row_digest(row, document["sigsets"][row["sigset"]]) != PINNED_ROWS[label]:
+            raise HookCheckError(f"build {label} lists no exe_sha256, so its row and its sigset cannot change")
+
+
+def check_builds(builds_path, tools, work, registry, run=subprocess.run):
+    check_row_coverage(builds_path)
     for row, tag in select_builds(builds_path):
         exe = pull_exe(registry, tag, row["steam"]["exe_sha256"], work)
-        run_selftest(selftest, exe, row, run)
+        run_selftest(tools.selftest, exe, row, run)
+        run_compat_check(tools.compat, exe, builds_path, row, run)
 
 
 def require_env(env, name):
@@ -376,7 +427,7 @@ def main(env=None, opener=None, run=subprocess.run, sleep=time.sleep):
         work.mkdir(parents=True)
         registry = Registry(opener or build_opener(), sleep)
         registry.login(actor, secret)
-        check_builds(BUILDS_PATH, SELFTEST_PATH, work, registry, run)
+        check_builds(BUILDS_PATH, TOOLS, work, registry, run)
     except HookCheckError as exc:
         print(f"::error::{exc}")
         return 1

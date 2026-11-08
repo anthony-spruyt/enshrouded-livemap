@@ -80,7 +80,7 @@ constexpr std::string_view kBuilds = R"({
     {"site": "alpha", "bytes": "b8 11 11 11 11 48 89 d9", "offset": "0x0", "mandatory": true},
     {"site": "param_entity", "bytes": "4c 8b d9 48 8b 81 ?? ?? ?? ?? 8b 04 ?? c3", "offset": "0x0", "mandatory": true, "operands": {"entity_table": "0x6"}},
     {"site": "chat_post", "bytes": "b8 33 33 33 33 48 89 d9", "offset": "0x0", "mandatory": false},
-    {"site": "join_line", "bytes": "b8 44 44 44 44 b9 ?? ?? ?? ??", "offset": "0xa", "mandatory": false, "operands": {"join_tag": "0x6"}}
+    {"site": "join_line", "bytes": "b8 44 44 44 44 ba ?? ?? ?? ??", "offset": "0xa", "mandatory": false, "operands": {"join_tag": "0x6"}}
   ]},
   "builds": [
     {"label": "100", "buildids": ["100"], "time_date_stamp": 100, "size_of_image": "0x10000", "sigset": "s", "mining_layout": "m",
@@ -107,6 +107,29 @@ Run cli(const std::vector<std::string>& args) {
 std::string text_of(const Json& value, std::string_view key) {
     const Json* found = value.find(key);
     return found == nullptr ? "<missing>" : found->text();
+}
+
+void check_command(compat_test::Suite& t, Workspace& dir, std::string_view builds, std::string_view listed_sha256) {
+    const auto check = [&](std::string_view builds_name, std::string_view exe) {
+        return cli({"check", "--builds", dir.file(builds_name), "--exe", dir.file(exe)});
+    };
+    const Run passed = check("builds.json", "previous.exe");
+    t.check(passed.code == 0 && passed.out.starts_with("ok: row 100") && passed.err.empty(), "a check that finds nothing exits 0 and names the row");
+    std::string unlisted(builds);
+    unlisted.replace(unlisted.find(listed_sha256), 64, std::string(64, '0'));
+    write_text(dir.file("unlisted.json"), unlisted);
+    const Run failed = check("unlisted.json", "previous.exe");
+    t.check(failed.code == 3 && failed.out.starts_with("failed: row 100") && failed.out.contains("checksum") && failed.err.empty(), "a check that finds a problem exits 3 and lists it");
+    const Run unknown_exe = check("builds.json", "moved.exe");
+    t.check(unknown_exe.code == 1 && unknown_exe.err.contains("fingerprint"), "an exe that no row describes exits 1");
+    t.check(check("builds.json", "absent.exe").code == 1 && check("builds.json", "garbage.exe").code == 1, "an exe that cannot be read exits 1");
+    write_text(dir.file("broken.json"), "{");
+    t.check(check("absent.json", "previous.exe").code == 1 && check("broken.json", "previous.exe").code == 1, "a builds file that cannot be read exits 1");
+    const Run bare = cli({"check"});
+    t.check(bare.code == 2 && bare.err.contains("--builds is required") && bare.err.contains("usage: livemap_compat check"), "a check without arguments exits 2 with its usage");
+    t.check(cli({"check", "--builds", dir.file("builds.json")}).err.contains("--exe is required"), "and one without the exe names it");
+    const Run stray = cli({"check", "--builds", dir.file("builds.json"), "--exe", dir.file("previous.exe"), "--report", dir.file("x.json")});
+    t.check(stray.code == 2 && stray.err.contains("--report"), "a check refuses the arguments of the analysis");
 }
 
 }  // namespace
@@ -219,5 +242,7 @@ int main() {
     std::vector<std::string> bad_manifest = args("moved.exe", "200", "bad_manifest");
     bad_manifest[9] = "";
     t.check(cli(bad_manifest).code == 2, "a manifest that is not an id exits 2");
+
+    check_command(t, dir, builds, livemap::compat::sha256_hex(old_file));
     return t.result();
 }

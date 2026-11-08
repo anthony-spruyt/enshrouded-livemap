@@ -51,6 +51,76 @@ std::optional<IndexedLoad> indexed_load(const ZydisDecodedInstruction& decoded, 
     return IndexedLoad{decoded.raw.disp.offset, scaled->mem.disp.value};
 }
 
+constexpr uint16_t kWholeRegisterBits = 32;
+
+Registers general_register(ZydisRegister reg) {
+    const ZydisRegister whole = ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, reg);
+    if (whole < ZYDIS_REGISTER_RAX || whole > ZYDIS_REGISTER_R15) {
+        return 0;
+    }
+    return register_bit(static_cast<size_t>(whole - ZYDIS_REGISTER_RAX));
+}
+
+// xor and sub of a register with itself give zero whatever the register held.
+bool is_zeroing(const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands) {
+    if (decoded.mnemonic != ZYDIS_MNEMONIC_XOR && decoded.mnemonic != ZYDIS_MNEMONIC_SUB) {
+        return false;
+    }
+    const auto visible = operands.first(decoded.operand_count_visible);
+    return visible.size() == 2 && visible[0].type == ZYDIS_OPERAND_TYPE_REGISTER && visible[1].type == ZYDIS_OPERAND_TYPE_REGISTER && visible[0].reg.value == visible[1].reg.value;
+}
+
+void note_effects(Instruction& insn, const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands) {
+    const bool zeroing = is_zeroing(decoded, operands);
+    for (const ZydisDecodedOperand& operand : operands.first(decoded.operand_count)) {
+        if (operand.type == ZYDIS_OPERAND_TYPE_MEMORY) {
+            insn.reads |= general_register(operand.mem.base) | general_register(operand.mem.index);
+        } else if (operand.type == ZYDIS_OPERAND_TYPE_REGISTER) {
+            const Registers bit = general_register(operand.reg.value);
+            if ((operand.actions & ZYDIS_OPERAND_ACTION_MASK_READ) != 0 && !zeroing) {
+                insn.reads |= bit;
+            }
+            if ((operand.actions & ZYDIS_OPERAND_ACTION_WRITE) != 0 && operand.size >= kWholeRegisterBits) {
+                insn.kills |= bit;
+            }
+        }
+    }
+}
+
+std::optional<int64_t> rip_address(const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands, uint32_t rva) {
+    if (decoded.mnemonic != ZYDIS_MNEMONIC_LEA) {
+        return std::nullopt;
+    }
+    const auto found = std::ranges::find_if(operands.first(decoded.operand_count_visible), [](const ZydisDecodedOperand& operand) {
+        return operand.type == ZYDIS_OPERAND_TYPE_MEMORY && operand.mem.base == ZYDIS_REGISTER_RIP;
+    });
+    return found == operands.begin() + decoded.operand_count_visible ? std::nullopt : std::optional<int64_t>{int64_t{rva} + decoded.length + found->mem.disp.value};
+}
+
+Flow flow_of(const ZydisDecodedInstruction& decoded, std::span<const ZydisDecodedOperand> operands) {
+    using enum Flow;
+    switch (decoded.mnemonic) {
+        case ZYDIS_MNEMONIC_INT3:
+        case ZYDIS_MNEMONIC_UD2:
+        case ZYDIS_MNEMONIC_HLT:
+            return Stop;
+        default:
+            break;
+    }
+    switch (decoded.meta.category) {
+        case ZYDIS_CATEGORY_CALL:
+            return Call;
+        case ZYDIS_CATEGORY_RET:
+            return Return;
+        case ZYDIS_CATEGORY_COND_BR:
+            return Branch;
+        case ZYDIS_CATEGORY_UNCOND_BR:
+            return operands[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE ? Jump : Indirect;
+        default:
+            return Next;
+    }
+}
+
 bool same_encoding(const Instruction& a, const Instruction& b) {
     return a.length == b.length && a.relative == b.relative && a.table_ref == b.table_ref && a.bytes == b.bytes;
 }
@@ -315,6 +385,9 @@ std::optional<Instruction> Decoder::decode(std::span<const std::byte> code, uint
     insn.rva = rva;
     insn.length = decoded.length;
     insn.indexed = indexed_load(decoded, operands);
+    insn.address = rip_address(decoded, operands, rva);
+    insn.flow = flow_of(decoded, operands);
+    note_effects(insn, decoded, operands);
     std::copy_n(code.begin(), decoded.length, insn.bytes.begin());
     if (const auto& imm = decoded.raw.imm[0]; imm.is_relative) {
         insn.relative = true;
@@ -383,6 +456,9 @@ BranchMap collect_branches(const Image& image, const Decoder& decoder) {
         for (const Instruction& insn : found.scans[i].instructions) {
             if (insn.relative) {
                 map.branches.emplace_back(insn.rva, insn.target);
+            }
+            if (insn.address.has_value() && *insn.address >= 0 && image.in_text(static_cast<uint64_t>(*insn.address), 1)) {
+                map.branches.emplace_back(insn.rva, *insn.address);
             }
         }
         if (found.scans[i].stopped || found.conflicted[i]) {

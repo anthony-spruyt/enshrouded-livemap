@@ -109,6 +109,7 @@ add_test(NAME tools_paths COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:
 add_test(NAME tools_hook_check COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hook_check.py")
 add_test(NAME tools_data_only COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_data_only.py")
 add_test(NAME tools_boot_test COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_boot_test.py")
+add_test(NAME tools_compat_workflow COMMAND "${Python3_EXECUTABLE}" -B -m pytest -q -p no:cacheprovider "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_compat_workflow.py")
 
 # A stand-in for the game (the executable) loads the mod side (the DLL) and faults on purpose, so the two are separate
 # images; CI runs the same test under Wine with both files.

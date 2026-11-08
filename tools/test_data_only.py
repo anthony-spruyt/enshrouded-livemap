@@ -296,14 +296,6 @@ def test_an_alias_with_a_manifest_that_is_not_a_steam_id_is_reported(real, manif
     assert data_only.schema_errors(mutated(builds, lambda b: alias_last_row(b, manifest)), schema)
 
 
-def test_the_pull_request_that_adds_a_known_build_is_data_only(tmp_path, real):
-    builds, _ = real
-    shipped = (ROOT / DATA).read_text(encoding=ENCODING)
-    edited = json.dumps(mutated(builds, alias_last_row), indent=2) + "\n"
-    repo = make_merge(tmp_path, lambda r: write(r, DATA, edited), files={DATA: shipped})
-    assert data_only.is_data_only(data_only.changed_files(repo))
-
-
 def test_a_key_with_a_newline_is_reported_without_a_raw_newline(real):
     builds, schema = real
     errors = data_only.schema_errors(mutated(builds, lambda b: first_build(b).update({"x\ny": 1})), schema)

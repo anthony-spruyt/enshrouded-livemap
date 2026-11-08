@@ -165,7 +165,7 @@ jobs:
           DLL = "iphlpapi.dll"
           # Upstream's files after the repo's whitespace and markdown lint fixes; any other edit changes the digest.
           LINTED = {
-              "THIRD_PARTY_NOTICES.md": "b7b5f996ea18bdb3bdcaaa1e608044efd711fb673a70f0e95eeeb25c02a16ae9",
+              "THIRD_PARTY_NOTICES.md": "9abe1e7c81cd580ccf027a41b1ce5787458f342b8f7336ce54bea7016a83b803",
               "livemap/pois.json": "00923cfe8befed0c799cc9dec28f83595d67dd8f5931fee5a7c1295fa6b2fcb6",
               "livemap/weather.json": "456705c74c348184a6db0ae7966913708ccfa94eeba062df535ff45b50e06858",
               "livemap/fonts/OFL.txt": "ad9c189d8fe80860a6508268d1427d2cd0fec35982f89e935f292077378c7221",

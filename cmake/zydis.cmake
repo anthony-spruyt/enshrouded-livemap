@@ -4,6 +4,6 @@ FetchContent_Declare(
     Zydis
     GIT_REPOSITORY https://github.com/zyantific/zydis.git
     # renovate: depName=zyantific/zydis datasource=github-tags
-    GIT_TAG 569320ad3c4856da13b9dbf1f0d9e20bda63870e # v4.1.0
+    GIT_TAG a2278f1d254e492f6a6b39f6cb5d1f5d515659dc # v4.1.1
     EXCLUDE_FROM_ALL
 )

@@ -195,6 +195,10 @@ The supported server builds, their hook signatures and the RVAs the selftest exp
 `data/builds.json` (schema: `data/builds.schema.json`). CMake turns that file into the tables the DLL compiles in, so
 supporting another build whose code the existing signatures still match is a data change.
 
+CI pulls the server exe of every build in that file that lists an `exe_sha256` and runs `livemap_selftest` and
+`livemap_compat check` on it, so a new or changed sigset has to pass the hook checks in
+[`tools/compat/README.md`](tools/compat/README.md) before its pull request merges.
+
 A pull request that is a plain edit of `data/builds.json` and changes nothing else runs the `data-only` check, which
 passes when the file validates against the schema. Code pull requests skip it and merge as usual. The base commit's
 `tools/data_only.py` classifies the pull request.

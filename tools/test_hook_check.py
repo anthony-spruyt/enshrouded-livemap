@@ -8,6 +8,7 @@ import http.client
 import http.server
 import io
 import json
+import re
 import subprocess
 import tarfile
 import threading
@@ -595,6 +596,7 @@ def test_an_exe_that_does_not_match_the_row_sha_is_refused(tmp_path):
 LABEL = "9999999"
 ROW = {
     "label": LABEL,
+    "sigset": "patch1",
     "buildids": [TAG],
     "steam": {"depot": None, "manifest": None, "exe_sha256": EXE_SHA256},
     "expected": {"player_table": "0x7bed90", "movement": "0x9581a", "param_entity": "0x65fc00"},
@@ -606,19 +608,32 @@ GOOD_OUTPUT = (
     "param_entity  rva 0x65fc00 entity table +0x830\n"
     "OK: all hook sites found\n"
 )
+GOOD_COMPAT_OUTPUT = f"ok: row {LABEL} (patch1), 3 hooks checked\n"
+FAILED_COMPAT_OUTPUT = f"failed: row {LABEL} (patch1)\n  movement: a problem\n"
 
 
 class FakeRun:
-    def __init__(self, stdout=GOOD_OUTPUT, returncode=0, stderr="", failure=None):
-        self.result = subprocess.CompletedProcess([], returncode, stdout, stderr)
+    """Stands in for subprocess.run; `only` limits `returncode` and `failure` to the selftest or the compat check."""
+
+    def __init__(self, stdout=None, returncode=0, stderr="", failure=None, only=None):
+        self.stdout = stdout
+        self.returncode = returncode
+        self.stderr = stderr
         self.failure = failure
+        self.only = only
         self.calls = []
 
     def __call__(self, command, **kwargs):
         self.calls.append((command, kwargs))
+        tool = "compat" if command[1] == "check" else "selftest"
+        good = GOOD_COMPAT_OUTPUT if tool == "compat" else GOOD_OUTPUT
+        if self.only not in (None, tool):
+            return subprocess.CompletedProcess(command, 0, good, "")
         if self.failure:
             raise self.failure
-        return self.result
+        return subprocess.CompletedProcess(
+            command, self.returncode, good if self.stdout is None else self.stdout, self.stderr
+        )
 
 
 @pytest.fixture
@@ -696,19 +711,142 @@ def test_a_selftest_that_was_not_built_fails_the_check(tmp_path):
     assert run.calls == []
 
 
-def builds_file(tmp_path, *rows):
-    path = tmp_path / "builds.json"
-    path.write_text(json.dumps({"builds": list(rows)}), encoding="utf-8")
+@pytest.fixture
+def compat(tmp_path):
+    path = tmp_path / "livemap_compat.exe"
+    path.write_bytes(b"")
     return path
 
 
-def make_row(label, buildids, sha256):
+def test_compat_check_runs_on_the_extracted_exe_and_the_builds_file_with_a_timeout(compat, tmp_path):
+    run = FakeRun()
+    builds = tmp_path / "builds.json"
+    hook_check.run_compat_check(compat, tmp_path / "exe", builds, ROW, run)
+    command, kwargs = run.calls[0]
+    assert command == [str(compat), "check", "--builds", str(builds), "--exe", str(tmp_path / "exe")]
+    assert 0 < kwargs["timeout"] <= 600
+
+
+def test_compat_check_runs_without_the_registry_token_and_keeps_the_rest_of_the_environment(
+    compat, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("GH_TOKEN", SECRET)
+    monkeypatch.setenv("HOOK_CHECK_PROBE", "kept")
+    run = FakeRun()
+    hook_check.run_compat_check(compat, tmp_path / "exe", tmp_path / "builds.json", ROW, run)
+    env = run.calls[0][1]["env"]
+    assert "GH_TOKEN" not in env
+    assert env["HOOK_CHECK_PROBE"] == "kept"
+
+
+def test_compat_check_output_is_printed(compat, tmp_path, capsys):
+    run = FakeRun(stderr="a warning\n")
+    hook_check.run_compat_check(compat, tmp_path / "exe", tmp_path / "builds.json", ROW, run)
+    printed = capsys.readouterr().out
+    assert f"ok: row {LABEL}" in printed
+    assert "a warning" in printed
+
+
+@pytest.mark.parametrize(
+    ("run", "message"),
+    [
+        (FakeRun(returncode=3, stdout=FAILED_COMPAT_OUTPUT), "exited with 3"),
+        (FakeRun(returncode=1, stdout=""), "exited with 1"),
+        (FakeRun(stdout=GOOD_COMPAT_OUTPUT.replace(LABEL, "1111111")), f"did not report row {LABEL}"),
+        (FakeRun(stdout=GOOD_COMPAT_OUTPUT.replace(LABEL, LABEL + "0")), f"did not report row {LABEL}"),
+        (FakeRun(stdout=""), f"did not report row {LABEL}"),
+        (FakeRun(stdout=FAILED_COMPAT_OUTPUT), f"did not report row {LABEL}"),
+        (FakeRun(failure=subprocess.TimeoutExpired("compat", 1)), "timed out"),
+        (FakeRun(failure=OSError("cannot start")), "could not start"),
+    ],
+)
+def test_compat_check_failures_fail_the_check(run, message, compat, tmp_path):
+    with pytest.raises(HookCheckError, match=message):
+        hook_check.run_compat_check(compat, tmp_path / "exe", tmp_path / "builds.json", ROW, run)
+
+
+def test_a_failed_compat_check_still_prints_what_it_found(compat, tmp_path, capsys):
+    run = FakeRun(returncode=3, stdout=FAILED_COMPAT_OUTPUT)
+    with pytest.raises(HookCheckError):
+        hook_check.run_compat_check(compat, tmp_path / "exe", tmp_path / "builds.json", ROW, run)
+    assert "movement: a problem" in capsys.readouterr().out
+
+
+def test_a_compat_tool_that_was_not_built_fails_the_check(tmp_path):
+    run = FakeRun()
+    with pytest.raises(HookCheckError, match="was not built"):
+        hook_check.run_compat_check(tmp_path / "missing.exe", tmp_path / "exe", tmp_path / "b.json", ROW, run)
+    assert run.calls == []
+
+
+PATTERNS = [{"site": "movement", "bytes": "48 8b 05", "offset": "0x3"}]
+
+
+def builds_file(tmp_path, *rows, sigsets=None):
+    path = tmp_path / "builds.json"
+    sigsets = {"patch1": PATTERNS} if sigsets is None else sigsets
+    path.write_text(json.dumps({"sigsets": sigsets, "builds": list(rows)}), encoding="utf-8")
+    return path
+
+
+def make_row(label, buildids, sha256, sigset="patch1"):
     return {
         **ROW,
         "label": label,
+        "sigset": sigset,
         "buildids": buildids,
         "steam": {"depot": None, "manifest": None, "exe_sha256": sha256},
     }
+
+
+def test_a_sigset_used_by_a_build_with_an_exe_is_covered(tmp_path):
+    hook_check.check_sigset_coverage(builds_file(tmp_path, make_row("a", ["11"], EXE_SHA256)))
+
+
+def test_a_sigset_that_no_build_uses_is_refused(tmp_path):
+    path = builds_file(tmp_path, make_row("a", ["11"], EXE_SHA256), sigsets={"patch1": PATTERNS, "draft": PATTERNS})
+    with pytest.raises(HookCheckError, match="sigset draft"):
+        hook_check.check_sigset_coverage(path)
+
+
+def test_a_sigset_used_only_by_builds_without_an_exe_is_refused(tmp_path):
+    path = builds_file(
+        tmp_path,
+        make_row("a", ["11"], EXE_SHA256),
+        make_row("b", ["12"], None, sigset="draft"),
+        sigsets={"patch1": PATTERNS, "draft": PATTERNS},
+    )
+    with pytest.raises(HookCheckError, match="sigset draft"):
+        hook_check.check_sigset_coverage(path)
+
+
+@pytest.fixture
+def pinned(monkeypatch):
+    monkeypatch.setattr(hook_check, "PINNED_SIGSETS", {"old": hook_check.sigset_digest(PATTERNS)})
+
+
+def old_build_files(tmp_path, patterns):
+    rows = (make_row("a", ["11"], EXE_SHA256), make_row("b", ["12"], None, sigset="old"))
+    return builds_file(tmp_path, *rows, sigsets={"patch1": PATTERNS, "old": patterns})
+
+
+def test_a_pinned_sigset_needs_no_build_with_an_exe(tmp_path, pinned):
+    hook_check.check_sigset_coverage(old_build_files(tmp_path, PATTERNS))
+
+
+def test_a_pinned_sigset_that_changed_is_refused(tmp_path, pinned):
+    changed = [{**PATTERNS[0], "offset": "0x4"}]
+    with pytest.raises(HookCheckError, match="sigset old changed"):
+        hook_check.check_sigset_coverage(old_build_files(tmp_path, changed))
+
+
+def test_a_pinned_sigset_is_the_same_whatever_the_order_of_its_keys(tmp_path, pinned):
+    reordered = [dict(reversed(list(PATTERNS[0].items())))]
+    hook_check.check_sigset_coverage(old_build_files(tmp_path, reordered))
+
+
+def test_the_sigsets_of_this_repository_are_covered():
+    hook_check.check_sigset_coverage(Path(__file__).resolve().parents[1] / hook_check.BUILDS_PATH)
 
 
 def test_rows_with_an_exe_sha256_are_selected_once_per_build_id(tmp_path):
@@ -741,26 +879,58 @@ def test_build_ids_are_digits_only_before_they_reach_a_url_or_path(bad, tmp_path
         hook_check.select_builds(path)
 
 
-def test_every_selected_build_is_pulled_and_self_tested(tmp_path, selftest):
+def test_every_selected_build_is_pulled_self_tested_and_compat_checked(tmp_path, selftest, compat):
     other = Image(tag="7654321")
     fake, registry = make_registry(Image(), other)
     rows = (make_row(LABEL, [TAG, "7654321"], EXE_SHA256), make_row("old", ["99"], None))
     run = FakeRun()
     work = tmp_path / "work"
-    hook_check.check_builds(builds_file(tmp_path, *rows), selftest, work, registry, run)
-    assert [Path(command[1]) for command, _ in run.calls] == [
-        work / TAG / hook_check.EXE_NAME,
-        work / "7654321" / hook_check.EXE_NAME,
+    path = builds_file(tmp_path, *rows)
+    hook_check.check_builds(path, hook_check.Tools(selftest, compat), work, registry, run)
+    exes = [work / TAG / hook_check.EXE_NAME, work / "7654321" / hook_check.EXE_NAME]
+    assert [(Path(command[0]), command[1:]) for command, _ in run.calls] == [
+        (selftest, [str(exes[0])]),
+        (compat, ["check", "--builds", str(path), "--exe", str(exes[0])]),
+        (selftest, [str(exes[1])]),
+        (compat, ["check", "--builds", str(path), "--exe", str(exes[1])]),
     ]
     assert not [seen for seen in fake.seen if "/99" in seen[0]]
 
 
-def test_a_build_missing_from_the_store_fails_the_whole_check(tmp_path, selftest):
+def test_a_failed_compat_check_fails_the_whole_check(tmp_path, selftest, compat):
+    _, registry = make_registry(Image(), Image(tag="7654321"))
+    path = builds_file(tmp_path, make_row(LABEL, [TAG, "7654321"], EXE_SHA256))
+    run = FakeRun(returncode=3, stdout=FAILED_COMPAT_OUTPUT, only="compat")
+    with pytest.raises(HookCheckError, match="livemap_compat check exited with 3"):
+        hook_check.check_builds(path, hook_check.Tools(selftest, compat), tmp_path / "work", registry, run)
+    assert len(run.calls) == 2
+
+
+def test_a_build_missing_from_the_store_fails_the_whole_check(tmp_path, selftest, compat):
     _, registry = make_registry(Image())
     path = builds_file(tmp_path, make_row(LABEL, [TAG, "7654321"], EXE_SHA256))
     run = FakeRun()
     with pytest.raises(HookCheckError, match="no exe for build 7654321"):
-        hook_check.check_builds(path, selftest, tmp_path / "work", registry, run)
+        hook_check.check_builds(path, hook_check.Tools(selftest, compat), tmp_path / "work", registry, run)
+
+
+def test_an_uncovered_sigset_fails_before_anything_is_pulled(tmp_path, selftest, compat):
+    fake, registry = make_registry(Image())
+    path = builds_file(tmp_path, make_row(LABEL, [TAG], EXE_SHA256), sigsets={"patch1": PATTERNS, "draft": PATTERNS})
+    run = FakeRun()
+    requests = len(fake.seen)
+    with pytest.raises(HookCheckError, match="sigset draft"):
+        hook_check.check_builds(path, hook_check.Tools(selftest, compat), tmp_path / "work", registry, run)
+    assert len(fake.seen) == requests
+    assert run.calls == []
+
+
+def test_the_compat_tool_is_where_the_root_build_puts_it():
+    cmake = (Path(__file__).resolve().parents[1] / "CMakeLists.txt").read_text(encoding="utf-8")
+    subdirectories = re.findall(r"^add_subdirectory\(([\w/]+)\)", cmake, flags=re.MULTILINE)
+    assert [Path("build") / name for name in subdirectories if Path(name).name == "compat"] == [
+        hook_check.COMPAT_PATH.parent
+    ]
 
 
 class RedirectingServer(http.server.BaseHTTPRequestHandler):
@@ -796,10 +966,12 @@ def test_the_real_opener_hands_redirects_back_instead_of_following_them():
 def repo(tmp_path, monkeypatch):
     root = tmp_path / "repo"
     (root / "data").mkdir(parents=True)
-    (root / "build").mkdir()
-    (root / "build" / "livemap_selftest.exe").write_bytes(b"")
+    (root / hook_check.COMPAT_PATH.parent).mkdir(parents=True)
+    (root / hook_check.SELFTEST_PATH).write_bytes(b"")
+    (root / hook_check.COMPAT_PATH).write_bytes(b"")
     (root / "data" / "builds.json").write_text(
-        json.dumps({"builds": [make_row(LABEL, [TAG], EXE_SHA256)]}), encoding="utf-8"
+        json.dumps({"sigsets": {"patch1": PATTERNS}, "builds": [make_row(LABEL, [TAG], EXE_SHA256)]}),
+        encoding="utf-8",
     )
     monkeypatch.chdir(root)
     return root
@@ -814,7 +986,7 @@ def test_main_passes_and_leaves_no_exe_behind(repo, tmp_path, capsys):
     run = FakeRun()
     assert hook_check.main(make_env(tmp_path), fake, run, lambda seconds: None) == 0
     assert f"Hook check passed: all 2 hook sites found on server build {LABEL}" in capsys.readouterr().out
-    assert len(run.calls) == 1
+    assert [command[1] == "check" for command, _ in run.calls] == [False, True]
     assert not (tmp_path / "runner" / hook_check.WORK_NAME).exists()
 
 
@@ -852,6 +1024,26 @@ def test_main_removes_the_exe_when_the_selftest_fails(repo, tmp_path, capsys):
     assert not (tmp_path / "runner" / hook_check.WORK_NAME).exists()
 
 
+def test_main_fails_the_check_and_removes_the_exe_when_the_compat_check_fails(repo, tmp_path, capsys):
+    run = FakeRun(returncode=3, stdout=FAILED_COMPAT_OUTPUT, only="compat")
+    assert hook_check.main(make_env(tmp_path), FakeRegistry(Image()), run, lambda seconds: None) == 1
+    printed = capsys.readouterr().out
+    assert "movement: a problem" in printed
+    assert "::error::livemap_compat check exited with 3" in printed
+    assert not (tmp_path / "runner" / hook_check.WORK_NAME).exists()
+
+
+def test_main_fails_the_check_when_a_sigset_is_covered_by_no_exe(repo, tmp_path, capsys):
+    path = repo / "data" / "builds.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["sigsets"]["draft"] = PATTERNS
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    run = FakeRun()
+    assert hook_check.main(make_env(tmp_path), FakeRegistry(Image()), run, lambda seconds: None) == 1
+    assert "::error::" in capsys.readouterr().out
+    assert run.calls == []
+
+
 def test_main_starts_from_an_empty_work_dir(repo, tmp_path):
     work = tmp_path / "runner" / hook_check.WORK_NAME
     (work / "stale").mkdir(parents=True)
@@ -864,7 +1056,7 @@ def test_main_starts_from_an_empty_work_dir(repo, tmp_path):
         return original(command, **kwargs)
 
     assert hook_check.main(make_env(tmp_path), FakeRegistry(Image()), spy, lambda seconds: None) == 0
-    assert seen_stale == [False]
+    assert seen_stale == [False, False]
 
 
 def test_the_workflow_cleanup_step_deletes_the_directory_the_check_writes_to():

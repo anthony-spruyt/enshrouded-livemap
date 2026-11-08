@@ -1,3 +1,24 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "packageRules": [
+    {
+      "description": "config:recommended gives runtime dependencies fix; only the shipped files below release",
+      "matchPackageNames": ["*"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "Dependency bumps in files that go into the release zip or the compat tool release as a patch, because release-please hides chore commits. CI, test and dev tooling stay chore",
+      "matchFileNames": [
+        "CMakeLists.txt",
+        "cmake/**",
+        "data/**",
+        "package/**",
+        "src/**",
+        "tools/compat/**",
+        "web/**"
+      ],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    }
+  ]
 }

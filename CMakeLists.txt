@@ -12,11 +12,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 include(FetchContent)
 set(SAFETYHOOK_FETCH_ZYDIS ON CACHE BOOL "" FORCE)
-# Declared before safetyhook: the first FetchContent_Declare wins, so safetyhook's own Zydis v4.1.0 tag is ignored.
+# Declared before safetyhook: the first FetchContent_Declare wins, so safetyhook's own Zydis tag is ignored.
 include(cmake/zydis.cmake)
 FetchContent_Declare(
     safetyhook
     GIT_REPOSITORY https://github.com/cursey/safetyhook.git
+    # renovate: depName=cursey/safetyhook datasource=github-tags
     GIT_TAG 19223663fb8a573253ffb2e82da87cc354bf5c16 # v0.7.0
 )
 FetchContent_MakeAvailable(safetyhook)

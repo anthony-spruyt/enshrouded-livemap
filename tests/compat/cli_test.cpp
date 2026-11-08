@@ -109,13 +109,13 @@ std::string text_of(const Json& value, std::string_view key) {
     return found == nullptr ? "<missing>" : found->text();
 }
 
-void check_command(compat_test::Suite& t, Workspace& dir, const std::string& builds, const std::string& listed_sha256) {
+void check_command(compat_test::Suite& t, Workspace& dir, std::string_view builds, std::string_view listed_sha256) {
     const auto check = [&](std::string_view builds_name, std::string_view exe) {
         return cli({"check", "--builds", dir.file(builds_name), "--exe", dir.file(exe)});
     };
     const Run passed = check("builds.json", "previous.exe");
     t.check(passed.code == 0 && passed.out.starts_with("ok: row 100") && passed.err.empty(), "a check that finds nothing exits 0 and names the row");
-    std::string unlisted = builds;
+    std::string unlisted(builds);
     unlisted.replace(unlisted.find(listed_sha256), 64, std::string(64, '0'));
     write_text(dir.file("unlisted.json"), unlisted);
     const Run failed = check("unlisted.json", "previous.exe");

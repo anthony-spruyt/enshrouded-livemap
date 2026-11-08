@@ -1,6 +1,9 @@
 // The registers the hook callbacks read, as the compat tool knows them, against the callbacks in src/ and the sites in data/builds.json.
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -17,10 +20,13 @@
 #include "callbacks.h"
 #include "json.h"
 #include "registers.h"
+#include "src/mining.h"
 #include "test_support.h"
 
 using livemap::compat::Callback;
 using livemap::compat::Registers;
+using livemap::MiningLayout;
+using livemap::MiningSample;
 
 namespace {
 
@@ -68,6 +74,50 @@ livemap::compat::Catalog catalog() {
     return std::move(*parsed);
 }
 
+// The registers that change what mining_sample returns for a layout.
+Registers sample_registers(MiningLayout layout) {
+    const MiningSample base = livemap::mining_sample(layout, 0, 0, 0);
+    const std::array<std::pair<std::string_view, MiningSample>, 3> probes{{
+        {"rax", livemap::mining_sample(layout, 1, 0, 0)},
+        {"rbp", livemap::mining_sample(layout, 0, 1, 0)},
+        {"r15", livemap::mining_sample(layout, 0, 0, 1)},
+    }};
+    Registers used = 0;
+    for (const auto& [name, sample] : probes) {
+        if (sample.item != base.item || sample.amount != base.amount) {
+            used |= livemap::compat::register_named(name).value_or(0);
+        }
+    }
+    return used;
+}
+
+// Each mining layout reads the registers src/mining.h takes for it, and the ones on_mining reads for every layout.
+void check_mining_layouts(compat_test::Suite& t, Registers in_source) {
+    const std::array<std::pair<std::string_view, MiningLayout>, 2> layouts{{
+        {"inline_array", MiningLayout::InlineArray},
+        {"stack_record", MiningLayout::StackRecord},
+    }};
+    Registers by_layout = 0;
+    for (const auto& [name, layout] : layouts) {
+        by_layout |= sample_registers(layout);
+    }
+    const auto common = static_cast<Registers>(in_source & ~by_layout);
+    for (const Callback& callback : livemap::compat::callbacks()) {
+        const bool known = callback.layout.empty() || std::ranges::any_of(layouts, [&](const auto& layout) { return layout.first == callback.layout; });
+        t.check(callback.function != "on_mining" || known, std::string(callback.layout) + " is a layout of src/mining.h");
+    }
+    for (const auto& [name, layout] : layouts) {
+        Registers table = 0;
+        for (const Callback& callback : livemap::compat::callbacks()) {
+            if (callback.function == "on_mining" && (callback.layout.empty() || callback.layout == name)) {
+                table |= callback.reads;
+            }
+        }
+        const auto expected = static_cast<Registers>(common | sample_registers(layout));
+        t.check(table == expected, std::format("on_mining reads {} under {} in src/, the compat tool lists {}", livemap::compat::register_list(expected), name, livemap::compat::register_list(table)));
+    }
+}
+
 void check_against_source(compat_test::Suite& t) {
     const auto source = registers_in_source();
     t.check(!source.empty(), "the source has callbacks");
@@ -82,6 +132,7 @@ void check_against_source(compat_test::Suite& t) {
     for (const auto& [function, reads] : table) {
         t.check(source.contains(function), function + " is a callback in src/");
     }
+    check_mining_layouts(t, source.at("on_mining"));
 }
 
 void check_against_data(compat_test::Suite& t) {

@@ -23,10 +23,10 @@
 #include "src/mining.h"
 #include "test_support.h"
 
-using livemap::compat::Callback;
-using livemap::compat::Registers;
 using livemap::MiningLayout;
 using livemap::MiningSample;
+using livemap::compat::Callback;
+using livemap::compat::Registers;
 
 namespace {
 

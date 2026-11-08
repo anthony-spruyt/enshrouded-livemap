@@ -179,6 +179,7 @@ int main() {
     t.check(known.code == 0 && known.out.starts_with("known: build 300"), "the exe of a row under a new build id is known");
     auto aliased = Catalog::from_json(parse_file(dir.file("known.builds.json")));
     t.check(aliased.has_value() && aliased->rows().size() == 1 && aliased->row_with_build_id("300") == 0U, "and gets an alias");
+    t.check(aliased.has_value() && aliased->rows()[0].manifest == "5555", "with the manifest given on the command line, so the boot test downloads the build Steam serves");
 
     const Run hard = cli(args("grown.exe", "200", "hard"));
     t.check(hard.code == 0 && hard.out.starts_with("hard: build 200") && hard.out.contains("alpha"), "a hard build exits 0 and lists the reasons");

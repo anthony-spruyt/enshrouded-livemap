@@ -275,6 +275,35 @@ def test_a_non_printing_character_is_reported_even_where_a_pattern_passes_it(rea
     assert any("non-printing character" in error for error in errors)
 
 
+ALIAS_BUILD_ID = "9000000001"
+ALIAS_MANIFEST = "9000000002"
+
+
+def alias_last_row(builds, manifest=ALIAS_MANIFEST):
+    row = builds["builds"][-1]
+    row["buildids"].append(ALIAS_BUILD_ID)
+    row["steam"]["manifest"] = manifest
+
+
+def test_a_known_build_added_as_an_alias_with_its_manifest_validates(real):
+    builds, schema = real
+    assert data_only.schema_errors(mutated(builds, alias_last_row), schema) == []
+
+
+@pytest.mark.parametrize("manifest", ["0", "12x", "", "1" * 21, 7], ids=repr)
+def test_an_alias_with_a_manifest_that_is_not_a_steam_id_is_reported(real, manifest):
+    builds, schema = real
+    assert data_only.schema_errors(mutated(builds, lambda b: alias_last_row(b, manifest)), schema)
+
+
+def test_the_pull_request_that_adds_a_known_build_is_data_only(tmp_path, real):
+    builds, _ = real
+    shipped = (ROOT / DATA).read_text(encoding=ENCODING)
+    edited = json.dumps(mutated(builds, alias_last_row), indent=2) + "\n"
+    repo = make_merge(tmp_path, lambda r: write(r, DATA, edited), files={DATA: shipped})
+    assert data_only.is_data_only(data_only.changed_files(repo))
+
+
 def test_a_key_with_a_newline_is_reported_without_a_raw_newline(real):
     builds, schema = real
     errors = data_only.schema_errors(mutated(builds, lambda b: first_build(b).update({"x\ny": 1})), schema)

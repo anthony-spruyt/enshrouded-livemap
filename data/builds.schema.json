@@ -111,6 +111,7 @@
           "enum": ["inline_array", "stack_record"]
         },
         "steam": {
+          "description": "What the boot test downloads: the depot and the manifest of the newest id in buildids, and the checksum its exe must have.",
           "type": "object",
           "required": ["depot", "manifest", "exe_sha256"],
           "additionalProperties": false,

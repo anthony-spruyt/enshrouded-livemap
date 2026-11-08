@@ -55,7 +55,8 @@ describes), `2` for a wrong command line, and `3` when a check failed. The probl
 ## Verdicts
 
 - `known`: the fingerprint of the exe is already a row of the builds file, the exe is the one the row lists, and every
-  site is where the row says. `--builds-out` holds the builds file with the build id as an alias of that row.
+  site is where the row says. `--builds-out` holds the builds file with the build id as an alias of that row and
+  `--manifest` as the row's manifest, because the row's manifest is the one of its newest build.
 - `easy`: every pattern matches once, the function around each site equals the previous build's once addresses are
   normalized, no branch lands inside the bytes a hook overwrites, and the accessor operand is read by signature.
   `--builds-out` holds the builds file with a new row.

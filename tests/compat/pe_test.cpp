@@ -163,7 +163,7 @@ void check_scopes(compat_test::Suite& t) {
     constexpr unsigned kFinally = compat_test::kTerminationHandlerFlag;
     constexpr unsigned kChained = compat_test::kChainFlag;
     const std::vector<ScopeRecord> guarded{{0x1004, 0x1010, 1, 0x1020}, {0x1010, 0x1018, 0x1180, 0}, {0x1020, 0x1030, 1, 0x1210}, {0x10f0, 0x1100, 1, 0x1050}};
-    const std::vector<std::vector<std::byte>> infos{
+    const std::vector infos{
         compat_test::scope_info(kHandler, 0, guarded, 4),
         compat_test::scope_info(kFinally, 3, {{0x1300, 0x1310, 0x1180, 0x1320}}, 1),
         compat_test::scope_info(kHandler, 0, {{0x1400, 0x1410, 1, 0x1420}}, 0x10000000),

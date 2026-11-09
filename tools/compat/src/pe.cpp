@@ -208,7 +208,7 @@ std::optional<uint32_t> peek_dword(const std::vector<std::byte>& mapped, uint64_
 std::optional<uint64_t> scope_table_at(const std::vector<std::byte>& mapped, uint32_t unwind) {
     const auto header = peek(mapped, unwind, 1);
     const auto codes = peek(mapped, uint64_t{unwind} + kUnwindCountOffset, 1);
-    if (!header || !codes) {
+    if (!header.has_value() || !codes.has_value()) {
         return std::nullopt;
     }
     const uint64_t flags = *header >> kUnwindFlagsShift;
@@ -222,7 +222,7 @@ std::optional<uint64_t> scope_table_at(const std::vector<std::byte>& mapped, uin
 std::vector<ScopeJump> scope_jumps_of(const std::vector<std::byte>& mapped, const Chains& chains, const Entry& entry, uint32_t root) {
     const auto table = scope_table_at(mapped, entry.unwind);
     const auto count = table ? peek(mapped, *table, 4) : std::nullopt;
-    if (!count) {
+    if (!count.has_value()) {
         return {};
     }
     std::vector<ScopeJump> jumps;
@@ -232,11 +232,11 @@ std::vector<ScopeJump> scope_jumps_of(const std::vector<std::byte>& mapped, cons
         const auto end = peek_dword(mapped, at + 4);
         const auto handler = peek_dword(mapped, at + 8);
         const auto target = peek_dword(mapped, at + 12);
-        if (!begin || !end || !handler || !target) {
+        if (!begin.has_value() || !end.has_value() || !handler.has_value() || !target.has_value()) {
             return {};
         }
-        const bool handled = *handler == kExecuteHandler || chains.root_at(*handler).has_value();
-        if (*begin >= *end || !chains.holds(root, *begin, *end) || !handled || (*target != 0 && !chains.holds(root, *target, *target + 1))) {
+        if (const bool handled = *handler == kExecuteHandler || chains.root_at(*handler).has_value();
+            *begin >= *end || !chains.holds(root, *begin, *end) || !handled || (*target != 0 && !chains.holds(root, *target, *target + 1))) {
             return {};
         }
         if (*target != 0) {

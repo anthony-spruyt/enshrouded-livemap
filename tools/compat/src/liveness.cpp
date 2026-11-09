@@ -257,7 +257,7 @@ Registers written_after(const Node& node, Registers before) {
 // What each node can rely on having been written when it starts.
 std::vector<Registers> solve_written(const Graph& graph, const Predecessors& from, const std::vector<bool>& roots) {
     constexpr Registers kUnknown = 0xffff;
-    std::vector<Registers> before(graph.size(), kUnknown);
+    std::vector before(graph.size(), kUnknown);
     for (bool changed = true; changed;) {
         changed = false;
         for (size_t at = 0; at < graph.size(); ++at) {

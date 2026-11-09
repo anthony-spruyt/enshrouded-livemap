@@ -69,7 +69,7 @@ inline void push_dword(std::vector<std::byte>& bytes, uint32_t value) {
 
 // Unwind info with `flags`, `codes` unwind codes, a handler address, then a scope table that claims `count` records.
 inline std::vector<std::byte> scope_info(unsigned flags, unsigned codes, const std::vector<ScopeRecord>& records, uint32_t count, unsigned version = 1) {
-    std::vector<std::byte> info{static_cast<std::byte>(version | (flags << 3)), std::byte{0}, static_cast<std::byte>(codes), std::byte{0}};
+    std::vector info{static_cast<std::byte>(version | (flags << 3)), std::byte{0}, static_cast<std::byte>(codes), std::byte{0}};
     info.resize(info.size() + (codes + 1) / 2 * 4);
     push_dword(info, 0x1f00);
     push_dword(info, count);

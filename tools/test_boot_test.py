@@ -3,11 +3,13 @@
 import hashlib
 import http.server
 import json
+import os
 import re
 import socket
 import subprocess
 import sys
 import threading
+import types
 from pathlib import Path
 
 import boot_test
@@ -77,8 +79,9 @@ def test_rows_that_record_different_depots_are_an_error():
 
 
 def test_the_depot_is_digits_only_so_it_is_safe_in_a_command():
+    builds = builds_of(row("a", ["1"], depot="1; id"))
     with pytest.raises(BootTestError, match="not a plain id"):
-        boot_test.download_depot(builds_of(row("a", ["1"], depot="1; id")))
+        boot_test.download_depot(builds)
 
 
 def test_the_shipped_builds_name_a_depot_and_one_row_for_each_recorded_exe():
@@ -930,10 +933,18 @@ def test_the_verify_command_fails_when_the_download_is_in_no_row(tmp_path, monke
     assert "does not support" in capsys.readouterr().out
 
 
+def host_os(ids):
+    """The os module as boot_test sees it: with the user and group ids of a Linux runner, or without them."""
+    names = {"environ": os.environ}
+    if ids:
+        names.update(getuid=lambda: ids[0], getgid=lambda: ids[1])
+    return types.SimpleNamespace(**names)
+
+
 class BootCall:
     """The `run` command with the boot itself replaced; it records the setup the command built."""
 
-    def __init__(self, tmp_path, monkeypatch):
+    def __init__(self, tmp_path, monkeypatch, ids=IDS):
         self.tmp_path = tmp_path
         self.server = tmp_path / "work" / "enshrouded" / SERVER
         self.server.mkdir(parents=True)
@@ -941,6 +952,7 @@ class BootCall:
         self.setups = []
         monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
         monkeypatch.setenv("BOOT_TEST_IMAGE", IMAGE)
+        monkeypatch.setattr(boot_test, "os", host_os(ids))
         monkeypatch.setattr(boot_test, "run_boot_test", lambda setup, tools: self.setups.append(setup) or 0)
 
     def go(self, *rows):
@@ -954,6 +966,14 @@ def test_the_run_command_boots_the_row_whose_digest_matches_the_download(tmp_pat
     (setup,) = call.setups
     assert setup.target["label"] == "served"
     assert setup.names == MANDATORY
+    assert setup.ids == IDS
+
+
+def test_the_run_command_needs_a_linux_host(tmp_path, monkeypatch, capsys):
+    call = BootCall(tmp_path, monkeypatch, ids=None)
+    assert call.go(row("served", ["1"], exe_sha256=call.digest)) == 1
+    assert call.setups == []
+    assert "runs on Linux" in capsys.readouterr().out
 
 
 def test_the_run_command_boots_nothing_when_the_download_is_in_no_row(tmp_path, monkeypatch, capsys):

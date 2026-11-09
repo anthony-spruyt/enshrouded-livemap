@@ -60,22 +60,21 @@ std::byte* allocate_code_page() {
     SYSTEM_INFO machine{};
     GetSystemInfo(&machine);
     const uintptr_t granularity = machine.dwAllocationGranularity;
-    auto* region = reinterpret_cast<const std::byte*>(GetModuleHandleW(nullptr));
+    auto region = std::bit_cast<uintptr_t>(GetModuleHandleW(nullptr));
     for (int walked = 0; walked < kRegionsToWalk; ++walked) {
         MEMORY_BASIC_INFORMATION info{};
-        if (VirtualQuery(region, &info, sizeof info) == 0) {
+        if (VirtualQuery(std::bit_cast<void*>(region), &info, sizeof info) == 0) {
             break;
         }
-        const auto start = reinterpret_cast<uintptr_t>(info.BaseAddress);
+        const auto start = std::bit_cast<uintptr_t>(info.BaseAddress);
         const uintptr_t end = start + info.RegionSize;
-        const uintptr_t slot = (start + granularity - 1) / granularity * granularity;
-        if (info.State == MEM_FREE && slot + kPageSize <= end) {
-            void* page = VirtualAlloc(reinterpret_cast<void*>(slot), kPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        if (const uintptr_t slot = (start + granularity - 1) / granularity * granularity; info.State == MEM_FREE && slot + kPageSize <= end) {
+            void* page = VirtualAlloc(std::bit_cast<void*>(slot), kPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
             if (page != nullptr) {
                 return static_cast<std::byte*>(page);
             }
         }
-        region = reinterpret_cast<const std::byte*>(end);
+        region = end;
     }
     return allocate_page(PAGE_EXECUTE_READWRITE);
 }

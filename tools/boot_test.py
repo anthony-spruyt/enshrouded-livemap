@@ -23,7 +23,7 @@ from data_only import annotation, github_output
 from paths import safe_path
 
 DATA_FILE = "data/builds.json"
-USAGE = "usage: boot_test.py target | verify-exe SERVER_DIR | run WORK_DIR PACKAGE_DIR"
+USAGE = "usage: boot_test.py depot | verify-exe SERVER_DIR | run WORK_DIR PACKAGE_DIR"
 ENCODING = "utf-8"
 PORT = 18080
 MAX_AGE_MS = 5000
@@ -69,32 +69,23 @@ class BootTestError(Exception):
     pass
 
 
-def pick_target(builds):
-    """The newest supported build that records where to download it."""
-    rows = [b for b in builds["builds"] if b["steam"]["depot"] and b["steam"]["manifest"]]
-    if not rows:
-        raise BootTestError(f"no build in {DATA_FILE} records a Steam depot and manifest to download")
-    return max(rows, key=_build_number)
+def download_depot(builds):
+    depots = {b["steam"]["depot"] for b in builds["builds"] if b["steam"]["depot"]}
+    if not depots:
+        raise BootTestError(f"{DATA_FILE} records no Steam depot to download")
+    if len(depots) > 1:
+        raise BootTestError(f"{DATA_FILE} records more than one Steam depot, and the boot test downloads one")
+    (depot,) = depots
+    if not ID_SHAPE.fullmatch(depot):
+        raise BootTestError(f"depot {depot!r} is not a plain id")
+    return depot
 
 
 def _build_number(target):
     return max((int(i) for i in target["buildids"] if ID_SHAPE.fullmatch(i)), default=0)
 
 
-def download_ids(target):
-    values = {"depot": target["steam"]["depot"], "manifest": target["steam"]["manifest"]}
-    for name, value in [*values.items(), *(("buildid", i) for i in target["buildids"])]:
-        if not ID_SHAPE.fullmatch(value):
-            raise BootTestError(f"{name} {value!r} of build {target['label']} is not a plain id")
-    return {**values, "buildid": str(_build_number(target))}
-
-
-def verify_exe(target, server_dir):
-    expected = target["steam"]["exe_sha256"]
-    if not expected:
-        raise BootTestError(
-            f"build {target['label']} records a manifest but no exe_sha256 to check the download against"
-        )
+def exe_digest(server_dir):
     exe = Path(server_dir) / EXE_NAME
     if not exe.is_file():
         raise BootTestError(f"{EXE_NAME} not found in the download")
@@ -102,10 +93,23 @@ def verify_exe(target, server_dir):
     with exe.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
-    if digest.hexdigest() != expected:
+    return digest.hexdigest()
+
+
+def row_for_digest(builds, digest):
+    rows = [b for b in builds["builds"] if b["steam"]["exe_sha256"] == digest]
+    if not rows:
         raise BootTestError(
-            f"{EXE_NAME} does not match the exe_sha256 of build {target['label']} (got {digest.hexdigest()})"
+            f"Steam's current server (exe sha256 {digest}) is in no row of {DATA_FILE}, "
+            "so the map does not support it yet"
         )
+    if len(rows) > 1:
+        raise BootTestError(f"{DATA_FILE} has more than one row with the exe sha256 {digest}")
+    return rows[0]
+
+
+def served_row(builds, server_dir):
+    return row_for_digest(builds, exe_digest(server_dir))
 
 
 def hook_pattern(name):
@@ -465,16 +469,16 @@ def _load_builds(root):
         raise BootTestError(f"{DATA_FILE} could not be read as JSON: {type(error).__name__}") from None
 
 
-def _target(root):
-    ids = download_ids(pick_target(_load_builds(root)))
-    print(f"boot test target: build {ids['buildid']}")
-    github_output(f"{name}={value}" for name, value in ids.items())
+def _depot(root):
+    depot = download_depot(_load_builds(root))
+    print(f"boot test downloads depot {depot}")
+    github_output([f"depot={depot}"])
     return 0
 
 
 def _verify(root, server):
-    verify_exe(pick_target(_load_builds(root)), server)
-    print(f"{EXE_NAME} matches the exe_sha256 recorded in {DATA_FILE}")
+    row = served_row(_load_builds(root), server)
+    print(f"{EXE_NAME} is the server of build {row['label']} in {DATA_FILE}")
     return 0
 
 
@@ -485,10 +489,10 @@ def _run(root, work, package):
     if not hasattr(os, "getuid"):
         raise BootTestError("the boot test runs on Linux")
     builds = _load_builds(root)
-    target = pick_target(builds)
-    download_ids(target)
+    game_root = work / "enshrouded"
+    target = served_row(builds, game_root / SERVER_DIR)
     setup = Setup(
-        root=work / "enshrouded",
+        root=game_root,
         package=package,
         target=target,
         names=mandatory_sites(builds, target),
@@ -504,7 +508,7 @@ def main(argv=None, root=None):
     root = Path.cwd() if root is None else Path(root)
     roots = [os.environ["RUNNER_TEMP"]] if os.environ.get("RUNNER_TEMP") else []
     commands = {
-        ("target", 0): lambda: _target(root),
+        ("depot", 0): lambda: _depot(root),
         ("verify-exe", 1): lambda: _verify(root, Path(safe_path(argv[1], roots))),
         ("run", 2): lambda: _run(root, Path(safe_path(argv[1], roots)), Path(safe_path(argv[2], roots))),
     }

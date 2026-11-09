@@ -19,7 +19,7 @@ A new server build goes through these steps. For now, a person runs each step by
 
 1. `exe-capture.yaml` saves the new build's server exe to the exe store. It takes the same two inputs as `compat.yaml` and only accepts Steam's current public build, so run it before the next patch ships. The next build is judged against this exe.
 2. `compat.yaml` judges the new build against the last supported one.
-3. A PR that changes only `data/builds.json` runs the `data-only` check and the boot test. The check runs only when that file is the only change, and passes when it is valid against its schema. The boot test starts the real server with the built DLL and checks that the map comes up.
+3. A PR that changes only `data/builds.json` runs the `data-only` check and the boot test. The check runs only when that file is the only change, and passes when it is valid against its schema. The boot test starts the real server with the built DLL and checks that the map comes up. It always boots the server Steam serves now, and fails when no row of `data/builds.json` matches that server.
 4. release-please opens a release PR. Merging it cuts the release.
 
 The robot that chains these steps on its own is still being built (see [spruyt-labs issue 4105](https://github.com/anthony-spruyt/spruyt-labs/issues/4105)).
@@ -44,7 +44,7 @@ The artifact never holds game files.
 
 The `result` in `report.json` is one of:
 
-- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id and its manifest are new, so `builds.json` adds the id to that row and sets the row's manifest to the new build's: Steam serves only its current public build, and the boot test downloads the manifest the row lists. If the build id is listed already, the file is unchanged and there is nothing to commit.
+- `known`: the exe is one that a row in `data/builds.json` already lists. Only the build id and its manifest are new, so `builds.json` adds the id to that row and sets the row's manifest to the new build's. If the build id is listed already, the file is unchanged and there is nothing to commit.
 - `easy`: every pattern matches once, and the code around each site is the same as in the last supported build, apart from addresses. `builds.json` gets a new row.
 - `hard`: anything else. There is no `builds.json`. `report.json` lists each site that differs and how, and a person writes the patch.
 
@@ -242,10 +242,13 @@ passes when the file validates against the schema. Code pull requests skip it an
 `tools/data_only.py` classifies the pull request.
 
 A pull request that changes `data/`, `src/`, `cmake/`, `CMakeLists.txt` or the boot test's own files (`tools/boot_test.py`,
-`tools/data_only.py`, `ci-repo.yaml`) also runs the `boot-test` job. It downloads the newest build in `data/builds.json`
-that lists a Steam depot and manifest and starts it in the `mornedhels/enshrouded-server` image, first without the DLL and
-then with the built one. The server must be started by its supervisor exactly once, so a crash that the supervisor retries
-fails the job. The run without the DLL passes when the game answers its query port and stays up for a minute. The run with
-the DLL passes when the server reaches RUNNING, `livemap.log` lists every mandatory hook, the map serves fresh data, and the
-server runs for 10 minutes without a crash or exit. The game files stay on the runner and are never uploaded or cached;
-`tools/boot_test.py` holds the checks.
+`tools/data_only.py`, `ci-repo.yaml`) also runs the `boot-test` job. It downloads the server Steam serves now: the depot
+that `data/builds.json` records, without a manifest, so Steam hands out its current public build. It hashes
+`enshrouded_server.exe` and picks the row of `data/builds.json` whose `steam.exe_sha256` matches; the row gives the
+sigset, and so the mandatory hooks, that the job checks. When no row matches, the job fails with a message that Steam's
+current server is in no row, so the map does not support it yet. It starts the server in the
+`mornedhels/enshrouded-server` image, first without the DLL and then with the built one. The server must be started by
+its supervisor exactly once, so a crash that the supervisor retries fails the job. The run without the DLL passes when
+the game answers its query port and stays up for a minute. The run with the DLL passes when the server reaches RUNNING,
+`livemap.log` lists every mandatory hook, the map serves fresh data, and the server runs for 10 minutes without a crash
+or exit. The game files stay on the runner and are never uploaded or cached; `tools/boot_test.py` holds the checks.

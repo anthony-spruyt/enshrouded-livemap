@@ -529,6 +529,8 @@ Analysis judge_extra(compat_test::Suite& t, const ExeLayout& layout) {
     return run(t, exe_of(layout), exe_of(next));
 }
 
+constexpr uint32_t kFarPad = 0x100;  // keeps the extra function more than 128 bytes from every hook
+
 void check_branch_map(compat_test::Suite& t) {
     using enum Verdict;
     const ExeSites s = sites_of(ExeLayout{});
@@ -547,14 +549,21 @@ void check_branch_map(compat_test::Suite& t) {
 
     ExeLayout stray;
     stray.extra = Extra::Garbage;
+    stray.extra_pad = kFarPad;
     const Analysis lone = judge_extra(t, stray);
     t.check(lone.verdict == Easy && lone.undecodable_functions == 1U, "a function that cannot be decoded, tied to no site, leaves the verdict and is counted");
     stray.extra_chained = true;
     const Analysis chunk = judge_extra(t, stray);
     t.check(chunk.verdict == Hard && mentions(chunk, "alpha") && chunk.undecodable_functions == 1U, "a chunk of the hooked function that cannot be decoded is hard");
 
+    ExeLayout close;
+    close.extra = Extra::Garbage;
+    const Analysis beside = judge_extra(t, close);
+    t.check(beside.verdict == Hard && mentions(beside, "near the hook"), "a function that cannot be decoded within 128 bytes of a hook is hard");
+
     ExeLayout jumper;
     jumper.extra = Extra::JumpIn;
+    jumper.extra_pad = kFarPad;
     const Analysis tied = judge_extra(t, jumper);
     t.check(tied.verdict == Hard && mentions(tied, "alpha") && site(tied, "alpha").into_hook.empty(), "a function that cannot be decoded after a jump into the hooked function is hard");
     jumper.extra_target = 0xc8;

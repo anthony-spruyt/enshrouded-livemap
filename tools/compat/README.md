@@ -41,10 +41,15 @@ changes a sigset passes only when every check holds. Each problem names the site
 
 - Each hook starts on a whole instruction, decoded from the start of its function through the exe's `.pdata`.
 - No branch lands inside the bytes a hook overwrites.
+- The function around each hook and its chunks decode to their end, and no other function has undecoded bytes within
+  128 bytes of a hook.
 - Every register a callback reads from the context is one the code at the hook uses: the instruction there, the code it
-  leads to, or the instruction just before the hook. A call uses an argument register only when the code just before it
-  wrote that register. A hook whose code from there cannot be followed is refused. The registers each callback reads are
-  listed in `src/callbacks.cpp`; a test keeps that list in step with the callbacks.
+  leads to, or the instruction just before the hook when the function wrote that register on every path from its entry
+  to the hook (at the entry only the stack pointer is written, and a call keeps just the registers it preserves and its
+  result; code that an exception handler or a branch from outside the function enters, and code that nothing in the
+  function leads to, starts with only the stack pointer written). A call uses an argument register only when the code
+  just before it wrote that register. A hook whose code from there cannot be followed is refused. The registers each
+  callback reads are listed in `src/callbacks.cpp`; a test keeps that list in step with the callbacks.
 - The exe is the one the row lists, and every site the row lists is found once, at the RVA the row lists.
 
 The exit code is `0` when every check holds, `1` when the inputs cannot be judged (an unreadable file, an exe that no row
@@ -58,7 +63,8 @@ describes), `2` for a wrong command line, and `3` when a check failed. The probl
   site is where the row says. `--builds-out` holds the builds file with the build id as an alias of that row and
   `--manifest` as the row's manifest, because the row's manifest is the one of its newest build.
 - `easy`: every pattern matches once, the function around each site equals the previous build's once addresses are
-  normalized, no branch lands inside the bytes a hook overwrites, and the accessor operand is read by signature.
+  normalized, no branch lands inside the bytes a hook overwrites, no function that stops decoding is tied to a hook, and
+  the accessor operand is read by signature.
   `--builds-out` holds the builds file with a new row.
 - `hard`: anything else. The reasons name each site that differs and how. `--builds-out` is not written, and a file
   an earlier run left there is removed. The same happens on exit `1`. A `--builds-out` that is one of the inputs is
@@ -67,8 +73,8 @@ describes), `2` for a wrong command line, and `3` when a check failed. The probl
 Comparison works on decoded instructions. Relative branch targets and RIP-relative displacements are normalized, and the
 bytes the DLL reads as values of its own (the pattern operands) are left out. A jump table that sits inside a function is
 compared as offsets from the start of the function. For the hook check the tool collects the branch targets of the whole
-exe, including the entries of the jump tables it reads and the addresses of `.text` that a RIP-relative `lea` forms, so a
-branch from another function counts.
+exe, including the entries of the jump tables it reads, the addresses of `.text` that a RIP-relative `lea` forms, and the
+jump targets in the scope tables of structured exception handlers, so a branch from another function counts.
 
 ## Report
 

@@ -1,5 +1,7 @@
 // The PE reader on synthetic files: where .text and the exception table land, and which files it refuses.
+#include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "pe.h"
@@ -138,6 +140,90 @@ void check_chains(compat_test::Suite& t) {
     t.check(!beyond && beyond.error().contains("unwind"), "unwind info outside the image is refused");
 }
 
+using compat_test::ScopeRecord;
+using Jumps = std::vector<std::pair<uint32_t, uint32_t>>;
+
+Jumps jumps_of(const livemap::compat::Image& image) {
+    Jumps out;
+    for (const auto& jump : image.scope_jumps()) {
+        out.emplace_back(jump.begin, jump.target);
+    }
+    return out;
+}
+
+bool none_in(const Jumps& jumps, uint32_t low, uint32_t high) {
+    const auto inside = [&](uint32_t rva) { return rva >= low && rva < high; };
+    return std::ranges::none_of(jumps, [&](const auto& jump) { return inside(jump.first) || inside(jump.second); });
+}
+
+void check_scopes(compat_test::Suite& t) {
+    constexpr uint32_t kInfo = 0x4000;
+    constexpr uint32_t kStep = 0x100;
+    constexpr unsigned kHandler = compat_test::kExceptionHandlerFlag;
+    constexpr unsigned kFinally = compat_test::kTerminationHandlerFlag;
+    constexpr unsigned kChained = compat_test::kChainFlag;
+    const std::vector<ScopeRecord> guarded{{0x1004, 0x1010, 1, 0x1020}, {0x1010, 0x1018, 0x1180, 0}, {0x1020, 0x1030, 1, 0x1210}, {0x10f0, 0x1100, 1, 0x1050}};
+    const std::vector infos{
+        compat_test::scope_info(kHandler, 0, guarded, 4),
+        compat_test::scope_info(kFinally, 3, {{0x1300, 0x1310, 0x1180, 0x1320}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1400, 0x1410, 1, 0x1420}}, 0x10000000),
+        compat_test::scope_info(kHandler, 0, {{0x1500, 0x1510, 1, 0x1520}, {0x1520, 0x1520, 1, 0}}, 2),
+        compat_test::scope_info(kHandler, 0, {{0x1600, 0x1610, 1, 0x1520}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1004, 0x1010, 1, 0x1720}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1800, 0x1810, 1, 0x1820}}, 1, 3),
+        compat_test::scope_info(0, 0, {{0x1900, 0x1910, 1, 0x1920}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1a30, 0x1a50, 1, 0x1a20}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1b00, 0x1b10, 1, 0x1b20}, {0x1b10, 0x1b20, 1, 0x1b30}}, 2),
+        compat_test::scope_info(kHandler, 0, {{0x1c00, 0x1c10, 0x7770, 0x1c20}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1cf0, 0x1d10, 1, 0x1d20}}, 1),
+        compat_test::scope_info(kHandler | kChained, 0, {{0x1e00, 0x1e10, 1, 0x1e20}}, 1),
+        compat_test::scope_info(kHandler, 0, {{0x1f00, 0x1f10, 0, 0x1f20}}, 1),
+    };
+    PeSpec spec = basic();
+    spec.functions = {{.begin = 0x1000, .end = 0x1100, .unwind = kInfo},
+                      {.begin = 0x1180, .end = 0x11c0},
+                      {.begin = 0x1200, .end = 0x1240, .chained_to = 0x1000},
+                      {.begin = 0x1300, .end = 0x1340, .unwind = kInfo + kStep},
+                      {.begin = 0x1400, .end = 0x1440, .unwind = kInfo + 2 * kStep},
+                      {.begin = 0x1500, .end = 0x1540, .unwind = kInfo + 3 * kStep},
+                      {.begin = 0x1600, .end = 0x1640, .unwind = kInfo + 4 * kStep},
+                      {.begin = 0x1700, .end = 0x1740, .unwind = kInfo + 5 * kStep},
+                      {.begin = 0x1800, .end = 0x1840, .unwind = kInfo + 6 * kStep},
+                      {.begin = 0x1900, .end = 0x1940, .unwind = kInfo + 7 * kStep},
+                      {.begin = 0x1a00, .end = 0x1a40, .unwind = kInfo + 8 * kStep},
+                      {.begin = 0x1b00, .end = 0x1b40, .unwind = 0xffd8},
+                      {.begin = 0x1c00, .end = 0x1c40, .unwind = kInfo + 10 * kStep},
+                      {.begin = 0x1d00, .end = 0x1d40, .unwind = kInfo + 11 * kStep},
+                      {.begin = 0x1e00, .end = 0x1e40, .unwind = kInfo + 12 * kStep},
+                      {.begin = 0x1f00, .end = 0x1f40, .unwind = kInfo + 13 * kStep}};
+    std::vector<std::byte> data(infos.size() * kStep);
+    for (size_t i = 0; i < infos.size(); ++i) {
+        std::ranges::copy(infos[i], data.begin() + i * kStep);
+    }
+    spec.sections[1] = {".rdata", kInfo, data, 0};
+    spec.sections.emplace_back(".rdata2", 0xffd8, std::vector<std::byte>(infos[9].begin(), infos[9].begin() + 0x28), 0);
+    const auto image = load_image(build_pe(spec));
+    t.check(image.has_value(), "a file with scope tables loads");
+    if (!image) {
+        return;
+    }
+    const Jumps jumps = jumps_of(*image);
+    t.check(jumps == Jumps({{0x1004, 0x1020}, {0x1020, 0x1210}, {0x10f0, 0x1050}, {0x1300, 0x1320}}),
+            "the jump targets of the scope tables, in code of the chain; a record with no jump target adds none");
+    t.check(std::ranges::contains(jumps, std::pair<uint32_t, uint32_t>{0x1300, 0x1320}), "a termination handler has a scope table too, after codes of an odd count");
+    t.check(none_in(jumps, 0x1400, 0x1440), "a table that claims more records than the file holds");
+    t.check(none_in(jumps, 0x1500, 0x1540), "a record that guards nothing");
+    t.check(none_in(jumps, 0x1600, 0x1640), "a jump target in another function");
+    t.check(none_in(jumps, 0x1700, 0x1740), "a guarded range outside the function");
+    t.check(none_in(jumps, 0x1800, 0x1840), "unwind info of a version the format does not define");
+    t.check(none_in(jumps, 0x1900, 0x1940), "unwind info with no handler");
+    t.check(none_in(jumps, 0x1a00, 0x1a40), "a guarded range that runs past the function");
+    t.check(none_in(jumps, 0x1b00, 0x1b40), "a last record that runs off the end of the image");
+    t.check(none_in(jumps, 0x1c00, 0x1c40) && none_in(jumps, 0x1f00, 0x1f40), "a record whose handler is in no function, or is zero");
+    t.check(none_in(jumps, 0x1d00, 0x1d40), "a guarded range that starts before the function");
+    t.check(none_in(jumps, 0x1e00, 0x1e40), "unwind info that chains and has a handler");
+}
+
 }  // namespace
 
 int main() {
@@ -145,6 +231,7 @@ int main() {
     check_layout(t);
     check_text_selection(t);
     check_chains(t);
+    check_scopes(t);
     check_refusals(t);
     return t.result();
 }

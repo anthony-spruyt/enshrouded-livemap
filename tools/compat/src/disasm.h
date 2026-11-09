@@ -106,20 +106,30 @@ std::optional<Difference> compare_code(const Code& now, const Code& before);
 struct Branch {
     uint32_t from = 0;
     int64_t target = 0;
+    bool dispatched = false;  // an exception handler hands control back there; `from` is the start of the code it guarded
+};
+
+// A function whose decoding stopped early: the bytes from `at` to the end of `range` are not decoded.
+struct Stopped {
+    Function range;
+    uint32_t at = 0;
 };
 
 struct BranchMap {
-    std::vector<Branch> branches;   // sorted by target
-    std::vector<Function> stopped;  // functions whose decoding stopped early, sorted by begin
+    std::vector<Branch> branches;  // sorted by target
+    std::vector<Stopped> stopped;  // sorted by begin
 };
 
 // Every call and jump with a relative target in the functions of the exception table, every address they form with a
-// rip-relative lea that points into .text, and every entry of their jump tables.
+// rip-relative lea that points into .text, every entry of their jump tables, and every jump target of their scope tables.
 // A table is read wherever the load points, and its entries count when they lie in the chain of the function that loads it.
 BranchMap collect_branches(const Image& image, const Decoder& decoder);
 
 // Whether a function that stopped is a chunk of the function `site` belongs to, or is one a decoded branch lands inside.
 bool stopped_near(const BranchMap& map, const Image& image, const Function& site);
+
+// Whether a function outside the chain of `site` stopped with undecoded bytes within 128 bytes of [low, high).
+bool undecoded_near(const BranchMap& map, const Image& image, const Function& site, uint32_t low, uint32_t high);
 
 // The branches that land strictly between `low` and `high`.
 std::vector<Branch> landings(const BranchMap& map, uint32_t low, uint32_t high);

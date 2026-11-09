@@ -74,14 +74,16 @@ std::map<std::string_view, Registers> reads_at(const SiteHit& hit, uint32_t poin
     return reads;
 }
 
-Problems unused_registers(const Context& c, const SiteHit& hit, const std::optional<std::vector<Code>>& chain) {
+Problems unused_registers(const Context& c, const SiteHit& hit, const Loaded& loaded) {
     Problems problems;
+    const auto chain = chain_of(c, loaded);
+    const std::optional<uint32_t> entry = c.image.chain_root(loaded.region.begin);
     for (const uint32_t point : hook_points(hit)) {
         const auto reads = reads_at(hit, point, c.row.mining_layout);
         if (reads.empty()) {
             continue;
         }
-        const auto used = chain ? in_use_at(*chain, point) : std::unexpected(Fault::Unfollowable);
+        const auto used = chain && entry ? in_use_at(*chain, *entry, point, c.branches) : std::unexpected(Fault::Unfollowable);
         if (!used.has_value()) {
             if (used.error() == Fault::Unfollowable) {
                 problems.push_back(std::format("{}: the code from the hook at {} could not be followed", hit.pattern->site, hex(point)));
@@ -115,7 +117,7 @@ void check_site(const Context& c, const SiteHit& hit, CheckResult& result) {
     }
     append(result.problems, inspect_hooks(c.image, c.branches, hit, *loaded).problems);
     if (!loaded->region.window) {
-        append(result.problems, unused_registers(c, hit, chain_of(c, *loaded)));
+        append(result.problems, unused_registers(c, hit, *loaded));
     }
 }
 

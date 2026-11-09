@@ -50,6 +50,37 @@ constexpr uint32_t kExceptionDirectoryOffset = kOptionalOffset + 112 + 3 * 8;
 constexpr uint32_t kUnwindInfoSize = 64;
 constexpr unsigned kChainFlag = 4;
 
+constexpr unsigned kExceptionHandlerFlag = 1;
+constexpr unsigned kTerminationHandlerFlag = 2;
+
+// One record of the scope table that follows a structured exception handler in the unwind info.
+struct ScopeRecord {
+    uint32_t begin = 0;
+    uint32_t end = 0;
+    uint32_t handler = 1;
+    uint32_t jump = 0;
+};
+
+inline void push_dword(std::vector<std::byte>& bytes, uint32_t value) {
+    for (unsigned shift = 0; shift < 32; shift += 8) {
+        bytes.push_back(static_cast<std::byte>(value >> shift));
+    }
+}
+
+// Unwind info with `flags`, `codes` unwind codes, a handler address, then a scope table that claims `count` records.
+inline std::vector<std::byte> scope_info(unsigned flags, unsigned codes, const std::vector<ScopeRecord>& records, uint32_t count, unsigned version = 1) {
+    std::vector info{static_cast<std::byte>(version | (flags << 3)), std::byte{0}, static_cast<std::byte>(codes), std::byte{0}};
+    info.resize(info.size() + (codes + 1) / 2 * 4);
+    push_dword(info, 0x1f00);
+    push_dword(info, count);
+    for (const ScopeRecord& r : records) {
+        for (const uint32_t field : {r.begin, r.end, r.handler, r.jump}) {
+            push_dword(info, field);
+        }
+    }
+    return info;
+}
+
 inline void put(std::vector<std::byte>& file, size_t at, uint64_t value, size_t width) {
     for (size_t i = 0; i < width; ++i) {
         file.at(at + i) = static_cast<std::byte>(value >> (8 * i));

@@ -30,6 +30,7 @@ void zero_masked(Instruction& insn, std::span<const Range> masks) {
 }
 
 constexpr uint32_t kEntryLength = 4;
+constexpr uint32_t kShortReach = 128;
 constexpr uint8_t kTableScale = 4;
 
 uint32_t dword_at(std::span<const std::byte> bytes, size_t offset) {
@@ -251,21 +252,22 @@ bool starts_inside(const TableMap& tables, const Instruction& insn) {
 
 struct Scan {
     std::vector<Instruction> instructions;
-    bool stopped = false;
+    std::optional<uint32_t> stopped;  // where the bytes that are not decoded start
 };
 
 // The instructions of a function around the tables found so far.
 Scan scan_function(const Decoder& decoder, std::span<const std::byte> bytes, const Function& range, const TableMap& tables) {
     Scan scan;
     uint32_t rva = range.begin;
-    while (rva < range.end && !scan.stopped) {
+    while (rva < range.end && !scan.stopped.has_value()) {
         if (const Table* table = table_covering(tables, rva); table != nullptr) {
             rva = static_cast<uint32_t>(table_end(*table));
             continue;
         }
         const auto insn = decoder.decode(bytes.subspan(rva - range.begin), rva, {});
-        scan.stopped = !insn || starts_inside(tables, *insn);
-        if (!scan.stopped) {
+        if (!insn || starts_inside(tables, *insn)) {
+            scan.stopped = rva;
+        } else {
             scan.instructions.push_back(*insn);
             rva += insn->length;
         }
@@ -315,15 +317,22 @@ std::set<size_t> functions_touching(const std::vector<Function>& functions, uint
     return touched;
 }
 
-bool within(const std::vector<Function>& sorted, uint32_t rva) {
-    const auto next = std::ranges::upper_bound(sorted, rva, {}, &Function::begin);
-    return next != sorted.begin() && rva < std::prev(next)->end;
+bool within(const std::vector<Stopped>& sorted, uint32_t rva) {
+    const auto next = std::ranges::upper_bound(sorted, rva, {}, [](const Stopped& s) { return s.range.begin; });
+    return next != sorted.begin() && rva < std::prev(next)->range.end;
+}
+
+std::optional<uint32_t> earliest(std::optional<uint32_t> a, std::optional<uint32_t> b) {
+    if (a.has_value() && b.has_value()) {
+        return std::min(*a, *b);
+    }
+    return a.has_value() ? a : b;
 }
 
 struct Discovery {
     TableMap tables;
     std::vector<Scan> scans;
-    std::vector<bool> conflicted;
+    std::vector<std::optional<uint32_t>> conflicted;  // the first load of a table that crosses another
 };
 
 // Adds the tables that the indexed loads of one function read; returns the functions that hold bytes of a new table.
@@ -340,7 +349,7 @@ std::set<size_t> add_tables(const Image& image, size_t index, Discovery& found) 
             continue;
         }
         if (overlaps_known(found.tables, *table)) {
-            found.conflicted[index] = true;
+            found.conflicted[index] = std::min(found.conflicted[index].value_or(insn.rva), insn.rva);
             continue;
         }
         touched.merge(functions_touching(image.functions(), table->rva, table_end(*table)));
@@ -352,7 +361,7 @@ std::set<size_t> add_tables(const Image& image, size_t index, Discovery& found) 
 // Decodes every function without the tables found so far and decodes again the functions that hold a new table, until no table is new.
 Discovery discover_tables(const Image& image, const Decoder& decoder) {
     const std::vector<Function>& functions = image.functions();
-    Discovery found{{}, std::vector<Scan>(functions.size()), std::vector<bool>(functions.size(), false)};
+    Discovery found{{}, std::vector<Scan>(functions.size()), std::vector<std::optional<uint32_t>>(functions.size())};
     std::set<size_t> dirty;
     for (size_t i = 0; i < functions.size(); ++i) {
         dirty.insert(i);
@@ -461,12 +470,15 @@ BranchMap collect_branches(const Image& image, const Decoder& decoder) {
                 map.branches.emplace_back(insn.rva, *insn.address);
             }
         }
-        if (found.scans[i].stopped || found.conflicted[i]) {
-            map.stopped.push_back(functions[i]);
+        if (const auto at = earliest(found.scans[i].stopped, found.conflicted[i]); at.has_value()) {
+            map.stopped.push_back(Stopped{functions[i], *at});
         }
     }
     for (const auto& [rva, table] : found.tables) {
         std::ranges::transform(table.entries, std::back_inserter(map.branches), [&](uint32_t entry) { return Branch{table.ref, entry}; });
+    }
+    for (const ScopeJump& jump : image.scope_jumps()) {
+        map.branches.emplace_back(jump.begin, jump.target, true);
     }
     std::ranges::sort(map.branches, {}, &Branch::target);
     return map;
@@ -474,8 +486,8 @@ BranchMap collect_branches(const Image& image, const Decoder& decoder) {
 
 bool stopped_near(const BranchMap& map, const Image& image, const Function& site) {
     const std::optional<uint32_t> root = image.chain_root(site.begin);
-    if (const auto in_chain = [&](const Function& f) {
-            return image.chain_root(f.begin) == root;
+    if (const auto in_chain = [&](const Stopped& s) {
+            return image.chain_root(s.range.begin) == root;
         };
         std::ranges::any_of(map.stopped, in_chain)) {
         return true;
@@ -483,6 +495,13 @@ bool stopped_near(const BranchMap& map, const Image& image, const Function& site
     const auto first = std::ranges::upper_bound(map.branches, int64_t{site.begin}, {}, &Branch::target);
     const auto last = std::ranges::lower_bound(map.branches, int64_t{site.end}, {}, &Branch::target);
     return first < last && std::any_of(first, last, [&](const Branch& b) { return within(map.stopped, b.from); });
+}
+
+bool undecoded_near(const BranchMap& map, const Image& image, const Function& site, uint32_t low, uint32_t high) {
+    const std::optional<uint32_t> root = image.chain_root(site.begin);
+    return std::ranges::any_of(map.stopped, [&](const Stopped& s) {
+        return image.chain_root(s.range.begin) != root && s.at < uint64_t{high} + kShortReach && uint64_t{s.range.end} + kShortReach > low;
+    });
 }
 
 std::vector<Branch> landings(const BranchMap& map, uint32_t low, uint32_t high) {

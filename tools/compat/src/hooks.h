@@ -52,7 +52,7 @@ struct HookInspection {
 };
 
 // Whether each hook of the site starts on an instruction, whether any branch lands in the bytes it overwrites, and whether
-// the code around it could be followed.
+// the code around it could be followed, including the bytes of other functions within 128 bytes of each hook.
 HookInspection inspect_hooks(const Image& image, const BranchMap& branches, const SiteHit& hit, const Loaded& loaded);
 
 }  // namespace livemap::compat

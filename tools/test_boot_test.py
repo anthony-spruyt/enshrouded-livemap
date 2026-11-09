@@ -3,11 +3,13 @@
 import hashlib
 import http.server
 import json
+import os
 import re
 import socket
 import subprocess
 import sys
 import threading
+import types
 from pathlib import Path
 
 import boot_test
@@ -59,29 +61,55 @@ def hook_log(*names):
     return "\n".join(lines) + "\n"
 
 
-def test_the_target_is_the_row_with_the_highest_steam_build_id():
-    newest = row("b", ["300", "250"])
-    builds = builds_of(row("a", ["100"]), newest, row("c", ["200"]))
-    assert boot_test.pick_target(builds) is newest
+def test_the_depot_to_download_is_the_one_the_rows_record():
+    builds = builds_of(row("old", ["100"], depot=None), row("a", ["200"], depot="7"), row("b", ["300"], depot="7"))
+    assert boot_test.download_depot(builds) == "7"
 
 
-def test_a_row_without_a_depot_or_manifest_cannot_be_the_target():
-    wanted = row("old", ["100"])
-    builds = builds_of(wanted, row("no-depot", ["900"], depot=None), row("no-manifest", ["800"], manifest=None))
-    assert boot_test.pick_target(builds) is wanted
-
-
-def test_no_row_with_a_download_is_an_error():
+def test_no_row_with_a_depot_is_an_error():
     builds = builds_of(row("a", ["1"], depot=None))
-    with pytest.raises(BootTestError, match="depot"):
-        boot_test.pick_target(builds)
+    with pytest.raises(BootTestError, match="no Steam depot"):
+        boot_test.download_depot(builds)
 
 
-def test_the_shipped_builds_have_a_target():
+def test_rows_that_record_different_depots_are_an_error():
+    builds = builds_of(row("a", ["1"], depot="7"), row("b", ["2"], depot="8"))
+    with pytest.raises(BootTestError, match="more than one"):
+        boot_test.download_depot(builds)
+
+
+def test_the_depot_is_digits_only_so_it_is_safe_in_a_command():
+    builds = builds_of(row("a", ["1"], depot="1; id"))
+    with pytest.raises(BootTestError, match="not a plain id"):
+        boot_test.download_depot(builds)
+
+
+def test_the_shipped_builds_name_a_depot_and_one_row_for_each_recorded_exe():
     builds = json.loads((ROOT / DATA).read_text(encoding=ENCODING))
-    target = boot_test.pick_target(builds)
-    assert target["steam"]["depot"]
-    assert boot_test.mandatory_sites(builds, target)
+    assert boot_test.download_depot(builds)
+    for build in builds["builds"]:
+        if build["steam"]["exe_sha256"]:
+            assert boot_test.row_for_digest(builds, build["steam"]["exe_sha256"]) is build
+            assert boot_test.mandatory_sites(builds, build)
+
+
+def test_the_served_row_is_the_one_whose_digest_matches_even_when_it_is_not_the_newest():
+    older = row("older", ["100"], exe_sha256="1" * 64)
+    builds = builds_of(older, row("newer", ["300"], exe_sha256="2" * 64), row("newest", ["200"], exe_sha256="3" * 64))
+    assert boot_test.row_for_digest(builds, "1" * 64) is older
+
+
+def test_a_digest_in_no_row_says_the_map_does_not_support_the_server_yet():
+    builds = builds_of(row("a", ["1"], exe_sha256="1" * 64), row("b", ["2"], exe_sha256=None))
+    with pytest.raises(BootTestError, match=rf"no row of {DATA}.*does not support") as caught:
+        boot_test.row_for_digest(builds, "2" * 64)
+    assert "2" * 64 in str(caught.value)
+
+
+def test_a_digest_that_two_rows_record_is_an_error():
+    builds = builds_of(row("a", ["1"], exe_sha256="1" * 64), row("b", ["2"], exe_sha256="1" * 64))
+    with pytest.raises(BootTestError, match="more than one row"):
+        boot_test.row_for_digest(builds, "1" * 64)
 
 
 def test_mandatory_sites_follow_the_sigset_of_the_target():
@@ -857,49 +885,14 @@ def write_exe(directory, data=b"synthetic server bytes"):
     return hashlib.sha256(data).hexdigest()
 
 
-def test_the_downloaded_exe_must_match_the_digest_of_the_target(tmp_path):
-    digest = write_exe(tmp_path)
-    boot_test.verify_exe(row("a", ["1"], exe_sha256=digest), tmp_path)
-    wrong = row("a", ["1"], exe_sha256="0" * 64)
-    with pytest.raises(BootTestError, match="does not match"):
-        boot_test.verify_exe(wrong, tmp_path)
-
-
-def test_a_target_without_a_recorded_digest_cannot_be_verified(tmp_path):
-    write_exe(tmp_path)
-    undigested = row("a", ["1"], exe_sha256=None)
-    with pytest.raises(BootTestError, match="no exe_sha256"):
-        boot_test.verify_exe(undigested, tmp_path)
+def test_the_digest_of_the_download_is_the_sha256_of_its_whole_exe(tmp_path):
+    digest = write_exe(tmp_path, b"x" * (2 * (1 << 20) + 5))
+    assert boot_test.exe_digest(tmp_path) == digest
 
 
 def test_a_download_without_the_exe_is_an_error(tmp_path):
-    target = row("a", ["1"])
     with pytest.raises(BootTestError, match="not found"):
-        boot_test.verify_exe(target, tmp_path)
-
-
-def test_the_download_ids_are_digits_only_so_they_are_safe_in_a_command():
-    ids = boot_test.download_ids(row("a", ["25", "300"], depot="2278521", manifest="8886672487109033979"))
-    assert ids == {"depot": "2278521", "manifest": "8886672487109033979", "buildid": "300"}
-
-
-@pytest.mark.parametrize(
-    "target",
-    [
-        row("a", ["1"], depot="1; id"),
-        row("a", ["1"], manifest="$(id)"),
-        row("a", ["1 && id"]),
-        row("a", ["01"]),
-    ],
-)
-def test_ids_that_are_not_plain_digits_are_refused(target):
-    with pytest.raises(BootTestError, match="not a plain id"):
-        boot_test.download_ids(target)
-
-
-def test_a_row_with_a_hostile_build_id_does_not_crash_the_pick():
-    builds = builds_of(row("a", ["1 && id"]), row("b", ["5"]))
-    assert boot_test.pick_target(builds)["label"] == "b"
+        boot_test.exe_digest(tmp_path)
 
 
 def write_builds(root, builds):
@@ -907,31 +900,87 @@ def write_builds(root, builds):
     (root / DATA).write_text(json.dumps(builds), encoding=ENCODING)
 
 
-def test_the_target_command_writes_the_download_ids_for_the_workflow(tmp_path, monkeypatch, capsys):
-    write_builds(tmp_path, builds_of(row("a", ["300"], depot="7", manifest="8")))
+def test_the_depot_command_writes_the_depot_for_the_workflow(tmp_path, monkeypatch):
+    write_builds(tmp_path, builds_of(row("a", ["300"], depot="7")))
     output = tmp_path / "github-output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    assert boot_test.main(["target"], tmp_path) == 0
-    assert output.read_text(encoding=ENCODING) == "depot=7\nmanifest=8\nbuildid=300\n"
-    assert "300" in capsys.readouterr().out
+    assert boot_test.main(["depot"], tmp_path) == 0
+    assert output.read_text(encoding=ENCODING) == "depot=7\n"
 
 
-def test_the_target_command_fails_on_a_file_without_a_download(tmp_path, capsys):
+def test_the_depot_command_fails_on_a_file_without_a_depot(tmp_path, capsys):
     write_builds(tmp_path, builds_of(row("a", ["1"], depot=None)))
-    assert boot_test.main(["target"], tmp_path) == 1
+    assert boot_test.main(["depot"], tmp_path) == 1
     assert "::error::" in capsys.readouterr().out
 
 
-def test_the_verify_command_checks_the_download_against_the_target(tmp_path, monkeypatch, capsys):
+def test_the_verify_command_names_the_row_of_the_download(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     server = tmp_path / SERVER
     server.mkdir()
-    write_builds(tmp_path, builds_of(row("a", ["1"], exe_sha256=write_exe(server))))
+    write_builds(tmp_path, builds_of(row("other", ["2"]), row("served", ["1"], exe_sha256=write_exe(server))))
     assert boot_test.main(["verify-exe", str(server)], tmp_path) == 0
-    write_builds_again = builds_of(row("a", ["1"], exe_sha256="0" * 64))
-    (tmp_path / DATA).write_text(json.dumps(write_builds_again), encoding=ENCODING)
+    assert "served" in capsys.readouterr().out
+
+
+def test_the_verify_command_fails_when_the_download_is_in_no_row(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    server = tmp_path / SERVER
+    server.mkdir()
+    write_exe(server)
+    write_builds(tmp_path, builds_of(row("a", ["1"], exe_sha256="0" * 64)))
     assert boot_test.main(["verify-exe", str(server)], tmp_path) == 1
-    assert "does not match" in capsys.readouterr().out
+    assert "does not support" in capsys.readouterr().out
+
+
+def host_os(ids):
+    """The os module as boot_test sees it: with the user and group ids of a Linux runner, or without them."""
+    names = {"environ": os.environ}
+    if ids:
+        names.update(getuid=lambda: ids[0], getgid=lambda: ids[1])
+    return types.SimpleNamespace(**names)
+
+
+class BootCall:
+    """The `run` command with the boot itself replaced; it records the setup the command built."""
+
+    def __init__(self, tmp_path, monkeypatch, ids=IDS):
+        self.tmp_path = tmp_path
+        self.server = tmp_path / "work" / "enshrouded" / SERVER
+        self.server.mkdir(parents=True)
+        self.digest = write_exe(self.server)
+        self.setups = []
+        monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+        monkeypatch.setenv("BOOT_TEST_IMAGE", IMAGE)
+        monkeypatch.setattr(boot_test, "os", host_os(ids))
+        monkeypatch.setattr(boot_test, "run_boot_test", lambda setup, tools: self.setups.append(setup) or 0)
+
+    def go(self, *rows):
+        write_builds(self.tmp_path, builds_of(*rows))
+        return boot_test.main(["run", str(self.tmp_path / "work"), str(self.tmp_path)], self.tmp_path)
+
+
+def test_the_run_command_boots_the_row_whose_digest_matches_the_download(tmp_path, monkeypatch):
+    call = BootCall(tmp_path, monkeypatch)
+    assert call.go(row("newer", ["300"], PATCHED), row("served", ["100"], PLAIN, exe_sha256=call.digest)) == 0
+    (setup,) = call.setups
+    assert setup.target["label"] == "served"
+    assert setup.names == MANDATORY
+    assert setup.ids == IDS
+
+
+def test_the_run_command_needs_a_linux_host(tmp_path, monkeypatch, capsys):
+    call = BootCall(tmp_path, monkeypatch, ids=None)
+    assert call.go(row("served", ["1"], exe_sha256=call.digest)) == 1
+    assert call.setups == []
+    assert "runs on Linux" in capsys.readouterr().out
+
+
+def test_the_run_command_boots_nothing_when_the_download_is_in_no_row(tmp_path, monkeypatch, capsys):
+    call = BootCall(tmp_path, monkeypatch)
+    assert call.go(row("a", ["1"], exe_sha256="0" * 64)) == 1
+    assert call.setups == []
+    assert "does not support" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("shape", [("verify-exe", "out"), ("run", "out", "in"), ("run", "in", "out")])
@@ -1017,10 +1066,19 @@ def test_the_depot_downloads_write_their_file_lists_to_a_file_and_not_to_the_log
     assert all('"$log" 2>&1' in line for line in downloads)
 
 
+def test_the_server_depot_is_downloaded_without_a_manifest_so_steam_serves_its_current_build():
+    block = job_block(BOOT_JOB)
+    (download,) = [
+        line for line in block.splitlines() if "tools/DepotDownloader" in line and '-depot "$DEPOT_ID"' in line
+    ]
+    assert "-manifest" not in download
+    assert "MANIFEST" not in block
+
+
 def test_the_downloader_is_checked_and_the_depot_verified_before_the_server_boots():
     block = job_block(BOOT_JOB)
     order = (
-        "boot_test.py target",
+        "boot_test.py depot",
         "sha256sum --check",
         'tools/DepotDownloader" -app',
         "boot_test.py verify-exe",

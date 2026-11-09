@@ -54,8 +54,8 @@ std::byte* allocate_page(DWORD protection) {
     return static_cast<std::byte*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, protection));
 }
 
-// Near the exe image, like the game's code. Under Wine a page from VirtualAlloc(nullptr) sits at the top of user space,
-// where the hook allocator runs into a free-looking gap it cannot map and gives up (#38).
+// Near the exe image, like the game's code. Under Wine a VirtualAlloc(nullptr) page gives the hook allocator a forward try that fails
+// (https://github.com/cursey/safetyhook/issues/136) and one backward try that can. Remove when its allocator retries past a failed slot.
 std::byte* allocate_code_page() {
     SYSTEM_INFO machine{};
     GetSystemInfo(&machine);

@@ -197,15 +197,21 @@ bool probe_gives_up(uintptr_t address) {
 
 int handled_probe() {
     if (!probe_gives_up(0)) {
-        return kHookFailed;
+        livemap::log("gate: the probe did not give up on a bad read");
+        return kCheckFailed;
     }
     livemap::log("gate: the probe handled its own bad read");
     return 0;
 }
 
 int handled_probe_on_a_guard_page() {
-    if (const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD); page == nullptr || !probe_gives_up(std::bit_cast<uintptr_t>(page))) {
+    const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD);
+    if (page == nullptr) {
         return kHookFailed;
+    }
+    if (!probe_gives_up(std::bit_cast<uintptr_t>(page))) {
+        livemap::log("gate: the probe did not give up on a guard page");
+        return kCheckFailed;
     }
     livemap::log("gate: the probe handled a guard page");
     return 0;
@@ -255,8 +261,12 @@ extern "C" FAULT_GATE_API int gate_run(const char* mode) {
         livemap::log("gate: the executable does not export %s", kGameFaultExport);
         return kHookFailed;
     }
-    if (current.read_only == nullptr || !livemap::fault::install(livemap::log_handle())) {
+    if (current.read_only == nullptr) {
         return kHookFailed;
+    }
+    if (!livemap::fault::install(livemap::log_handle())) {
+        livemap::log("gate: the fault handler would not install");
+        return kCheckFailed;
     }
     livemap::log("gate: handler installed");
     const int status = run(mode);

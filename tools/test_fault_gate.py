@@ -17,11 +17,14 @@ import pytest
 GATE = os.environ.get("FAULT_GATE_EXE", "")
 RUNNER = shlex.split(os.environ.get("FAULT_GATE_RUNNER", ""))
 ACCESS_VIOLATION = 0xC0000005
-RIG_FAILED, SURVIVED_EXIT = 98, 99  # kHookFailed and kSurvived in tests/fault_gate.h
-SENTINEL_EXITS = {RIG_FAILED, SURVIVED_EXIT}
+CHECK_FAILED, RIG_FAILED, SURVIVED_EXIT = 97, 98, 99  # kCheckFailed, kHookFailed and kSurvived in tests/fault_gate.h
+GATE_FAILURES = {
+    CHECK_FAILED: "check failure: the code under test failed a check before the fault of {mode!r}",
+    RIG_FAILED: "rig failure: the gate could not set up {mode!r}, so no fault was tried",
+}
 STUB_GATE = (
     "import sys\n"
-    "open('livemap.log', 'wb').write(b'gate: handler installed\\r\\ngate: could not hook gate_trampoline\\r\\n')\n"
+    "open('livemap.log', 'wb').write(b'gate: handler installed\\r\\ngate: the stub says why\\r\\n')\n"
     "sys.exit(int(sys.argv[1]))\n"
 )
 TIMESTAMP_WIDTH = len("2000-01-01 00:00:00.000 ")
@@ -68,8 +71,8 @@ def run_gate(directory: Path, mode: str) -> Run:
     text = (directory / "livemap.log").read_bytes().decode("utf-8")
     assert text.endswith("\r\n"), "the log must end on a whole line"
     run = Run(done.returncode & 0xFFFFFFFF, text[:-2].split("\r\n"))
-    if run.exit_code == RIG_FAILED:
-        pytest.fail(f"rig failure: the gate could not set up {mode!r}; no fault was tried: {run.lines}", pytrace=False)
+    if run.exit_code in GATE_FAILURES:
+        pytest.fail(f"{GATE_FAILURES[run.exit_code].format(mode=mode)}: {run.lines}", pytrace=False)
     return run
 
 
@@ -83,8 +86,13 @@ def stub_gate(tmp_path, monkeypatch):
 
 
 def test_a_gate_that_could_not_set_up_is_a_rig_failure_not_a_missing_fault_line(tmp_path, stub_gate):
-    with pytest.raises(pytest.fail.Exception, match=r"rig failure.*could not hook gate_trampoline"):
+    with pytest.raises(pytest.fail.Exception, match=r"^rig failure.*the stub says why"):
         run_gate(tmp_path, str(RIG_FAILED))
+
+
+def test_a_check_the_code_under_test_failed_is_not_called_a_rig_failure(tmp_path, stub_gate):
+    with pytest.raises(pytest.fail.Exception, match=r"^check failure.*the stub says why"):
+        run_gate(tmp_path, str(CHECK_FAILED))
 
 
 @pytest.mark.parametrize("exit_code", [0, 3, SURVIVED_EXIT])
@@ -120,7 +128,7 @@ def test_the_process_dies_the_normal_way(tmp_path, mode):
     run = run_gate(tmp_path, mode)
 
     assert not any(line.endswith(SURVIVED) for line in run.lines)
-    assert run.exit_code not in SENTINEL_EXITS
+    assert run.exit_code != SURVIVED_EXIT
     if not RUNNER:
         assert run.exit_code == ACCESS_VIOLATION
 

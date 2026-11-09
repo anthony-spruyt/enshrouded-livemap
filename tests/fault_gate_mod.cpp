@@ -23,6 +23,7 @@ constexpr const char* kSiteCallback = "gate_callback";
 constexpr const char* kSiteTrampoline = "gate_trampoline";
 constexpr const char* kSiteGame = "gate_game";
 constexpr size_t kPageSize = 4096;
+constexpr int kRegionsToWalk = 64;
 
 // sub rsp,0x28 ; nop ; add rsp,0x28 ; ret
 constexpr std::array<uint8_t, 10> kQuiet{0x48, 0x83, 0xEC, 0x28, 0x90, 0x48, 0x83, 0xC4, 0x28, 0xC3};
@@ -53,8 +54,34 @@ std::byte* allocate_page(DWORD protection) {
     return static_cast<std::byte*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, protection));
 }
 
+// Near the exe image, like the game's code. Under Wine a page from VirtualAlloc(nullptr) sits at the top of user space,
+// where the hook allocator runs into a free-looking gap it cannot map and gives up (#38).
+std::byte* allocate_code_page() {
+    SYSTEM_INFO machine{};
+    GetSystemInfo(&machine);
+    const uintptr_t granularity = machine.dwAllocationGranularity;
+    auto* region = reinterpret_cast<const std::byte*>(GetModuleHandleW(nullptr));
+    for (int walked = 0; walked < kRegionsToWalk; ++walked) {
+        MEMORY_BASIC_INFORMATION info{};
+        if (VirtualQuery(region, &info, sizeof info) == 0) {
+            break;
+        }
+        const auto start = reinterpret_cast<uintptr_t>(info.BaseAddress);
+        const uintptr_t end = start + info.RegionSize;
+        const uintptr_t slot = (start + granularity - 1) / granularity * granularity;
+        if (info.State == MEM_FREE && slot + kPageSize <= end) {
+            void* page = VirtualAlloc(reinterpret_cast<void*>(slot), kPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+            if (page != nullptr) {
+                return static_cast<std::byte*>(page);
+            }
+        }
+        region = reinterpret_cast<const std::byte*>(end);
+    }
+    return allocate_page(PAGE_EXECUTE_READWRITE);
+}
+
 uintptr_t standin(std::span<const uint8_t> code) {
-    auto* page = allocate_page(PAGE_EXECUTE_READWRITE);
+    auto* page = allocate_code_page();
     if (page != nullptr) {
         std::ranges::copy(std::as_bytes(code), page);
     }
@@ -91,11 +118,15 @@ LONG CALLBACK skip_reader(EXCEPTION_POINTERS* info) {
 }
 
 bool install_hook(livemap::fault::Hook& out, const char* site, uintptr_t target, safetyhook::MidHookFn callback) {
-    if (auto created = livemap::fault::Hook::create(site, target, callback)) {
+    auto created = livemap::fault::Hook::create(site, target, callback);
+    if (created) {
         out = std::move(*created);
         return true;
     }
-    livemap::log("gate: could not hook %s", site);
+    const auto& error = created.error();
+    const bool allocation = error.type == safetyhook::MidHook::Error::BAD_ALLOCATION;
+    const int code = allocation ? static_cast<int>(error.allocator_error) : static_cast<int>(error.inline_hook_error.type);
+    livemap::log("gate: could not hook %s: %s error %d", site, allocation ? "allocator" : "inline hook", code);
     return false;
 }
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.0](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.9.1...v1.10.0) (2026-11-09)
+
+
+### Features
+
+* **compat:** check the hooks of a sigset against its exe ([#30](https://github.com/anthony-spruyt/enshrouded-livemap/issues/30)) ([a3c71c6](https://github.com/anthony-spruyt/enshrouded-livemap/commit/a3c71c6f0c985cdeadff7e780d97699a9a4d733e))
+
+
+### Bug Fixes
+
+* **boot-test:** boot the server Steam serves now ([#37](https://github.com/anthony-spruyt/enshrouded-livemap/issues/37)) ([df031a4](https://github.com/anthony-spruyt/enshrouded-livemap/commit/df031a41f55e1a50a30ed25910cd138d053e00e3))
+* **compat:** check every path into a hook ([#36](https://github.com/anthony-spruyt/enshrouded-livemap/issues/36)) ([991b09b](https://github.com/anthony-spruyt/enshrouded-livemap/commit/991b09ba675531e8a5e9adc33fd83a9c10301c34))
+* **compat:** record the manifest of a known build ([#34](https://github.com/anthony-spruyt/enshrouded-livemap/issues/34)) ([d9195b6](https://github.com/anthony-spruyt/enshrouded-livemap/commit/d9195b69830b13fdb790d3f785560309ad890b06))
+* **fault-gate:** put the stand-in code where Wine lets the hook allocator reach it ([#39](https://github.com/anthony-spruyt/enshrouded-livemap/issues/39)) ([da7d2f2](https://github.com/anthony-spruyt/enshrouded-livemap/commit/da7d2f2e7559bb6ea9514b92da4cd01ed1f00a79)), closes [#38](https://github.com/anthony-spruyt/enshrouded-livemap/issues/38)
+
 ## [1.9.1](https://github.com/anthony-spruyt/enshrouded-livemap/compare/v1.9.0...v1.9.1) (2026-11-08)
 
 

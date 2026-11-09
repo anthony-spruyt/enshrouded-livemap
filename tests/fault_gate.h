@@ -7,8 +7,10 @@
 #define FAULT_GATE_API __declspec(dllimport)
 #endif
 
-inline constexpr int kHookFailed = 98;
-inline constexpr int kSurvived = 99;
+// Exit codes for a run that ended on its own. tools/test_fault_gate.py names the same three.
+inline constexpr int kCheckFailed = 97;  // the code under test failed a check the gate makes before the fault
+inline constexpr int kHookFailed = 98;   // the gate could not set up, so no fault was tried
+inline constexpr int kSurvived = 99;     // the fault did not end the process
 
 // The executable exports this function, `void (volatile int* target)`, as the code that counts as the game's own.
 inline constexpr const char* kGameFaultExport = "game_fault";

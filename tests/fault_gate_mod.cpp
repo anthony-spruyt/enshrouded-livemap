@@ -23,6 +23,7 @@ constexpr const char* kSiteCallback = "gate_callback";
 constexpr const char* kSiteTrampoline = "gate_trampoline";
 constexpr const char* kSiteGame = "gate_game";
 constexpr size_t kPageSize = 4096;
+constexpr int kRegionsToWalk = 64;
 
 // sub rsp,0x28 ; nop ; add rsp,0x28 ; ret
 constexpr std::array<uint8_t, 10> kQuiet{0x48, 0x83, 0xEC, 0x28, 0x90, 0x48, 0x83, 0xC4, 0x28, 0xC3};
@@ -53,8 +54,33 @@ std::byte* allocate_page(DWORD protection) {
     return static_cast<std::byte*>(VirtualAlloc(nullptr, kPageSize, MEM_COMMIT | MEM_RESERVE, protection));
 }
 
+// Near the exe image, like the game's code. Under Wine a VirtualAlloc(nullptr) page gives the hook allocator a forward try that fails
+// (https://github.com/cursey/safetyhook/issues/136) and one backward try that can. Remove when its allocator retries past a failed slot.
+std::byte* allocate_code_page() {
+    SYSTEM_INFO machine{};
+    GetSystemInfo(&machine);
+    const uintptr_t granularity = machine.dwAllocationGranularity;
+    auto region = std::bit_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    for (int walked = 0; walked < kRegionsToWalk; ++walked) {
+        MEMORY_BASIC_INFORMATION info{};
+        if (VirtualQuery(std::bit_cast<void*>(region), &info, sizeof info) == 0) {
+            break;
+        }
+        const auto start = std::bit_cast<uintptr_t>(info.BaseAddress);
+        const uintptr_t end = start + info.RegionSize;
+        if (const uintptr_t slot = (start + granularity - 1) / granularity * granularity; info.State == MEM_FREE && slot + kPageSize <= end) {
+            void* page = VirtualAlloc(std::bit_cast<void*>(slot), kPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+            if (page != nullptr) {
+                return static_cast<std::byte*>(page);
+            }
+        }
+        region = end;
+    }
+    return allocate_page(PAGE_EXECUTE_READWRITE);
+}
+
 uintptr_t standin(std::span<const uint8_t> code) {
-    auto* page = allocate_page(PAGE_EXECUTE_READWRITE);
+    auto* page = allocate_code_page();
     if (page != nullptr) {
         std::ranges::copy(std::as_bytes(code), page);
     }
@@ -91,11 +117,15 @@ LONG CALLBACK skip_reader(EXCEPTION_POINTERS* info) {
 }
 
 bool install_hook(livemap::fault::Hook& out, const char* site, uintptr_t target, safetyhook::MidHookFn callback) {
-    if (auto created = livemap::fault::Hook::create(site, target, callback)) {
+    auto created = livemap::fault::Hook::create(site, target, callback);
+    if (created) {
         out = std::move(*created);
         return true;
     }
-    livemap::log("gate: could not hook %s", site);
+    const auto& error = created.error();
+    const bool allocation = error.type == safetyhook::MidHook::Error::BAD_ALLOCATION;
+    const int code = allocation ? static_cast<int>(error.allocator_error) : static_cast<int>(error.inline_hook_error.type);
+    livemap::log("gate: could not hook %s: %s error %d", site, allocation ? "allocator" : "inline hook", code);
     return false;
 }
 
@@ -167,15 +197,21 @@ bool probe_gives_up(uintptr_t address) {
 
 int handled_probe() {
     if (!probe_gives_up(0)) {
-        return kHookFailed;
+        livemap::log("gate: the probe did not give up on a bad read");
+        return kCheckFailed;
     }
     livemap::log("gate: the probe handled its own bad read");
     return 0;
 }
 
 int handled_probe_on_a_guard_page() {
-    if (const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD); page == nullptr || !probe_gives_up(std::bit_cast<uintptr_t>(page))) {
+    const auto* page = allocate_page(PAGE_READONLY | PAGE_GUARD);
+    if (page == nullptr) {
         return kHookFailed;
+    }
+    if (!probe_gives_up(std::bit_cast<uintptr_t>(page))) {
+        livemap::log("gate: the probe did not give up on a guard page");
+        return kCheckFailed;
     }
     livemap::log("gate: the probe handled a guard page");
     return 0;
@@ -225,8 +261,12 @@ extern "C" FAULT_GATE_API int gate_run(const char* mode) {
         livemap::log("gate: the executable does not export %s", kGameFaultExport);
         return kHookFailed;
     }
-    if (current.read_only == nullptr || !livemap::fault::install(livemap::log_handle())) {
+    if (current.read_only == nullptr) {
         return kHookFailed;
+    }
+    if (!livemap::fault::install(livemap::log_handle())) {
+        livemap::log("gate: the fault handler would not install");
+        return kCheckFailed;
     }
     livemap::log("gate: handler installed");
     const int status = run(mode);

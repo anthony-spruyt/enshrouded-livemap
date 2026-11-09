@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
@@ -16,7 +17,16 @@ import pytest
 GATE = os.environ.get("FAULT_GATE_EXE", "")
 RUNNER = shlex.split(os.environ.get("FAULT_GATE_RUNNER", ""))
 ACCESS_VIOLATION = 0xC0000005
-SENTINEL_EXITS = {98, 99}
+CHECK_FAILED, RIG_FAILED, SURVIVED_EXIT = 97, 98, 99  # kCheckFailed, kHookFailed and kSurvived in tests/fault_gate.h
+GATE_FAILURES = {
+    CHECK_FAILED: "check failure: the code under test failed a check before the fault of {mode!r}",
+    RIG_FAILED: "rig failure: the gate could not set up {mode!r}, so no fault was tried",
+}
+STUB_GATE = (
+    "import sys\n"
+    "open('livemap.log', 'wb').write(b'gate: handler installed\\r\\ngate: the stub says why\\r\\n')\n"
+    "sys.exit(int(sys.argv[1]))\n"
+)
 TIMESTAMP_WIDTH = len("2000-01-01 00:00:00.000 ")
 SURVIVED = "gate: the fault did not end the process"
 SITE_CALLBACK = "gate_callback"
@@ -60,7 +70,34 @@ def run_gate(directory: Path, mode: str) -> Run:
     done = subprocess.run([*RUNNER, GATE, mode], cwd=directory, capture_output=True, check=False, timeout=120)
     text = (directory / "livemap.log").read_bytes().decode("utf-8")
     assert text.endswith("\r\n"), "the log must end on a whole line"
-    return Run(done.returncode & 0xFFFFFFFF, text[:-2].split("\r\n"))
+    run = Run(done.returncode & 0xFFFFFFFF, text[:-2].split("\r\n"))
+    if run.exit_code in GATE_FAILURES:
+        pytest.fail(f"{GATE_FAILURES[run.exit_code].format(mode=mode)}: {run.lines}", pytrace=False)
+    return run
+
+
+@pytest.fixture
+def stub_gate(tmp_path, monkeypatch):
+    stub = tmp_path / "stub_gate.py"
+    stub.write_text(STUB_GATE)
+    this = sys.modules[__name__]
+    monkeypatch.setattr(this, "GATE", str(stub))
+    monkeypatch.setattr(this, "RUNNER", [sys.executable])
+
+
+def test_a_gate_that_could_not_set_up_is_a_rig_failure_not_a_missing_fault_line(tmp_path, stub_gate):
+    with pytest.raises(pytest.fail.Exception, match=r"^rig failure.*the stub says why"):
+        run_gate(tmp_path, str(RIG_FAILED))
+
+
+def test_a_check_the_code_under_test_failed_is_not_called_a_rig_failure(tmp_path, stub_gate):
+    with pytest.raises(pytest.fail.Exception, match=r"^check failure.*the stub says why"):
+        run_gate(tmp_path, str(CHECK_FAILED))
+
+
+@pytest.mark.parametrize("exit_code", [0, 3, SURVIVED_EXIT])
+def test_any_other_end_of_the_gate_is_left_to_the_test_to_judge(tmp_path, stub_gate, exit_code):
+    assert run_gate(tmp_path, str(exit_code)).exit_code == exit_code
 
 
 @pytest.mark.parametrize(("mode", "where", "site"), FAULTS)
@@ -91,7 +128,7 @@ def test_the_process_dies_the_normal_way(tmp_path, mode):
     run = run_gate(tmp_path, mode)
 
     assert not any(line.endswith(SURVIVED) for line in run.lines)
-    assert run.exit_code not in SENTINEL_EXITS
+    assert run.exit_code != SURVIVED_EXIT
     if not RUNNER:
         assert run.exit_code == ACCESS_VIOLATION
 

@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   compat:
     name: Judge the build against the last supported one
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read

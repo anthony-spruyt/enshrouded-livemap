@@ -286,7 +286,7 @@ jobs:
       contents: read
     env:
       FAULT_GATE_EXE: ${{ github.workspace }}/fault-gate/fault_gate.exe
-      FAULT_GATE_RUNNER: /usr/lib/wine/wine64
+      FAULT_GATE_RUNNER: /usr/lib/x86_64-linux-gnu/wine/wine
       WINEDEBUG: "-all"
       WINEDLLOVERRIDES: mscoree,mshtml=
     steps:

@@ -4,7 +4,10 @@
 # SC2034: Variables used in heredocs appear unused
 
 self-hosted-runner:
-  labels: []
+  # Workaround: actionlint has no release that knows ubuntu-26.04 (rhysd/actionlint#682).
+  # Remove the label once the MegaLinter image in lint.sh ships one that does.
+  labels:
+    - ubuntu-26.04
 config-variables: []
 paths:
   .github/workflows/**/*.{yml,yaml}:

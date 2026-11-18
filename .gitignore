@@ -3,3 +3,4 @@ dist/
 build.log
 local-maps/
 __pycache__/
+.output/
